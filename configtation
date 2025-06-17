@@ -1,0 +1,4 @@
+- for running build
+cmd :-
+    - go build -o auth-server.exe ./cmd/Auth-Server
+    - ./auth-server.exe
