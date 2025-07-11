@@ -3,13 +3,12 @@ package main
 import (
 	"context"
 	"flag"
-	"fmt"
 	"gin/config"
-	"gin/db"
-	"gin/internal/common/middleware"
-	"gin/internal/common/objects"
+	routes "gin/internal/api"
+	"gin/internal/db"
+	"gin/internal/middleware"
+	"gin/objects"
 	"net/http"
-	"os"
 
 	"github.com/gin-gonic/gin"
 )
@@ -32,10 +31,7 @@ func main() {
 		configPath = flag.String("config", "", "Path to the configuration file.")
 	)
 
-	if config.New(*configPath) != nil {
-		fmt.Println("Error loading configuration:", config.New(*configPath))
-		os.Exit(1)
-	}
+	config.New(*configPath)
 
 	flag.Parse()
 
@@ -53,7 +49,10 @@ func main() {
 		objects.MainConfiguration.Port = port
 	}
 
+	routes.RegisterAPIRoutes(r)
+
 	// auth service configuration
+	// authApi := r.Group(objects.AuthBasePath)
 
 	// websocket service configuration
 

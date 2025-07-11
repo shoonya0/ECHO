@@ -18,8 +18,8 @@ type MainConfig struct {
 }
 
 const (
-	ApiVersion           = "v1"
-	ApiBasePath          = "/echo/" + ApiVersion + "/"
+	ApiVersion1          = "v1"
+	ApiBasePath          = "/echo/" + ApiVersion1 + "/"
 	AuthBasePath         = ApiBasePath + "auth/"
 	WebSocketBasePath    = ApiBasePath + "websocket/"
 	MessageBasePath      = WebSocketBasePath + "message/"

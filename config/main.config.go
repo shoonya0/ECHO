@@ -2,7 +2,8 @@ package config
 
 import (
 	"fmt"
-	"gin/internal/common/objects"
+	"gin/objects"
+	"os"
 	"path/filepath"
 	"runtime"
 
@@ -14,13 +15,13 @@ var (
 	basePath   = filepath.Dir(b)
 )
 
-func New(configPath string) error {
+func config(configPath string) error {
 	if configPath != "" {
 		viper.AddConfigPath(configPath)
 	} else {
 		viper.AddConfigPath(basePath + "/envConfig")
 	}
-	viper.SetConfigName("mainConfig")
+	viper.SetConfigName("dev")
 	viper.SetConfigType("env")
 	viper.AutomaticEnv()
 
@@ -37,4 +38,11 @@ func New(configPath string) error {
 		return fmt.Errorf("unable to decode into struct, %w", err)
 	}
 	return nil
+}
+
+func New(configPath string) {
+	if err := config(configPath); err != nil {
+		fmt.Println("Error loading configuration:", err)
+		os.Exit(1)
+	}
 }
