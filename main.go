@@ -27,6 +27,9 @@ func main() {
 	// main service configuration
 	r := gin.New()
 
+	r.Use(gin.Recovery())
+	r.Use(gin.Logger())
+
 	var (
 		configPath = flag.String("config", "", "Path to the configuration file.")
 	)
