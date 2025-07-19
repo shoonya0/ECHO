@@ -8,6 +8,7 @@ import (
 
 type User struct {
 	ID           bson.ObjectID `json:"id" bson:"_id,omitempty"`
+	UserID       string        `json:"user_id" bson:"user_id"` // this Id is from the auth service
 	Username     string        `json:"username" bson:"username"`
 	Email        string        `json:"email" bson:"email"`
 	Phone        *string       `json:"phone,omitempty" bson:"phone,omitempty"`

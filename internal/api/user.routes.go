@@ -48,7 +48,7 @@ func RegisterUserRoutes(r *gin.Engine) {
 		contactRoutes.GET("/blocked", controller.GetBlockedUsers)              // Get blocked users list
 
 		// Contact Actions
-		contactRoutes.POST("/:targetUserId", controller.SendContactRequest)        // Send contact request
+		// contactRoutes.POST("/:targetUserId", controller.SendContactRequest)        // Send contact request
 		contactRoutes.PUT("/:requestId", controller.AcceptOrDeclineContactRequest) // Accept/decline contact request
 		contactRoutes.DELETE("/:contactId", controller.RemoveContact)              // Remove contact/friend
 		contactRoutes.POST("/:userId/block", controller.BlockUser)                 // Block user

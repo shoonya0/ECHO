@@ -48,7 +48,7 @@ type Message struct {
 	SearchContent string `json:"-" bson:"search_content"` // Lowercased content for search
 }
 
-type File struct {
+type Attachment struct {
 	ID           bson.ObjectID `json:"id" bson:"_id,omitempty"`
 	OriginalName string        `json:"original_name" bson:"original_name"`
 	StoragePath  string        `json:"storage_path" bson:"storage_path"`

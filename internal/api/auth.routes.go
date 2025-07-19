@@ -160,3 +160,6 @@ func RegisterAuthRoutes(r *gin.Engine) {
 		passwordlessRoutes.POST("/webauthn/login/finish", controller.FinishWebAuthnLogin)           // Finish WebAuthn login
 	}
 }
+
+// make only one route to update user (this will create and update user)
+// make all user routes.
