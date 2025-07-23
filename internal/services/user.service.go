@@ -15,7 +15,7 @@ import (
 
 func isUserExists(userID string) (models.User, bool, error) {
 	user := models.User{}
-	if err := objects.DBClient.Database("user_db").Collection("users").FindOne(context.Background(), bson.M{"user_id": userID}).Decode(&user); err != nil {
+	if err := objects.DBClient.Database("ECHO").Collection("users").FindOne(context.Background(), bson.M{"user_id": userID}).Decode(&user); err != nil {
 		if err == mongo.ErrNoDocuments {
 			return models.User{}, false, nil
 		}
@@ -52,7 +52,7 @@ func UpdateProfile(ctx *gin.Context, user models.User) (models.User, error) {
 		userData.UpdatedAt = time.Now()
 
 		// create the user in the database
-		if _, err := objects.DBClient.Database("user_db").Collection("users").InsertOne(context.Background(), userData); err != nil {
+		if _, err := objects.DBClient.Database("ECHO").Collection("users").InsertOne(context.Background(), userData); err != nil {
 			return models.User{}, err
 		}
 		return userData, nil
@@ -69,7 +69,7 @@ func UpdateProfile(ctx *gin.Context, user models.User) (models.User, error) {
 	}
 
 	// update the user in the database
-	if _, err := objects.DBClient.Database("user_db").Collection("users").UpdateOne(context.Background(), bson.M{"user_id": userData.UserID}, bson.M{"$set": userData}); err != nil {
+	if _, err := objects.DBClient.Database("ECHO").Collection("users").UpdateOne(context.Background(), bson.M{"user_id": userData.UserID}, bson.M{"$set": userData}); err != nil {
 		return models.User{}, err
 	}
 
@@ -123,54 +123,51 @@ func GetUserProfile(ctx *gin.Context) (models.User, error) {
 // this return array of users id with their name and avatar
 func GetRecentUsers(ctx *gin.Context) ([]models.User, error) {
 	users := []models.User{}
-
-	// Use the request context for cancellation and tracing
-	ctxMongo := ctx.Request.Context()
-
-	// Build projection to only fetch ID, Username, and Avatar fields
-	projection := bson.M{
-		"id_1":       1,
-		"id_2":       1,
-		"username_1": 1,
-		"username_2": 1,
-		"avatar_1":   1,
-		"avatar_2":   1,
-		"created_at": 1,
+	userID, ok := ctx.Get("user_id")
+	if !ok {
+		return []models.User{}, fmt.Errorf("user id not found")
 	}
 
-	// we have to find all the users which are recently have talked to the users for this we have to find all the
-	// all the user Id from contact collection
-	cursor, err := objects.DBClient.Database("user_db").Collection("contacts").Find(ctxMongo, bson.M{}, options.Find().SetSort(bson.M{"created_at": -1}).SetLimit(10).SetProjection(projection))
+	// first we have to get the information from the contact collection
+	contact := models.Contact{}
+	if err := objects.DBClient.Database("ECHO").Collection("contacts").FindOne(ctx.Request.Context(), bson.M{"user_id": userID.(string)}).Decode(&contact); err != nil {
+		if err == mongo.ErrNoDocuments {
+			return []models.User{}, fmt.Errorf("no contact found")
+		}
+		return []models.User{}, fmt.Errorf("failed to fetch recent users: %w", err)
+	}
+
+	// now we will get all the chat id from the contact collection
+	chatIds := []string{}
+	for _, contact := range contact.Contacts {
+		chatIds = append(chatIds, contact.ChatId)
+	}
+
+	// now we find all the chat id(this is mongo id) and fetch the projection of name ,avater and sort it by updated at
+	projection := bson.M{
+		"Name":      1,
+		"Avatar":    1,
+		"UpdatedAt": 1,
+	}
+
+	cursor, err := objects.DBClient.Database("ECHO").Collection("Chat").Find(ctx.Request.Context(), bson.M{"_id": bson.M{"$in": chatIds}}, options.Find().SetSort(bson.M{"updated_at": -1}).SetProjection(projection))
 	if err != nil {
 		return []models.User{}, fmt.Errorf("failed to fetch recent users: %w", err)
 	}
-	// findOptions := options.Find().
-	// 	SetSort(bson.M{"created_at": -1}).
-	// 	SetLimit(10).
-	// 	SetProjection(projection)
 
-	// cursor, err := objects.DBClient.
-	// 	Database("user_db").
-	// 	Collection("users").
-	// 	Find(ctxMongo, bson.M{}, findOptions)
-	// if err != nil {
-	// 	return nil, fmt.Errorf("failed to fetch recent users: %w", err)
-	// }
+	defer cursor.Close(context.Background())
 
-	// defer cursor.Close(context.Background())
-
-	// for cursor.Next(context.Background()) {
-	// 	var user models.User
-	// 	if err := cursor.Decode(&user); err != nil {
-	// 		return []models.User{}, err
-	// 	}
-	// 	searchUser := models.User{
-	// 		ID:       user.ID,
-	// 		Username: user.Username,
-	// 		Avatar:   user.Avatar,
-	// 	}
-	// 	users = append(users, searchUser)
-	// }
+	for cursor.Next(context.Background()) {
+		var chat models.Chat
+		if err := cursor.Decode(&chat); err != nil {
+			return []models.User{}, fmt.Errorf("failed to decode chat: %w", err)
+		}
+		users = append(users, models.User{
+			ID:       chat.ID,
+			Username: *chat.Name,
+			Avatar:   chat.Avatar,
+		})
+	}
 
 	return users, nil
 }
@@ -181,16 +178,178 @@ func GetContacts(ctx *gin.Context) ([]models.User, error) {
 		return []models.User{}, fmt.Errorf("user id not found")
 	}
 
-	_, isUserExists, err := isUserExists(userID.(string))
+	// first we have to get the information from the contact collection
+	contact := models.Contact{}
+	if err := objects.DBClient.Database("ECHO").Collection("contacts").FindOne(ctx.Request.Context(), bson.M{"user_id": userID.(string)}).Decode(&contact); err != nil {
+		if err == mongo.ErrNoDocuments {
+			return []models.User{}, fmt.Errorf("no contact found")
+		}
+		return []models.User{}, fmt.Errorf("failed to fetch recent users: %w", err)
+	}
+
+	// now we will get all the chat id from the contact collection
+	chatIds := []string{}
+	for _, contact := range contact.Contacts {
+		chatIds = append(chatIds, contact.ChatId)
+	}
+
+	// find all the name and avatar from chat collection
+	projection := bson.M{
+		"Name":   1,
+		"Avatar": 1,
+	}
+
+	cursor, err := objects.DBClient.Database("ECHO").Collection("Chat").Find(ctx.Request.Context(), bson.M{"_id": bson.M{"$in": chatIds}}, options.Find().SetProjection(projection))
 	if err != nil {
-		return []models.User{}, err
+		return []models.User{}, fmt.Errorf("failed to fetch recent users: %w", err)
 	}
 
-	if !isUserExists {
-		return []models.User{}, fmt.Errorf("user not found")
+	defer cursor.Close(context.Background())
+
+	users := []models.User{}
+	for cursor.Next(context.Background()) {
+		var chat models.Chat
+		if err := cursor.Decode(&chat); err != nil {
+			return []models.User{}, fmt.Errorf("failed to decode chat: %w", err)
+		}
+		users = append(users, models.User{
+			ID:       chat.ID,
+			Username: *chat.Name,
+			Avatar:   chat.Avatar,
+		})
 	}
 
-	// TODO: Implement contacts logic based on your requirements
-	// For now, returning empty slice to make function complete
-	return []models.User{}, nil
+	return users, nil
+}
+
+func GetContactRequests(ctx *gin.Context) ([]models.User, error) {
+	userID, ok := ctx.Get("user_id")
+	if !ok {
+		return []models.User{}, fmt.Errorf("user id not found")
+	}
+
+	// first we have to get the information from the contact collection
+	contact := models.Contact{}
+	if err := objects.DBClient.Database("ECHO").Collection("contacts").FindOne(ctx.Request.Context(), bson.M{"user_id": userID.(string)}).Decode(&contact); err != nil {
+		if err == mongo.ErrNoDocuments {
+			return []models.User{}, fmt.Errorf("no contact found")
+		}
+		return []models.User{}, fmt.Errorf("failed to fetch recent users: %w", err)
+	}
+
+	// now we will get all the chat id from the contact collection and fetch the projection of name ,avater
+	projection := bson.M{
+		"Name":   1,
+		"Avatar": 1,
+	}
+
+	users := []models.User{}
+	for _, contact := range contact.Contacts {
+		if contact.Status == "pending" {
+			chat := models.Chat{}
+			if err := objects.DBClient.Database("ECHO").Collection("Chat").FindOne(ctx.Request.Context(), bson.M{"_id": contact.ChatId}, options.FindOne().SetProjection(projection)).Decode(&chat); err != nil {
+				return []models.User{}, fmt.Errorf("failed to fetch chat: %w", err)
+			}
+			users = append(users, models.User{
+				ID:       chat.ID,
+				Username: *chat.Name,
+				Avatar:   chat.Avatar,
+			})
+		}
+	}
+
+	return users, nil
+}
+
+func GetSentContactRequests(ctx *gin.Context) ([]models.User, error) {
+	userID, ok := ctx.Get("user_id")
+	if !ok {
+		return []models.User{}, fmt.Errorf("user id not found")
+	}
+
+	// first we have to get the information from the contact collection
+	contact := models.Contact{}
+	if err := objects.DBClient.Database("ECHO").Collection("contacts").FindOne(ctx.Request.Context(), bson.M{"user_id": userID.(string)}).Decode(&contact); err != nil {
+		if err == mongo.ErrNoDocuments {
+			return []models.User{}, fmt.Errorf("no contact found")
+		}
+		return []models.User{}, fmt.Errorf("failed to fetch recent users: %w", err)
+	}
+
+	// now we will get all the chat id from the contact collection
+	chatIds := []string{}
+	for _, contact := range contact.Contacts {
+		if contact.RequestedBy != userID.(string) {
+			chatIds = append(chatIds, contact.ChatId)
+		}
+	}
+
+	// find all the name and avatar from chat collection
+	projection := bson.M{
+		"_id":    1,
+		"Name":   1,
+		"Avatar": 1,
+	}
+
+	// now we will get all the users from the users collection
+	users := []models.User{}
+	for _, chatId := range chatIds {
+		chat := models.Chat{}
+		if err := objects.DBClient.Database("ECHO").Collection("Chat").FindOne(ctx.Request.Context(), bson.M{"_id": chatId}, options.FindOne().SetProjection(projection)).Decode(&chat); err != nil {
+			return []models.User{}, fmt.Errorf("failed to fetch chat: %w", err)
+		}
+		users = append(users, models.User{
+			ID:       chat.ID,
+			Username: *chat.Name,
+			Avatar:   chat.Avatar,
+		})
+	}
+
+	return users, nil
+}
+
+func GetBlockedUsers(ctx *gin.Context) ([]models.User, error) {
+	userID, ok := ctx.Get("user_id")
+	if !ok {
+		return []models.User{}, fmt.Errorf("user id not found")
+	}
+
+	// first we have to get the information from the contact collection
+	contact := models.Contact{}
+	if err := objects.DBClient.Database("ECHO").Collection("contacts").FindOne(ctx.Request.Context(), bson.M{"user_id": userID.(string)}).Decode(&contact); err != nil {
+		if err == mongo.ErrNoDocuments {
+			return []models.User{}, fmt.Errorf("no contact found")
+		}
+		return []models.User{}, fmt.Errorf("failed to fetch recent users: %w", err)
+	}
+
+	// now we will get all the chat id from the contact collection
+	chatIds := []string{}
+	for _, contact := range contact.Contacts {
+		if contact.Status == "blocked" && contact.RequestedBy == userID.(string) {
+			chatIds = append(chatIds, contact.ChatId)
+		}
+	}
+
+	// find all the name and avatar from chat collection
+	projection := bson.M{
+		"_id":    1,
+		"Name":   1,
+		"Avatar": 1,
+	}
+
+	users := []models.User{}
+	for _, chatId := range chatIds {
+		chat := models.Chat{}
+		if err := objects.DBClient.Database("ECHO").Collection("Chat").FindOne(ctx.Request.Context(), bson.M{"_id": chatId}, options.FindOne().SetProjection(projection)).Decode(&chat); err != nil {
+			return []models.User{}, fmt.Errorf("failed to fetch chat: %w", err)
+		}
+		users = append(users, models.User{
+			ID:       chat.ID,
+			Username: *chat.Name,
+			Avatar:   chat.Avatar,
+		})
+	}
+
+	return users, nil
 }

@@ -91,3 +91,30 @@ func GetContacts(ctx *gin.Context) {
 	}
 	ctx.JSON(http.StatusOK, userData)
 }
+
+func GetContactRequests(ctx *gin.Context) {
+	userData, err := services.GetContactRequests(ctx)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	ctx.JSON(http.StatusOK, userData)
+}
+
+func GetSentContactRequests(ctx *gin.Context) {
+	userData, err := services.GetSentContactRequests(ctx)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	ctx.JSON(http.StatusOK, userData)
+}
+
+func GetBlockedUsers(ctx *gin.Context) {
+	userData, err := services.GetBlockedUsers(ctx)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	ctx.JSON(http.StatusOK, userData)
+}

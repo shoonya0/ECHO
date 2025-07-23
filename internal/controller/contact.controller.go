@@ -1,6 +1,11 @@
 package controller
 
-import "github.com/gin-gonic/gin"
+import (
+	"gin/internal/services"
+	"net/http"
+
+	"github.com/gin-gonic/gin"
+)
 
 // List your contacts/friends.
 // func GetContacts(c *gin.Context) {
@@ -9,25 +14,79 @@ import "github.com/gin-gonic/gin"
 
 // Send a contact/friend request ({ targetUserId }).
 func SendContactRequest(c *gin.Context) {
-	// Handler logic for sending contact request
+	userData, err := services.SendContactRequest(c)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, userData)
 }
 
 // Accept or decline a request ({ action: "accept"|"decline" }).
 func AcceptOrDeclineContactRequest(c *gin.Context) {
-	// Handler logic for accepting or declining contact request
+	userData, err := services.AcceptOrDeclineContactRequest(c)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, userData)
 }
 
 // Remove a contact.
 func RemoveContact(c *gin.Context) {
-	// Handler logic for removing contact
+	userData, err := services.RemoveContact(c)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, userData)
 }
 
-// Get your own presence (online/away/do-not-disturb).
-func GetPresence(c *gin.Context) {
-	// Handler logic for getting presence
+// Block a user.
+func BlockUser(c *gin.Context) {
+	userData, err := services.BlockUser(c)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, userData)
 }
 
-// Update your presence/status.
-func UpdatePresence(c *gin.Context) {
-	// Handler logic for updating presence
+// Unblock a user.
+func UnblockUser(c *gin.Context) {
+	userData, err := services.UnblockUser(c)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, userData)
+}
+
+// Add a user to your favorites.
+func AddToFavorites(c *gin.Context) {
+	userData, err := services.AddToFavorites(c)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, userData)
+}
+
+// Remove a user from your favorites.
+func RemoveFromFavorites(c *gin.Context) {
+	userData, err := services.RemoveFromFavorites(c)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, userData)
+}
+
+func GetFavoriteContacts(c *gin.Context) {
+	userData, err := services.GetFavoriteContacts(c)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, userData)
 }

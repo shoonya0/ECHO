@@ -1,6 +1,9 @@
 package objects
 
-import "go.mongodb.org/mongo-driver/v2/mongo"
+import (
+	"github.com/redis/go-redis/v9"
+	"go.mongodb.org/mongo-driver/v2/mongo"
+)
 
 type MainConfig struct {
 	Port               string `mapstructure:"PORT"`
@@ -32,4 +35,5 @@ const (
 var (
 	MainConfiguration MainConfig
 	DBClient          *mongo.Client
+	RedisClient       *redis.Client
 )
