@@ -6,12 +6,18 @@ import (
 	"go.mongodb.org/mongo-driver/v2/bson"
 )
 
-type Friendship struct {
-	ID          bson.ObjectID `json:"id" bson:"_id,omitempty"`
-	UserID1     string        `json:"user_id_1" bson:"user_id_1"`
-	UserID2     string        `json:"user_id_2" bson:"user_id_2"`
-	Status      string        `json:"status" bson:"status"`             // "pending", "accepted", "blocked"
-	RequestedBy string        `json:"requested_by" bson:"requested_by"` // Who sent the friend request
+// here user id 1 and user id 2 save the refference of the user from the user collection
+type Contact struct {
+	ID        bson.ObjectID `json:"id" bson:"_id,omitempty"`
+	ID1       string        `json:"id_1" bson:"id_1"`             // this is the user id of the user (reff ID) who is the contact
+	ID2       string        `json:"id_2" bson:"id_2"`             // this is the user id of the user (reff ID) who is the contact
+	Status    string        `json:"status" bson:"status"`         // "pending", "accepted", "blocked"
+	Username1 string        `json:"username_1" bson:"username_1"` // this is the username of the user who is the contact
+	Username2 string        `json:"username_2" bson:"username_2"` // this is the username of the user who is the contact
+	Avatar1   *string       `json:"avatar_1" bson:"avatar_1"`     // this is the avatar of the user who is the contact
+	Avatar2   *string       `json:"avatar_2" bson:"avatar_2"`     // this is the avatar of the user who is the contact
+
+	RequestedBy string `json:"requested_by" bson:"requested_by"` // Who sent the friend request
 
 	// Timestamps
 	CreatedAt  time.Time  `json:"created_at" bson:"created_at"`

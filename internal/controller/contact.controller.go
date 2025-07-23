@@ -3,9 +3,9 @@ package controller
 import "github.com/gin-gonic/gin"
 
 // List your contacts/friends.
-func GetContacts(c *gin.Context) {
-	// Handler logic for getting contacts
-}
+// func GetContacts(c *gin.Context) {
+// 	// Handler logic for getting contacts
+// }
 
 // Send a contact/friend request ({ targetUserId }).
 func SendContactRequest(c *gin.Context) {

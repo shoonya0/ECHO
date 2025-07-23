@@ -17,8 +17,8 @@ type User struct {
 	// Profile information
 	DisplayName   string  `json:"display_name" bson:"display_name"`
 	Avatar        *string `json:"avatar,omitempty" bson:"avatar,omitempty"`
-	Status        string  `json:"status" bson:"status"` // "online", "away", "dnd", "invisible"
-	StatusMessage *string `json:"status_message,omitempty" bson:"status_message,omitempty"`
+	Status        string  `json:"status" bson:"status"`                                     // "online", "away", "dnd", "invisible"
+	StatusMessage *string `json:"status_message,omitempty" bson:"status_message,omitempty"` // this is the status message of the user means what the user is doing
 	Bio           *string `json:"bio,omitempty" bson:"bio,omitempty"`
 
 	// Account status
@@ -43,3 +43,5 @@ type UserSettings struct {
 	Theme         string `json:"theme" bson:"theme"`
 	Notifications bool   `json:"notifications" bson:"notifications"`
 }
+
+// populate function in mongodb
