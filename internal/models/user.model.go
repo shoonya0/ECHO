@@ -43,5 +43,3 @@ type UserSettings struct {
 	Theme         string `json:"theme" bson:"theme"`
 	Notifications bool   `json:"notifications" bson:"notifications"`
 }
-
-// populate function in mongodb

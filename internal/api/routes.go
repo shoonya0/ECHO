@@ -9,15 +9,15 @@ func RegisterAPIRoutes(r *gin.Engine) {
 	// Register authentication routes
 	RegisterAuthRoutes(r)
 
-	// Register chat routes
-	RegisterChatRoutes(r)
+	// // Register chat routes
+	// RegisterChatRoutes(r)
 
-	// Register WebSocket routes
-	RegisterWebSocketRoutes(r)
+	// // Register WebSocket routes
+	// RegisterWebSocketRoutes(r)
 
-	// Register user management routes
+	// // Register user management routes
 	RegisterUserRoutes(r)
 
-	// Register admin routes
-	RegisterAdminRoutes(r)
+	// // Register admin routes
+	// RegisterAdminRoutes(r)
 }

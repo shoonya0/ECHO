@@ -41,7 +41,13 @@ func SendContactRequest(c *gin.Context) (models.User, error) {
 	contactRequest := models.ContactStatus{
 		RequestedBy: userID.(string),
 		Status:      "pending",
-		ChatId:      "",
+		ChatId:      uuid.New().String(),
+	}
+
+	// get the user from the database
+	user := models.User{}
+	if err := objects.DBClient.Database("ECHO").Collection("users").FindOne(c.Request.Context(), bson.M{"user_id": userID.(string)}).Decode(&user); err != nil {
+		return models.User{}, fmt.Errorf("failed to fetch user: %w", err)
 	}
 
 	// now we will insert the contact request into the database
@@ -53,9 +59,9 @@ func SendContactRequest(c *gin.Context) (models.User, error) {
 	}
 
 	return models.User{
-		ID:       userID.(string),
-		Username: *chat.Name,
-		Avatar:   chat.Avatar,
+		ID:       user.ID,
+		Username: user.Username,
+		Avatar:   user.Avatar,
 	}, nil
 }
 
@@ -78,9 +84,17 @@ func AcceptOrDeclineContactRequest(c *gin.Context) (models.User, error) {
 		contactRequest.Status = "accepted"
 		contactRequest.ChatId = uuid.New().String()
 		// now we will create a new chat
+		objectID, err := bson.ObjectIDFromHex(contactRequest.ChatId)
+		if err != nil {
+			return models.User{}, fmt.Errorf("failed to convert chat id to object id: %w", err)
+		}
+
 		chat := models.Chat{
-			ID:        contactRequest.ChatId,
-			Users:     []string{userID.(string), contactRequest.RequestedBy},
+			ID: objectID,
+			Participants: map[string]string{
+				userID.(string):            userID.(string),
+				contactRequest.RequestedBy: contactRequest.RequestedBy,
+			},
 			CreatedAt: time.Now(),
 			UpdatedAt: time.Now(),
 		}
@@ -88,40 +102,30 @@ func AcceptOrDeclineContactRequest(c *gin.Context) (models.User, error) {
 		if _, err := objects.DBClient.Database("ECHO").Collection("chats").InsertOne(c.Request.Context(), chat); err != nil {
 			return models.User{}, fmt.Errorf("failed to insert chat: %w", err)
 		}
-		contact.Contacts[userID.(string)] = contactRequest
-		contact.Contacts[contactRequest.RequestedBy] = contactRequest
 
 		// now we will update the contact request in the database
-		if _, err := objects.DBClient.Database("ECHO").Collection("contacts").UpdateOne(c.Request.Context(), bson.M{"user_id": userID.(string)}, bson.M{"$set": contact}); err != nil {
+		if _, err := objects.DBClient.Database("ECHO").Collection("contacts").UpdateOne(c.Request.Context(), bson.M{"user_id": userID.(string)}, bson.M{"$set": contactRequest}); err != nil {
 			return models.User{}, fmt.Errorf("failed to update contact: %w", err)
 		}
+		return models.User{}, nil
 	} else {
 		contactRequest.Status = "declined"
 		contactRequest.ChatId = ""
 	}
 
-	// update the contact request in the database
-	if _, err := objects.DBClient.Database("ECHO").Collection("contacts").UpdateOne(c.Request.Context(), bson.M{"user_id": userID.(string)}, bson.M{"$set": contact}); err != nil {
-		return models.User{}, fmt.Errorf("failed to update contact: %w", err)
-	}
-
-	return models.User{
-		ID:       userID.(string),
-		Username: *chat.Name,
-		Avatar:   chat.Avatar,
-	}, nil
+	return models.User{}, nil
 }
 
 func RemoveContact(c *gin.Context) (string, error) {
-	userID, ok := c.Get("user_id")
-	if !ok {
-		return "", fmt.Errorf("user id not found")
-	}
+	// userID, ok := c.Get("user_id")
+	// if !ok {
+	// 	return "", fmt.Errorf("user id not found")
+	// }
 
 	contactId := c.Param("contactId")
 
 	// get the chat Id from request body
-	chatId := c.Request.Body.ChatId
+	// chatId := c.Request.Body.ChatId
 
 	// search in contact collection for the contactId
 	contact := models.Contact{}
@@ -130,23 +134,23 @@ func RemoveContact(c *gin.Context) (string, error) {
 	}
 
 	// remove the chatId from the contact
-	for _, contactStatus := range contact.Contacts {
-		if contactStatus.ChatId == chatId {
-			delete(contact.Contacts, contactStatus)
-			// update the contact in the database
-			if _, err := objects.DBClient.Database("ECHO").Collection("contacts").UpdateOne(c.Request.Context(), bson.M{"_id": contactId}, bson.M{"$set": contact}); err != nil {
-				return "", fmt.Errorf("failed to update contact: %w", err)
-			}
+	// for _, contactStatus := range contact.Contacts {
+	// if contactStatus.ChatId == chatId {
+	// 	delete(contact.Contacts, contactStatus)
+	// 	// update the contact in the database
+	// 	if _, err := objects.DBClient.Database("ECHO").Collection("contacts").UpdateOne(c.Request.Context(), bson.M{"_id": contactId}, bson.M{"$set": contact}); err != nil {
+	// 		return "", fmt.Errorf("failed to update contact: %w", err)
+	// 	}
 
-			// remove the chat from the chat collection
-			if _, err := objects.DBClient.Database("ECHO").Collection("chats").DeleteOne(c.Request.Context(), bson.M{"_id": chatId}); err != nil {
-				return "", fmt.Errorf("failed to delete chat: %w", err)
-			}
-			return "contact removed", nil
-		}
-	}
+	// 	// remove the chat from the chat collection
+	// 	if _, err := objects.DBClient.Database("ECHO").Collection("chats").DeleteOne(c.Request.Context(), bson.M{"_id": chatId}); err != nil {
+	// 		return "", fmt.Errorf("failed to delete chat: %w", err)
+	// 	}
+	// 	return "contact removed", nil
+	// }
+	// }
 
-	return "", fmt.Errorf("chat not found")
+	return "contact removed", nil
 }
 
 func BlockUser(c *gin.Context) (string, error) {

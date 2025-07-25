@@ -39,36 +39,55 @@ func RegisterUserRoutes(r *gin.Engine) {
 		userRoutes.GET("/recent", controller.GetRecentUsers)          // Get recently joined users
 	}
 
-	// ============ CONTACTS & FRIENDS MANAGEMENT ============
-	contactRoutes := userApi.Group("users/me/contacts")
-	{
-		// Contact List Management
-		contactRoutes.GET("/", controller.GetContacts)                         // Get user's contacts/friends
-		contactRoutes.GET("/requests", controller.GetContactRequests)          // Get pending contact requests
-		contactRoutes.GET("/sent-requests", controller.GetSentContactRequests) // Get sent contact requests show all the users who you have sent the contact request
-		contactRoutes.GET("/blocked", controller.GetBlockedUsers)              // Get blocked users list
+	// // ============ CONTACTS & FRIENDS MANAGEMENT ============
+	// contactRoutes := userApi.Group("users/me/contacts")
+	// {
+	// 	// Contact List Management
+	// 	contactRoutes.GET("/", controller.GetContacts)                         // Get user's contacts/friends
+	// 	contactRoutes.GET("/requests", controller.GetContactRequests)          // Get pending contact requests
+	// 	contactRoutes.GET("/sent-requests", controller.GetSentContactRequests) // Get sent contact requests show all the users who you have sent the contact request
+	// 	contactRoutes.GET("/blocked", controller.GetBlockedUsers)              // Get blocked users list
 
-		// Contact Actions
-		contactRoutes.POST("/:targetUserId", controller.SendContactRequest)        // Send contact request
-		contactRoutes.PUT("/:requestId", controller.AcceptOrDeclineContactRequest) // Accept/decline contact request
-		contactRoutes.DELETE("/:contactId", controller.RemoveContact)              // Remove contact/friend
-		contactRoutes.POST("/:userId/block", controller.BlockUser)                 // Block user
-		contactRoutes.DELETE("/:userId/block", controller.UnblockUser)             // Unblock user
-		contactRoutes.POST("/:userId/favorite", controller.AddToFavorites)         // Add to favorites
-		contactRoutes.DELETE("/:userId/favorite", controller.RemoveFromFavorites)  // Remove from favorites
-		contactRoutes.GET("/favorites", controller.GetFavoriteContacts)            // Get favorite contacts
-	}
+	// 	// Contact Actions
+	// 	contactRoutes.POST("/:targetUserId", controller.SendContactRequest)        // Send contact request
+	// 	contactRoutes.PUT("/:requestId", controller.AcceptOrDeclineContactRequest) // Accept/decline contact request
+	// 	contactRoutes.DELETE("/:contactId", controller.RemoveContact)              // Remove contact/friend
+	// 	contactRoutes.POST("/:userId/block", controller.BlockUser)                 // Block user
+	// 	contactRoutes.DELETE("/:userId/block", controller.UnblockUser)             // Unblock user
+	// 	contactRoutes.POST("/:userId/favorite", controller.AddToFavorites)         // Add to favorites
+	// 	contactRoutes.DELETE("/:userId/favorite", controller.RemoveFromFavorites)  // Remove from favorites
+	// 	contactRoutes.GET("/favorites", controller.GetFavoriteContacts)            // Get favorite contacts
+	// }
 
-	// ============ PRESENCE & STATUS ============
-	presenceRoutes := userApi.Group("users/me/status")
-	{
-		presenceRoutes.GET("/", controller.GetPresence)    // Get current user presence
-		presenceRoutes.PUT("/", controller.UpdatePresence) // Update presence status
-		// presenceRoutes.POST("/custom", controller.SetCustomStatus)         // Set custom status message
-		// presenceRoutes.DELETE("/custom", controller.ClearCustomStatus)     // Clear custom status message
-		// presenceRoutes.GET("/history", controller.GetStatusHistory)        // Get status history
-		// presenceRoutes.PUT("/availability", controller.UpdateAvailability) // Update availability (online/away/busy/invisible)
-	}
+	// // ============ PRESENCE & STATUS ============
+	// presenceRoutes := userApi.Group("users/me/status")
+	// {
+	// 	presenceRoutes.GET("/", controller.GetPresence)                    // Get current user presence
+	// 	presenceRoutes.PUT("/", controller.UpdatePresence)                 // Update presence status
+	// 	presenceRoutes.POST("/custom", controller.SetCustomStatus)         // Set custom status message
+	// 	presenceRoutes.DELETE("/custom", controller.ClearCustomStatus)     // Clear custom status message
+	// 	presenceRoutes.GET("/history", controller.GetStatusHistory)        // Get status history
+	// 	presenceRoutes.PUT("/availability", controller.UpdateAvailability) // Update availability (online/away/busy/invisible)
+	// 	presenceRoutes.POST("/activity", controller.UpdateUserActivity)    // Update user activity (for middleware)
+	// }
+
+	// // ============ PRESENCE MANAGEMENT (Admin/Internal) ============
+	// presenceAdminRoutes := userApi.Group("presence")
+	// {
+	// 	// Admin endpoints
+	// 	presenceAdminRoutes.GET("/online", controller.GetOnlineUsers)         // Get all online users
+	// 	presenceAdminRoutes.GET("/all", controller.GetAllPresences)           // Get all user presences
+	// 	presenceAdminRoutes.GET("/stats", controller.GetPresenceStats)        // Get presence statistics
+	// 	presenceAdminRoutes.POST("/cleanup", controller.CleanupInactiveUsers) // Cleanup inactive users
+
+	// 	// Internal auth events (called by auth service)
+	// 	presenceAdminRoutes.POST("/login", controller.HandleUserLogin)   // Handle user login event
+	// 	presenceAdminRoutes.POST("/logout", controller.HandleUserLogout) // Handle user logout event
+	// }
+
+	// // ============ OTHER USERS PRESENCE ============
+	// // Add presence endpoint to existing userRoutes group
+	// userRoutes.GET("/:id/presence", controller.GetUserPresence) // Get specific user's presence
 
 	// // ============ USER SETTINGS ============
 	// settingsRoutes := userApi.Group("settings")

@@ -2,6 +2,7 @@ package controller
 
 import (
 	"gin/internal/services"
+	"gin/internal/utils"
 	"net/http"
 
 	"github.com/gin-gonic/gin"
@@ -16,10 +17,10 @@ import (
 func SendContactRequest(c *gin.Context) {
 	userData, err := services.SendContactRequest(c)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		utils.ErrorResponse(c, http.StatusInternalServerError, err.Error(), nil)
 		return
 	}
-	c.JSON(http.StatusOK, userData)
+	utils.SuccessResponse(c, "Contact request sent successfully", userData)
 }
 
 // Accept or decline a request ({ action: "accept"|"decline" }).
