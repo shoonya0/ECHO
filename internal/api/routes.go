@@ -74,9 +74,8 @@ func Signup() gin.HandlerFunc {
 		}
 
 		c.JSON(http.StatusCreated, gin.H{
-			"id":      req.ID.Hex(),
-			"real_id": req.ID,
-			"email":   user.Email,
+			"id":    req.ID.Hex(),
+			"email": user.Email,
 		})
 	}
 }

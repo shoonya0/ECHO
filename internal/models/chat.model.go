@@ -7,7 +7,8 @@ import (
 )
 
 type Chat struct {
-	ID          bson.ObjectID `json:"id" bson:"_id,omitempty"`
+	// Hear ID is act as chat id as well as invite code
+	ChatID      bson.ObjectID `json:"_id,omitempty" bson:"_id,omitempty"`
 	Type        string        `json:"type" bson:"type"` // "direct", "group", "channel"
 	Name        *string       `json:"name,omitempty" bson:"name,omitempty"`
 	Description *string       `json:"description,omitempty" bson:"description,omitempty"`
@@ -17,19 +18,18 @@ type Chat struct {
 	Participants map[string]string `json:"participants" bson:"participants"` // User IDs and roles
 
 	// Group/Channel specific
-	OwnerID  *string  `json:"owner_id,omitempty" bson:"owner_id,omitempty"`
-	AdminIDs []string `json:"admin_ids" bson:"admin_ids"`
+	OwnerID  *string  `json:"ownerId,omitempty" bson:"ownerId,omitempty"`
+	AdminIDs []string `json:"adminIds" bson:"adminIds"`
 
 	// Last message info for quick retrieval
-	LastMessageID *string    `json:"last_message_id,omitempty" bson:"last_message_id,omitempty"`
-	LastMessageAt *time.Time `json:"last_message_at,omitempty" bson:"last_message_at,omitempty"`
+	LastMessageID *string    `json:"lastMessageId,omitempty" bson:"lastMessageId,omitempty"`
+	LastMessageAt *time.Time `json:"lastMessageAt,omitempty" bson:"lastMessageAt,omitempty"`
 
 	// Settings
-	IsPrivate  bool    `json:"is_private" bson:"is_private"`
-	InviteCode *string `json:"invite_code,omitempty" bson:"invite_code,omitempty"`
+	IsPrivate bool `json:"isPrivate" bson:"isPrivate"`
 
 	// Metadata
-	MessageCount int64     `json:"message_count" bson:"message_count"`
-	CreatedAt    time.Time `json:"created_at" bson:"created_at"`
-	UpdatedAt    time.Time `json:"updated_at" bson:"updated_at"`
+	MessageCount int64     `json:"messageCount" bson:"messageCount"`
+	CreatedAt    time.Time `json:"createdAt" bson:"createdAt"`
+	UpdatedAt    time.Time `json:"updatedAt" bson:"updatedAt"`
 }

@@ -19,28 +19,21 @@ import (
 // 	AcceptedAt *time.Time `json:"accepted_at,omitempty" bson:"accepted_at,omitempty"`
 // }
 
-type ContactStatus struct {
-	Status      string     `json:"status" bson:"status"`             // "pending", "accepted", "blocked", "favorite"
-	ChatId      string     `json:"chat_id" bson:"chat_id"`           // this is the mongo chat id of the chat between the two users
-	RequestedBy string     `json:"requested_by" bson:"requested_by"` // Who sent the friend request
-	AcceptedAt  *time.Time `json:"accepted_at,omitempty" bson:"accepted_at,omitempty"`
-}
-
-type Contact struct {
-	ID        bson.ObjectID            `json:"id" bson:"_id,omitempty"`
-	Contacts  map[string]ContactStatus `json:"contacts" bson:"contacts"`
-	CreatedAt time.Time                `json:"created_at" bson:"created_at"`
-	UpdatedAt time.Time                `json:"updated_at" bson:"updated_at"`
-}
-
+// if this is an sub type of Contact then is this also contain it's own _id in mongo db?
 type Invite struct {
-	InviteId    string `json:"invite_id" bson:"invite_id"`
-	ChatId      string `json:"chat_id" bson:"chat_id"`
-	Code        string `json:"code" bson:"code"`
+	ChatID      string `json:"_id" bson:"_id"`
 	Status      string `json:"status" bson:"status"`             // "pending", "accepted", "blocked"
 	RequestedBy string `json:"requested_by" bson:"requested_by"` // Who sent the friend request
 
 	// timestamps
 	CreatedAt time.Time  `json:"created_at" bson:"created_at"`
 	ExpiresAt *time.Time `json:"expires_at" bson:"expires_at"` // Expiration time for the invite
+}
+
+type Contact struct {
+	ID           bson.ObjectID     `json:"_id,omitempty" bson:"_id,omitempty"`
+	Contacts     map[string]Invite `json:"contacts" bson:"contacts"`
+	SentRequests []string          `json:"sentRequests" bson:"sentRequests"`
+	CreatedAt    time.Time         `json:"createdAt" bson:"createdAt"`
+	UpdatedAt    time.Time         `json:"updatedAt" bson:"updatedAt"`
 }

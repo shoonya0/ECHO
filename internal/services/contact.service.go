@@ -38,10 +38,10 @@ func SendContactRequest(c *gin.Context) (models.User, error) {
 	}
 
 	// now we will create a new contact request
-	contactRequest := models.ContactStatus{
+	contactRequest := models.Invite{
 		RequestedBy: userID.(string),
 		Status:      "pending",
-		ChatId:      uuid.New().String(),
+		ChatID:      uuid.New().String(),
 	}
 
 	// get the user from the database
@@ -75,22 +75,22 @@ func AcceptOrDeclineContactRequest(c *gin.Context) (models.User, error) {
 	action := c.Query("action")
 
 	// get the contact request from the database
-	contactRequest := models.ContactStatus{}
+	contactRequest := models.Invite{}
 	if err := objects.DBClient.Database("ECHO").Collection("contacts").FindOne(c.Request.Context(), bson.M{"contacts.requested_by": requestId, "contacts.status": "pending"}).Decode(&contactRequest); err != nil {
 		return models.User{}, fmt.Errorf("failed to fetch contact request: %w", err)
 	}
 
 	if action == "accept" {
 		contactRequest.Status = "accepted"
-		contactRequest.ChatId = uuid.New().String()
+		contactRequest.ChatID = uuid.New().String()
 		// now we will create a new chat
-		objectID, err := bson.ObjectIDFromHex(contactRequest.ChatId)
+		objectID, err := bson.ObjectIDFromHex(contactRequest.ChatID)
 		if err != nil {
 			return models.User{}, fmt.Errorf("failed to convert chat id to object id: %w", err)
 		}
 
 		chat := models.Chat{
-			ID: objectID,
+			ChatID: objectID,
 			Participants: map[string]string{
 				userID.(string):            userID.(string),
 				contactRequest.RequestedBy: contactRequest.RequestedBy,
@@ -110,7 +110,7 @@ func AcceptOrDeclineContactRequest(c *gin.Context) (models.User, error) {
 		return models.User{}, nil
 	} else {
 		contactRequest.Status = "declined"
-		contactRequest.ChatId = ""
+		contactRequest.ChatID = ""
 	}
 
 	return models.User{}, nil
@@ -168,10 +168,10 @@ func BlockUser(c *gin.Context) (string, error) {
 	}
 
 	// update the contact status to blocked
-	contact.Contacts[targetUserId] = models.ContactStatus{
+	contact.Contacts[targetUserId] = models.Invite{
 		RequestedBy: userID.(string),
 		Status:      "blocked",
-		ChatId:      contact.Contacts[targetUserId].ChatId,
+		ChatID:      contact.Contacts[targetUserId].ChatID,
 	}
 
 	// update the contact in the database
@@ -197,10 +197,10 @@ func UnblockUser(c *gin.Context) (string, error) {
 	}
 
 	// update the contact status to unblocked
-	contact.Contacts[targetUserId] = models.ContactStatus{
+	contact.Contacts[targetUserId] = models.Invite{
 		RequestedBy: userID.(string),
 		Status:      "accepted",
-		ChatId:      contact.Contacts[targetUserId].ChatId,
+		ChatID:      contact.Contacts[targetUserId].ChatID,
 	}
 
 	// update the contact in the database
@@ -226,10 +226,10 @@ func AddToFavorites(c *gin.Context) (string, error) {
 	}
 
 	// update the contact status to favorite
-	contact.Contacts[targetUserId] = models.ContactStatus{
+	contact.Contacts[targetUserId] = models.Invite{
 		RequestedBy: userID.(string),
 		Status:      "favorite",
-		ChatId:      contact.Contacts[targetUserId].ChatId,
+		ChatID:      contact.Contacts[targetUserId].ChatID,
 	}
 
 	// update the contact in the database
@@ -254,10 +254,10 @@ func RemoveFromFavorites(c *gin.Context) (string, error) {
 	}
 
 	// update the contact status to not favorite
-	contact.Contacts[targetUserId] = models.ContactStatus{
+	contact.Contacts[targetUserId] = models.Invite{
 		RequestedBy: userID.(string),
 		Status:      "accepted",
-		ChatId:      contact.Contacts[targetUserId].ChatId,
+		ChatID:      contact.Contacts[targetUserId].ChatID,
 	}
 
 	// update the contact in the database
@@ -288,7 +288,7 @@ func GetFavoriteContacts(c *gin.Context) ([]models.Chat, error) {
 			chat := models.Chat{}
 
 			// in this case we have to get the chat info from the chat collection
-			if err := objects.DBClient.Database("ECHO").Collection("chats").FindOne(c.Request.Context(), bson.M{"_id": contactStatus.ChatId}).Decode(&chat); err != nil {
+			if err := objects.DBClient.Database("ECHO").Collection("chats").FindOne(c.Request.Context(), bson.M{"_id": contactStatus.ChatID}).Decode(&chat); err != nil {
 				return nil, fmt.Errorf("failed to fetch chat: %w", err)
 			}
 			favoriteChats = append(favoriteChats, chat)

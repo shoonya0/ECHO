@@ -96,7 +96,7 @@ func AuthMiddleware(ctx *gin.Context) {
 	}
 
 	// Set user information in context only after successful verification
-	ctx.Set("user_id", claims.UserID)
+	ctx.Set("userId", claims.UserID)
 	ctx.Set("email", claims.Email)
 	ctx.Set("exp", claims.Exp)
 	// Continue to next handler

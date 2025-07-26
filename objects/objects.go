@@ -20,6 +20,29 @@ type MainConfig struct {
 	JwtSecret          string `mapstructure:"JWT_SECRET"`
 }
 
+// collection names
+const (
+	DBName      = "Echo"
+	UserColl    = "users"
+	ChatColl    = "chats"
+	MessageColl = "messages"
+	GroupColl   = "groups"
+	ContactColl = "contacts"
+)
+
+// contact type
+type ContactType int
+
+const (
+	RecentContacts ContactType = 0
+	AllContacts    ContactType = 1
+	StatusPending  string      = "pending"
+	StatusAccepted string      = "accepted"
+	StatusBlocked  string      = "blocked"
+	StatusFavorite string      = "favorite"
+)
+
+// api paths
 const (
 	ApiVersion1          = "v1"
 	ApiBasePath          = "/echo/" + ApiVersion1 + "/"
@@ -35,5 +58,6 @@ const (
 var (
 	MainConfiguration MainConfig
 	DBClient          *mongo.Client
+	DB                *mongo.Database
 	RedisClient       *redis.Client
 )

@@ -3,6 +3,7 @@ package controller
 import (
 	"gin/internal/models"
 	"gin/internal/services"
+	"gin/objects"
 	"net/http"
 
 	"github.com/gin-gonic/gin"
@@ -13,7 +14,7 @@ import (
 
 // Get the authenticated user’s profile.
 func GetProfile(ctx *gin.Context) {
-	userID, ok := ctx.Get("user_id")
+	userID, ok := ctx.Get("userId")
 	if !ok {
 		ctx.JSON(http.StatusUnauthorized, gin.H{"error": "user id not found"})
 		return
@@ -31,7 +32,7 @@ func GetProfile(ctx *gin.Context) {
 	ctx.JSON(http.StatusOK, userData)
 }
 
-// Update profile fields (display name, avatar URL, status message).
+// Update profile fields (display name, avatar URL, status message ,etc...).
 func UpdateProfile(ctx *gin.Context) {
 	var err error
 	user := models.User{}
@@ -39,7 +40,7 @@ func UpdateProfile(ctx *gin.Context) {
 		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
-	userID, ok := ctx.Get("user_id")
+	userID, ok := ctx.Get("userId")
 	if !ok {
 		ctx.JSON(http.StatusUnauthorized, gin.H{"error": "user id not found"})
 		return
@@ -60,7 +61,12 @@ func UpdateProfile(ctx *gin.Context) {
 
 // ============ USER DISCOVERY & SEARCH ============
 func GetUserProfile(ctx *gin.Context) {
-	userData, err := services.GetUserProfile(ctx)
+	userID := ctx.Param("id")
+	if userID == "" {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": "user id is required"})
+		return
+	}
+	userData, err := services.GetUserProfile(userID)
 	if err != nil {
 		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
@@ -96,7 +102,12 @@ func GetPopularUsers(ctx *gin.Context) {
 }
 
 func GetRecentUsers(ctx *gin.Context) {
-	userData, err := services.GetRecentUsers(ctx)
+	userID, ok := ctx.Get("userId")
+	if !ok {
+		ctx.JSON(http.StatusUnauthorized, gin.H{"error": "user id not found"})
+		return
+	}
+	userData, err := services.GetContacts(userID.(string), objects.RecentContacts)
 	if err != nil {
 		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
@@ -106,7 +117,12 @@ func GetRecentUsers(ctx *gin.Context) {
 
 // ============ CONTACTS & FRIENDS MANAGEMENT ============
 func GetContacts(ctx *gin.Context) {
-	userData, err := services.GetContacts(ctx)
+	userID, ok := ctx.Get("userId")
+	if !ok {
+		ctx.JSON(http.StatusUnauthorized, gin.H{"error": "user id not found"})
+		return
+	}
+	userData, err := services.GetContacts(userID.(string), objects.AllContacts)
 	if err != nil {
 		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
@@ -115,7 +131,12 @@ func GetContacts(ctx *gin.Context) {
 }
 
 func GetContactRequests(ctx *gin.Context) {
-	userData, err := services.GetContactRequests(ctx)
+	userID, ok := ctx.Get("userId")
+	if !ok {
+		ctx.JSON(http.StatusUnauthorized, gin.H{"error": "user id not found"})
+		return
+	}
+	userData, err := services.GetContactRequests(userID.(string))
 	if err != nil {
 		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
@@ -124,7 +145,12 @@ func GetContactRequests(ctx *gin.Context) {
 }
 
 func GetSentContactRequests(ctx *gin.Context) {
-	userData, err := services.GetSentContactRequests(ctx)
+	userID, ok := ctx.Get("userId")
+	if !ok {
+		ctx.JSON(http.StatusUnauthorized, gin.H{"error": "user id not found"})
+		return
+	}
+	userData, err := services.GetSentContactRequests(userID.(string))
 	if err != nil {
 		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return

@@ -1,6 +1,30 @@
 package models
 
-import "time"
+import (
+	"time"
+)
+
+// ============ SEARCH USER MODEL ============
+type SearchUser struct {
+	ID            *string `json:"_id" bson:"_id"`
+	Username      *string `json:"name" bson:"name"`
+	Avatar        *string `json:"avatar" bson:"avatar"`
+	DisplayName   *string `json:"displayName" bson:"displayName"`
+	StatusMessage *string `json:"statusMessage" bson:"statusMessage"`
+	IsVerified    *bool   `json:"isVerified" bson:"isVerified"`
+}
+
+// ============ REQUEST/RESPONSE MODELS FOR USER ============
+
+type UserProfile struct {
+	Username      *string `json:"username" bson:"username,omitempty"`
+	Email         *string `json:"email" bson:"email,omitempty"`
+	Phone         *string `json:"phone,omitempty" bson:"phone,omitempty"`
+	Avatar        *string `json:"avatar,omitempty" bson:"avatar,omitempty"`
+	DisplayName   *string `json:"displayName,omitempty" bson:"displayName,omitempty"`
+	StatusMessage *string `json:"statusMessage,omitempty" bson:"statusMessage,omitempty"`
+	IsVerified    *bool   `json:"isVerified,omitempty" bson:"isVerified,omitempty"`
+}
 
 // ============ REQUEST/RESPONSE MODELS FOR PRESENCE ============
 
