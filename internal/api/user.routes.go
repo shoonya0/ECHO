@@ -2,6 +2,7 @@ package routes
 
 import (
 	"gin/internal/controller"
+	"gin/internal/middleware"
 	"gin/objects"
 
 	"github.com/gin-gonic/gin"
@@ -11,7 +12,7 @@ import (
 func RegisterUserRoutes(r *gin.Engine) {
 	// Apply authentication middleware to all user routes
 	userApi := r.Group(objects.ApiBasePath)
-	// userApi.Use(middleware.AuthMiddleware()) // Add when implemented
+	userApi.Use(middleware.AuthMiddleware)
 
 	// ============ PROFILE MANAGEMENT ============
 	profileRoutes := userApi.Group("profile")
@@ -29,15 +30,17 @@ func RegisterUserRoutes(r *gin.Engine) {
 		// 	profileRoutes.GET("/statistics", controller.GetUserStatistics)      // Get user statistics
 	}
 
-	// ============ USER DISCOVERY & SEARCH ============
-	userRoutes := userApi.Group("users")
-	{
-		userRoutes.GET("/:id", controller.GetUserProfile)             // Get specific user profile
-		userRoutes.GET("/suggestions", controller.GetUserSuggestions) // Get friend suggestions
-		userRoutes.GET("/nearby", controller.GetNearbyUsers)          // Get nearby users (if location enabled)
-		userRoutes.GET("/popular", controller.GetPopularUsers)        // Get popular users
-		userRoutes.GET("/recent", controller.GetRecentUsers)          // Get recently joined users
-	}
+	// // ============ USER DISCOVERY & SEARCH ============
+	// userRoutes := userApi.Group("users")
+	// {
+	// 	userRoutes.GET("/:id", controller.GetUserProfile)             // Get specific user profile
+	// 	userRoutes.GET("/suggestions", controller.GetUserSuggestions) // Get friend suggestions
+	// 	userRoutes.GET("/nearby", controller.GetNearbyUsers)          // Get nearby users (if location enabled)
+	// 	userRoutes.GET("/popular", controller.GetPopularUsers)        // Get popular users
+	// 	userRoutes.GET("/recent", controller.GetRecentUsers)          // Get recently joined users
+	// }
+
+	// for later
 
 	// // ============ CONTACTS & FRIENDS MANAGEMENT ============
 	// contactRoutes := userApi.Group("users/me/contacts")

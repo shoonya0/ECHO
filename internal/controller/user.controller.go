@@ -6,29 +6,51 @@ import (
 	"net/http"
 
 	"github.com/gin-gonic/gin"
+	"go.mongodb.org/mongo-driver/v2/bson"
 )
 
 // ============ PROFILE MANAGEMENT ============
 
 // Get the authenticated user’s profile.
 func GetProfile(ctx *gin.Context) {
-	userData, err := services.GetProfile(ctx)
+	userID, ok := ctx.Get("user_id")
+	if !ok {
+		ctx.JSON(http.StatusUnauthorized, gin.H{"error": "user id not found"})
+		return
+	}
+	userData, isUserExists, err := services.GetUserIfExists(userID.(string))
 	if err != nil {
 		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
+	if !isUserExists {
+		ctx.JSON(http.StatusNotFound, gin.H{"error": "user data not found in the database"})
+		return
+	}
+
 	ctx.JSON(http.StatusOK, userData)
 }
 
 // Update profile fields (display name, avatar URL, status message).
 func UpdateProfile(ctx *gin.Context) {
+	var err error
 	user := models.User{}
 	if err := ctx.ShouldBindJSON(&user); err != nil {
 		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
+	userID, ok := ctx.Get("user_id")
+	if !ok {
+		ctx.JSON(http.StatusUnauthorized, gin.H{"error": "user id not found"})
+		return
+	}
+	user.ID, err = bson.ObjectIDFromHex(userID.(string))
+	if err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
 
-	userData, err := services.UpdateProfile(ctx, user)
+	userData, err := services.UpdateProfile(user)
 	if err != nil {
 		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
