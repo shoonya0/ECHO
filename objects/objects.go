@@ -20,26 +20,33 @@ type MainConfig struct {
 	JwtSecret          string `mapstructure:"JWT_SECRET"`
 }
 
+type Collection string
+type Database string
+
 // collection names
 const (
-	DBName      = "Echo"
-	UserColl    = "users"
-	ChatColl    = "chats"
-	MessageColl = "messages"
-	GroupColl   = "groups"
-	ContactColl = "contacts"
+	DBName             Database   = "Echo"
+	UserColl           Collection = "users"
+	ChatColl           Collection = "chats"
+	MessageColl        Collection = "messages"
+	GroupColl          Collection = "groups"
+	ContactColl        Collection = "contacts"
+	ContactRequestColl Collection = "contactRequests"
 )
 
 // contact type
-type ContactType int
+type ContactType string
+
+type ContactStatus string
 
 const (
-	RecentContacts ContactType = 0
-	AllContacts    ContactType = 1
-	StatusPending  string      = "pending"
-	StatusAccepted string      = "accepted"
-	StatusBlocked  string      = "blocked"
-	StatusFavorite string      = "favorite"
+	RecentContacts ContactType = "recent"
+	AllContacts    ContactType = "all"
+
+	StatusPending  ContactStatus = "pendingContacts"
+	StatusAccepted ContactStatus = "acceptedContacts"
+	StatusBlocked  ContactStatus = "blockedContacts"
+	StatusFavorite ContactStatus = "favoritesContacts"
 )
 
 // api paths

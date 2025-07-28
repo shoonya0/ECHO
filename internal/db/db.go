@@ -25,7 +25,7 @@ func ConnectDB(ctx context.Context) {
 		panic(err)
 	}
 
-	objects.DB = objects.DBClient.Database(objects.DBName)
+	objects.DB = objects.DBClient.Database(string(objects.DBName))
 
 	// defer func() {
 	// 	if err = client.Disconnect(ctx); err != nil {

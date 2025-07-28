@@ -3,7 +3,6 @@ package controller
 import (
 	"gin/internal/models"
 	"gin/internal/services"
-	"gin/objects"
 	"net/http"
 
 	"github.com/gin-gonic/gin"
@@ -99,70 +98,4 @@ func GetPopularUsers(ctx *gin.Context) {
 	// 	return
 	// }
 	ctx.JSON(http.StatusOK, gin.H{"message": "Popular users"})
-}
-
-func GetRecentUsers(ctx *gin.Context) {
-	userID, ok := ctx.Get("userId")
-	if !ok {
-		ctx.JSON(http.StatusUnauthorized, gin.H{"error": "user id not found"})
-		return
-	}
-	userData, err := services.GetContacts(userID.(string), objects.RecentContacts)
-	if err != nil {
-		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-		return
-	}
-	ctx.JSON(http.StatusOK, userData)
-}
-
-// ============ CONTACTS & FRIENDS MANAGEMENT ============
-func GetContacts(ctx *gin.Context) {
-	userID, ok := ctx.Get("userId")
-	if !ok {
-		ctx.JSON(http.StatusUnauthorized, gin.H{"error": "user id not found"})
-		return
-	}
-	userData, err := services.GetContacts(userID.(string), objects.AllContacts)
-	if err != nil {
-		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-		return
-	}
-	ctx.JSON(http.StatusOK, userData)
-}
-
-func GetContactRequests(ctx *gin.Context) {
-	userID, ok := ctx.Get("userId")
-	if !ok {
-		ctx.JSON(http.StatusUnauthorized, gin.H{"error": "user id not found"})
-		return
-	}
-	userData, err := services.GetContactRequests(userID.(string))
-	if err != nil {
-		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-		return
-	}
-	ctx.JSON(http.StatusOK, userData)
-}
-
-func GetSentContactRequests(ctx *gin.Context) {
-	userID, ok := ctx.Get("userId")
-	if !ok {
-		ctx.JSON(http.StatusUnauthorized, gin.H{"error": "user id not found"})
-		return
-	}
-	userData, err := services.GetSentContactRequests(userID.(string))
-	if err != nil {
-		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-		return
-	}
-	ctx.JSON(http.StatusOK, userData)
-}
-
-func GetBlockedUsers(ctx *gin.Context) {
-	userData, err := services.GetBlockedUsers(ctx)
-	if err != nil {
-		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-		return
-	}
-	ctx.JSON(http.StatusOK, userData)
 }

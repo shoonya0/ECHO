@@ -1,6 +1,7 @@
 package models
 
 import (
+	"gin/objects"
 	"time"
 
 	"go.mongodb.org/mongo-driver/v2/bson"
@@ -20,20 +21,25 @@ import (
 // }
 
 // if this is an sub type of Contact then is this also contain it's own _id in mongo db?
-type Invite struct {
-	ChatID      string `json:"_id" bson:"_id"`
-	Status      string `json:"status" bson:"status"`             // "pending", "accepted", "blocked"
-	RequestedBy string `json:"requested_by" bson:"requested_by"` // Who sent the friend request
+type ContactRequest struct {
+	ChatID      bson.ObjectID         `json:"_id,omitempty" bson:"_id,omitempty"`
+	RequestedBy bson.ObjectID         `json:"requestedBy" bson:"requestedBy"` // Who sent the friend request
+	RequestedTo bson.ObjectID         `json:"requestedTo" bson:"requestedTo"` // Who received the friend request
+	Status      objects.ContactStatus `json:"status" bson:"status"`           // "pending", "accepted", "blocked" , "favorite"
 
 	// timestamps
-	CreatedAt time.Time  `json:"created_at" bson:"created_at"`
-	ExpiresAt *time.Time `json:"expires_at" bson:"expires_at"` // Expiration time for the invite
+	CreatedAt time.Time `json:"createdAt" bson:"createdAt"`
+	UpdatedAt time.Time `json:"updatedAt" bson:"updatedAt"`
 }
 
 type Contact struct {
-	ID           bson.ObjectID     `json:"_id,omitempty" bson:"_id,omitempty"`
-	Contacts     map[string]Invite `json:"contacts" bson:"contacts"`
-	SentRequests []string          `json:"sentRequests" bson:"sentRequests"`
-	CreatedAt    time.Time         `json:"createdAt" bson:"createdAt"`
-	UpdatedAt    time.Time         `json:"updatedAt" bson:"updatedAt"`
+	ID           bson.ObjectID   `json:"_id,omitempty" bson:"_id,omitempty"`
+	Contacts     []bson.ObjectID `json:"contacts" bson:"contacts"`
+	CreatedAt    time.Time       `json:"createdAt" bson:"createdAt"`
+	UpdatedAt    time.Time       `json:"updatedAt" bson:"updatedAt"` // this is the last time the contact was updated
+	SentRequests []bson.ObjectID `json:"sentRequests" bson:"sentRequests"`
+	// AcceptedContacts  []bson.ObjectID `json:"acceptedContacts" bson:"acceptedContacts"`
+	// PendingContacts   []bson.ObjectID `json:"pendingContacts" bson:"pendingContacts"`
+	// BlockedContacts   []bson.ObjectID `json:"blockedContacts" bson:"blockedContacts"`
+	// FavoritesContacts []bson.ObjectID `json:"favoritesContacts" bson:"favoritesContacts"`
 }
