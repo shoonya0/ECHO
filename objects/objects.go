@@ -20,33 +20,76 @@ type MainConfig struct {
 	JwtSecret          string `mapstructure:"JWT_SECRET"`
 }
 
-type Collection string
+// collection
 type Database string
+type Collection string
 
-// collection names
-const (
-	DBName             Database   = "Echo"
-	UserColl           Collection = "users"
-	ChatColl           Collection = "chats"
-	MessageColl        Collection = "messages"
-	GroupColl          Collection = "groups"
-	ContactColl        Collection = "contacts"
-	ContactRequestColl Collection = "contactRequests"
-)
+// user type
+type UserType string
 
 // contact type
 type ContactType string
-
 type ContactStatus string
+type MessageType string
+type UserStatus string
+
+// notification type
+type NotificationType string
+
+// cache ttl
+type CacheTTL int
+
+// cache keys
+type CacheKey string
 
 const (
+	// collection names
+	DBName      Database   = "Echo"
+	UserColl    Collection = "users"
+	ChatColl    Collection = "chats"
+	MessageColl Collection = "messages"
+
+	// user type
+	UserTypeAdmin UserType = "admin"
+	UserTypeUser  UserType = "user"
+
+	// contact type
 	RecentContacts ContactType = "recent"
 	AllContacts    ContactType = "all"
 
-	StatusPending  ContactStatus = "pendingContacts"
-	StatusAccepted ContactStatus = "acceptedContacts"
-	StatusBlocked  ContactStatus = "blockedContacts"
-	StatusFavorite ContactStatus = "favoritesContacts"
+	// contact status
+	StatusPending  ContactStatus = "pending"
+	StatusAccepted ContactStatus = "accepted"
+	StatusBlocked  ContactStatus = "blocked"
+	StatusFavorite ContactStatus = "favorite"
+
+	// message type
+	MessageTypeText     MessageType = "text"
+	MessageTypeImage    MessageType = "image"
+	MessageTypeFile     MessageType = "file"
+	MessageTypeAudio    MessageType = "audio"
+	MessageTypeVideo    MessageType = "video"
+	MessageTypeLocation MessageType = "location"
+
+	// user status
+	UserStatusOnline    UserStatus = "online"
+	UserStatusAway      UserStatus = "away"
+	UserStatusDND       UserStatus = "dnd"
+	UserStatusInvisible UserStatus = "invisible"
+	UserStatusOffline   UserStatus = "offline"
+
+	// notification types
+	NotificationTypeMessage       NotificationType = "message"
+	NotificationTypeMention       NotificationType = "mention"
+	NotificationTypeFriendRequest NotificationType = "friend_request"
+	NotificationTypeGroupInvite   NotificationType = "group_invite"
+	NotificationTypeCall          NotificationType = "call"
+
+	// cache ttl (seconds)
+	CacheUserProfile     CacheTTL = 3600 // 1 hour
+	CacheChatList        CacheTTL = 1800 // 30 minutes
+	CachePresence        CacheTTL = 300  // 5 minutes
+	CacheTypingIndicator CacheTTL = 10   // 10 seconds
 )
 
 // api paths

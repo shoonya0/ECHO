@@ -6,63 +6,99 @@ import (
 	"go.mongodb.org/mongo-driver/v2/bson"
 )
 
+// ============ OPTIMIZED MESSAGE MODEL WITH EMBEDDED THREAD DATA ============
+// Embeds thread replies and reactions to reduce queries
 type Message struct {
-	ID          bson.ObjectID `json:"id" bson:"_id,omitempty"`
-	ChatID      string        `json:"chat_id" bson:"chat_id"`     // Group ID or DM thread ID
-	ChatType    string        `json:"chat_type" bson:"chat_type"` // "direct" or "group" or "channel"
-	SenderID    string        `json:"sender_id" bson:"sender_id"`
-	Content     string        `json:"content" bson:"content"`
-	MessageType string        `json:"message_type" bson:"message_type"` // "text", "image", "file", "audio", "video"
+	ID       bson.ObjectID `json:"_id,omitempty" bson:"_id,omitempty"`
+	ChatID   bson.ObjectID `json:"chatId" bson:"chatId"`
+	SenderID bson.ObjectID `json:"senderId" bson:"senderId"`
 
-	// Thread/Reply functionality
-	ParentID *string `json:"parent_id,omitempty" bson:"parent_id,omitempty"` // For replies
-	ThreadID *string `json:"thread_id,omitempty" bson:"thread_id,omitempty"` // For thread organization means if the message is a reply to a message
+	// Embedded sender info to avoid user lookup
+	Sender MessageSenderEmbed `json:"sender" bson:"sender"`
 
-	// File/Media information
-	FileURL  *string `json:"file_url,omitempty" bson:"file_url,omitempty"`   // file url
-	FileName *string `json:"file_name,omitempty" bson:"file_name,omitempty"` // file name
-	FileSize *int64  `json:"file_size,omitempty" bson:"file_size,omitempty"` // file size
-	MimeType *string `json:"mime_type,omitempty" bson:"mime_type,omitempty"` // file mime type
+	// Message content
+	Content     string `json:"content" bson:"content"`
+	MessageType string `json:"messageType" bson:"messageType"` // "text", "image", "file", "audio", "video"
 
-	// Message status and metadata
-	IsEdited  bool       `json:"is_edited" bson:"is_edited"`
-	IsDeleted bool       `json:"is_deleted" bson:"is_deleted"`
-	IsPinned  bool       `json:"is_pinned" bson:"is_pinned"`
-	EditedAt  *time.Time `json:"edited_at,omitempty" bson:"edited_at,omitempty"`
+	// Thread/Reply data embedded
+	Thread MessageThreadEmbed `json:"thread" bson:"thread"`
 
-	// Reactions
-	Reactions map[string][]string `json:"reactions" bson:"reactions"` // emoji -> [userID1, userID2]
+	// File/Media embedded
+	Attachments []AttachmentEmbed `json:"attachments,omitempty" bson:"attachments,omitempty"`
 
-	// Mentions and formatting
-	Mentions     []string `json:"mentions" bson:"mentions"`           // User IDs mentioned
-	RoleMentions []string `json:"role_mentions" bson:"role_mentions"` // Role IDs mentioned
+	// Reactions aggregated
+	Reactions map[string]ReactionEmbed `json:"reactions" bson:"reactions"` // emoji -> reaction data
 
-	// Read receipts
-	ReadBy map[string]time.Time `json:"read_by" bson:"read_by"` // userID -> timestamp
+	// Mentions
+	Mentions MentionsEmbed `json:"mentions" bson:"mentions"`
 
-	// Timestamps
-	CreatedAt time.Time `json:"created_at" bson:"created_at"`
-	UpdatedAt time.Time `json:"updated_at" bson:"updated_at"`
+	// Message status
+	Status MessageStatusEmbed `json:"status" bson:"status"`
+
+	// Read receipts (for group chats)
+	ReadBy map[string]time.Time `json:"readBy" bson:"readBy"` // userID -> read timestamp
 
 	// Search optimization
-	SearchContent string `json:"-" bson:"search_content"` // Lowercased content for search
-}
-
-type Attachment struct {
-	ID           bson.ObjectID `json:"id" bson:"_id,omitempty"`
-	OriginalName string        `json:"original_name" bson:"original_name"`
-	StoragePath  string        `json:"storage_path" bson:"storage_path"`
-	URL          string        `json:"url" bson:"url"`
-	MimeType     string        `json:"mime_type" bson:"mime_type"`
-	Size         int64         `json:"size" bson:"size"`
-	UploaderID   string        `json:"uploader_id" bson:"uploader_id"`
-
-	// Image/Video specific metadata
-	Width    *int `json:"width,omitempty" bson:"width,omitempty"`
-	Height   *int `json:"height,omitempty" bson:"height,omitempty"`
-	Duration *int `json:"duration,omitempty" bson:"duration,omitempty"` // For audio/video in seconds
+	SearchContent string   `json:"-" bson:"searchContent"` // Lowercased content
+	SearchTags    []string `json:"-" bson:"searchTags"`    // Extracted hashtags, mentions
 
 	// Timestamps
-	CreatedAt time.Time  `json:"created_at" bson:"created_at"`
-	ExpiresAt *time.Time `json:"expires_at,omitempty" bson:"expires_at,omitempty"`
+	CreatedAt time.Time `json:"createdAt" bson:"createdAt"`
+	UpdatedAt time.Time `json:"updatedAt" bson:"updatedAt"`
+}
+
+type MessageSenderEmbed struct {
+	UserID      bson.ObjectID `json:"userId" bson:"userId"`
+	Username    string        `json:"username" bson:"username"`
+	DisplayName string        `json:"displayName" bson:"displayName"`
+	Avatar      string        `json:"avatar" bson:"avatar"`
+}
+
+type MessageThreadEmbed struct {
+	ParentID    *bson.ObjectID `json:"parentId,omitempty" bson:"parentId,omitempty"`
+	ThreadID    *bson.ObjectID `json:"threadId,omitempty" bson:"threadId,omitempty"`
+	ReplyCount  int            `json:"replyCount" bson:"replyCount"`
+	LastReplyAt *time.Time     `json:"lastReplyAt,omitempty" bson:"lastReplyAt,omitempty"`
+	// Embed recent replies to avoid separate queries
+	RecentReplies []MessageReplyEmbed `json:"recentReplies,omitempty" bson:"recentReplies,omitempty"`
+}
+
+type MessageReplyEmbed struct {
+	ID        bson.ObjectID `json:"id" bson:"id"`
+	Content   string        `json:"content" bson:"content"`
+	SenderID  bson.ObjectID `json:"senderId" bson:"senderId"`
+	Username  string        `json:"username" bson:"username"`
+	CreatedAt time.Time     `json:"createdAt" bson:"createdAt"`
+}
+
+type AttachmentEmbed struct {
+	ID           bson.ObjectID `json:"id" bson:"id"`
+	OriginalName string        `json:"originalName" bson:"originalName"`
+	URL          string        `json:"url" bson:"url"`
+	MimeType     string        `json:"mimeType" bson:"mimeType"`
+	Size         int64         `json:"size" bson:"size"`
+	Width        *int          `json:"width,omitempty" bson:"width,omitempty"`
+	Height       *int          `json:"height,omitempty" bson:"height,omitempty"`
+	Duration     *int          `json:"duration,omitempty" bson:"duration,omitempty"`
+}
+
+type ReactionEmbed struct {
+	Count   int               `json:"count" bson:"count"`
+	Users   []bson.ObjectID   `json:"users" bson:"users"`
+	Details map[string]string `json:"details" bson:"details"` // userID -> username for quick display
+}
+
+type MentionsEmbed struct {
+	UserIDs          []bson.ObjectID `json:"userIds" bson:"userIds"`
+	UserNames        []string        `json:"userNames" bson:"userNames"` // Cached for display
+	RoleIDs          []string        `json:"roleIds" bson:"roleIds"`
+	IsChannelMention bool            `json:"isChannelMention" bson:"isChannelMention"`
+}
+
+type MessageStatusEmbed struct {
+	IsEdited  bool       `json:"isEdited" bson:"isEdited"`
+	IsDeleted bool       `json:"isDeleted" bson:"isDeleted"`
+	IsPinned  bool       `json:"isPinned" bson:"isPinned"`
+	EditedAt  *time.Time `json:"editedAt,omitempty" bson:"editedAt,omitempty"`
+	DeletedAt *time.Time `json:"deletedAt,omitempty" bson:"deletedAt,omitempty"`
 }

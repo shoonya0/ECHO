@@ -1,45 +1,71 @@
 package models
 
 import (
-	"gin/objects"
 	"time"
 
 	"go.mongodb.org/mongo-driver/v2/bson"
 )
 
-// here user id 1 and user id 2 save the refference of the user from the user collection
-// type Contact struct {
-// 	ID          bson.ObjectID `json:"id" bson:"_id,omitempty"`
-// 	ID1         string        `json:"id_1" bson:"id_1"`                 // this is the user id of the user (reff ID) who is the contact
-// 	ID2         string        `json:"id_2" bson:"id_2"`                 // this is the user id of the user (reff ID) who is the contact
-// 	Status      string        `json:"status" bson:"status"`             // "pending", "accepted", "blocked"
-// 	RequestedBy string        `json:"requested_by" bson:"requested_by"` // Who sent the friend request
+// ============ OPTIMIZED CONTACT MODEL - DENORMALIZED ============
+// Single model for all contact-related operations
+type ContactInfoEmbed struct {
+	// All contact relationships in one document
+	Relationships map[string]ContactRelationship `json:"relationships" bson:"relationships"` // targetUserID -> relationship
 
-// 	// Timestamps
-// 	CreatedAt  time.Time  `json:"created_at" bson:"created_at"`
-// 	AcceptedAt *time.Time `json:"accepted_at,omitempty" bson:"accepted_at,omitempty"`
-// }
+	// Quick lookup arrays (duplicated for performance)
+	BlockedUsers []bson.ObjectID `json:"blockedUsers" bson:"blockedUsers"`
+	PendingOut   []bson.ObjectID `json:"pendingOut" bson:"pendingOut"`
+	PendingIn    []bson.ObjectID `json:"pendingIn" bson:"pendingIn"`
+	Favorites    []bson.ObjectID `json:"favorites" bson:"favorites"`
 
-// if this is an sub type of Contact then is this also contain it's own _id in mongo db?
-type ContactRequest struct {
-	ChatID      bson.ObjectID         `json:"_id,omitempty" bson:"_id,omitempty"`
-	RequestedBy bson.ObjectID         `json:"requestedBy" bson:"requestedBy"` // Who sent the friend request
-	RequestedTo bson.ObjectID         `json:"requestedTo" bson:"requestedTo"` // Who received the friend request
-	Status      objects.ContactStatus `json:"status" bson:"status"`           // "pending", "accepted", "blocked" , "favorite"
+	// Cached stats
+	Stats ContactStatsEmbed `json:"stats" bson:"stats"`
 
-	// timestamps
+	// Recent activity for sorting
+	RecentInteractions []RecentInteractionEmbed `json:"recentInteractions" bson:"recentInteractions"`
+
+	// Timestamps
 	CreatedAt time.Time `json:"createdAt" bson:"createdAt"`
 	UpdatedAt time.Time `json:"updatedAt" bson:"updatedAt"`
 }
 
-type Contact struct {
-	ID           bson.ObjectID   `json:"_id,omitempty" bson:"_id,omitempty"`
-	Contacts     []bson.ObjectID `json:"contacts" bson:"contacts"`
-	CreatedAt    time.Time       `json:"createdAt" bson:"createdAt"`
-	UpdatedAt    time.Time       `json:"updatedAt" bson:"updatedAt"` // this is the last time the contact was updated
-	SentRequests []bson.ObjectID `json:"sentRequests" bson:"sentRequests"`
-	// AcceptedContacts  []bson.ObjectID `json:"acceptedContacts" bson:"acceptedContacts"`
-	// PendingContacts   []bson.ObjectID `json:"pendingContacts" bson:"pendingContacts"`
-	// BlockedContacts   []bson.ObjectID `json:"blockedContacts" bson:"blockedContacts"`
-	// FavoritesContacts []bson.ObjectID `json:"favoritesContacts" bson:"favoritesContacts"`
+type ContactRelationship struct {
+	TargetUserID bson.ObjectID `json:"targetUserId" bson:"targetUserId"`
+	Status       string        `json:"status" bson:"status"` // "active", "blocked", "pending_out", "pending_in"
+	RequestedBy  bson.ObjectID `json:"requestedBy" bson:"requestedBy"`
+	IsFavorite   bool          `json:"isFavorite" bson:"isFavorite"`
+
+	// Embedded user data for quick access
+	UserInfo ContactUserInfo `json:"userInfo" bson:"userInfo"`
+
+	// Interaction stats
+	// MessageCount    int64     `json:"messageCount" bson:"messageCount"`
+	// LastInteraction time.Time `json:"lastInteraction" bson:"lastInteraction"`
+
+	// Timestamps
+	CreatedAt  time.Time  `json:"createdAt" bson:"createdAt"`
+	AcceptedAt *time.Time `json:"acceptedAt,omitempty" bson:"acceptedAt,omitempty"`
+}
+
+type ContactUserInfo struct {
+	Username    string `json:"username" bson:"username"`
+	DisplayName string `json:"displayName" bson:"displayName"`
+	Avatar      string `json:"avatar" bson:"avatar"`
+	Status      string `json:"status" bson:"status"`
+	// IsOnline    bool      `json:"isOnline" bson:"isOnline"`
+	// LastSeen    time.Time `json:"lastSeen" bson:"lastSeen"`
+}
+
+type ContactStatsEmbed struct {
+	TotalContacts   int `json:"totalContacts" bson:"totalContacts"`
+	BlockedCount    int `json:"blockedCount" bson:"blockedCount"`
+	PendingOutCount int `json:"pendingOutCount" bson:"pendingOutCount"`
+	PendingInCount  int `json:"pendingInCount" bson:"pendingInCount"`
+	FavoriteCount   int `json:"favoriteCount" bson:"favoriteCount"`
+}
+
+type RecentInteractionEmbed struct {
+	UserID        bson.ObjectID `json:"userId" bson:"userId"`
+	LastMessageAt time.Time     `json:"lastMessageAt" bson:"lastMessageAt"`
+	MessageCount  int           `json:"messageCount" bson:"messageCount"` // in last 24h
 }

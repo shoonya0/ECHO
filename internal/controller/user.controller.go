@@ -1,8 +1,10 @@
 package controller
 
 import (
+	"context"
 	"gin/internal/models"
 	"gin/internal/services"
+	"gin/objects"
 	"net/http"
 
 	"github.com/gin-gonic/gin"
@@ -18,13 +20,26 @@ func GetProfile(ctx *gin.Context) {
 		ctx.JSON(http.StatusUnauthorized, gin.H{"error": "user id not found"})
 		return
 	}
-	userData, isUserExists, err := services.GetUserIfExists(userID.(string))
+
+	projection := bson.M{
+		"_id":                      1,
+		"username":                 1,
+		"email":                    1,
+		"phone":                    1,
+		"presence":                 1,
+		"profile":                  1,
+		"accountStatus.isVerified": 1,
+	}
+
+	objectID, err := bson.ObjectIDFromHex(userID.(string))
 	if err != nil {
-		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
-	if !isUserExists {
-		ctx.JSON(http.StatusNotFound, gin.H{"error": "user data not found in the database"})
+
+	userData, err := services.FindByID[models.GetUserProfile](context.Background(), objects.DB.Collection(string(objects.UserColl)), bson.M{"_id": objectID}, projection)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
 

@@ -2,16 +2,28 @@ package models
 
 import (
 	"time"
+
+	"go.mongodb.org/mongo-driver/v2/bson"
 )
+
+type GetUserProfile struct {
+	ID          bson.ObjectID    `json:"_id" bson:"_id"`
+	Username    *string          `json:"username" bson:"username"`
+	Email       *string          `json:"email" bson:"email"`
+	Phone       *string          `json:"phone" bson:"phone"`
+	Presence    PresenceEmbed    `json:"presence" bson:"presence"`
+	UserProfile UserProfileEmbed `json:"userProfile" bson:"profile"`
+	IsVerified  bool             `json:"accountStatus.isVerified" bson:"isVerified"`
+}
 
 // ============ SEARCH USER MODEL ============
 type SearchUser struct {
-	ID            *string `json:"_id" bson:"_id"`
-	Username      *string `json:"name" bson:"name"`
-	Avatar        *string `json:"avatar" bson:"avatar"`
-	DisplayName   *string `json:"displayName" bson:"displayName"`
-	StatusMessage *string `json:"statusMessage" bson:"statusMessage"`
-	IsVerified    *bool   `json:"isVerified" bson:"isVerified"`
+	ID            bson.ObjectID `json:"_id" bson:"_id"`
+	Username      *string       `json:"name" bson:"name"`
+	Avatar        *string       `json:"avatar" bson:"avatar"`
+	DisplayName   *string       `json:"displayName" bson:"displayName"`
+	StatusMessage *string       `json:"statusMessage" bson:"statusMessage"`
+	IsVerified    *bool         `json:"isVerified" bson:"isVerified"`
 }
 
 // ============ REQUEST/RESPONSE MODELS FOR USER ============
