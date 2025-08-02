@@ -42,22 +42,20 @@ func Signup() gin.HandlerFunc {
 		}
 
 		// check if email already exists
-		count, err := objects.DBClient.Database("Echo").Collection("users").CountDocuments(c.Request.Context(),
-			bson.M{"email": req.Email},
-		)
+		count, err := objects.DB.Collection(string(objects.UserColl)).CountDocuments(c.Request.Context(), bson.M{"email": req.Email})
 		if err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "database error"})
+			utils.ErrorResponse(c, http.StatusInternalServerError, "failed to check email", err)
 			return
 		}
 		if count > 0 {
-			c.JSON(http.StatusConflict, gin.H{"error": "email already registered"})
+			utils.ErrorResponse(c, http.StatusConflict, "email already registered", nil)
 			return
 		}
 
 		// hash password
 		hash, err := bcrypt.GenerateFromPassword([]byte(req.Password), bcrypt.DefaultCost)
 		if err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "could not hash password"})
+			utils.ErrorResponse(c, http.StatusInternalServerError, "could not hash password", err)
 			return
 		}
 
@@ -68,15 +66,12 @@ func Signup() gin.HandlerFunc {
 			CreatedAt:    time.Now(),
 		}
 
-		if _, err := objects.DBClient.Database("Echo").Collection("users").InsertOne(c.Request.Context(), user); err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		if _, err := objects.DB.Collection(string(objects.UserColl)).InsertOne(c.Request.Context(), user); err != nil {
+			utils.ErrorResponse(c, http.StatusInternalServerError, "failed to create user", err)
 			return
 		}
 
-		c.JSON(http.StatusCreated, gin.H{
-			"id":    req.ID.Hex(),
-			"email": user.Email,
-		})
+		utils.SuccessResponse(c, "User created successfully", user)
 	}
 }
 
@@ -85,25 +80,25 @@ func Login() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		var req LoginRequest
 		if err := c.ShouldBindJSON(&req); err != nil {
-			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+			utils.ErrorResponse(c, http.StatusBadRequest, "invalid request", err)
 			return
 		}
 
 		if req.Email == "" || req.Password == "" {
-			c.JSON(http.StatusBadRequest, gin.H{"error": "email and password are required"})
+			utils.ErrorResponse(c, http.StatusBadRequest, "email and password are required", nil)
 			return
 		}
 
 		// find user by email
 		var user models.User
-		err := objects.DBClient.Database("Echo").Collection("users").FindOne(c.Request.Context(),
+		err := objects.DB.Collection(string(objects.UserColl)).FindOne(c.Request.Context(),
 			bson.M{"email": req.Email},
 		).Decode(&user)
 		if err == mongo.ErrNoDocuments {
-			c.JSON(http.StatusUnauthorized, gin.H{"error": "invalid credentials"})
+			utils.ErrorResponse(c, http.StatusUnauthorized, "invalid credentials", err)
 			return
 		} else if err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "database error"})
+			utils.ErrorResponse(c, http.StatusInternalServerError, "failed to find user", err)
 			return
 		}
 
@@ -111,21 +106,22 @@ func Login() gin.HandlerFunc {
 		if err := bcrypt.CompareHashAndPassword(
 			[]byte(user.PasswordHash), []byte(req.Password),
 		); err != nil {
-			c.JSON(http.StatusUnauthorized, gin.H{"error": "invalid credentials"})
+			utils.ErrorResponse(c, http.StatusUnauthorized, "invalid credentials", err)
 			return
 		}
 
 		// generate JWT token
 		token, err := utils.GetJWTToken(user.ID.Hex(), user.Email, time.Now().Add(24*time.Hour).Unix())
 		if err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "could not generate token"})
+			utils.ErrorResponse(c, http.StatusInternalServerError, "could not generate token", err)
 			return
 		}
 
-		c.JSON(http.StatusOK, gin.H{
+		utils.SuccessResponse(c, "Login successful", gin.H{
 			"token": token,
 			"user":  user,
 		})
+
 	}
 }
 

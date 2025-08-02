@@ -10,16 +10,49 @@ import (
 	"go.mongodb.org/mongo-driver/v2/mongo/options"
 )
 
-func unmarshalStructureIntoStructure[T any](source T, destination *T) error {
-	jsonData, err := json.Marshal(source)
+// BuildPartialUpdateDocument creates a MongoDB update document only with non-nil fields
+// This prevents updating fields that weren't provided in the request
+func BuildPartialUpdateDocument(updateReq interface{}) bson.M {
+	updateDoc := bson.M{}
+
+	// Convert to JSON first to handle nested structures
+	jsonData, err := json.Marshal(updateReq)
 	if err != nil {
-		return err
+		return updateDoc
 	}
-	err = json.Unmarshal(jsonData, destination)
-	if err != nil {
-		return err
+
+	// Unmarshal to a map to check which fields are present
+	var dataMap map[string]interface{}
+	if err := json.Unmarshal(jsonData, &dataMap); err != nil {
+		return updateDoc
 	}
-	return nil
+
+	// Build the update document recursively
+	buildNestedUpdate("", dataMap, updateDoc)
+
+	return updateDoc
+}
+
+// buildNestedUpdate recursively builds nested update fields for MongoDB
+func buildNestedUpdate(prefix string, data map[string]interface{}, updateDoc bson.M) {
+	for key, value := range data {
+		fullKey := key
+		if prefix != "" {
+			fullKey = prefix + "." + key
+		}
+
+		switch v := value.(type) {
+		case map[string]interface{}:
+			// Recursively handle nested objects
+			buildNestedUpdate(fullKey, v, updateDoc)
+		case nil:
+			// Skip nil values (these represent fields not provided in request)
+			continue
+		default:
+			// Add non-nil values to update document
+			updateDoc[fullKey] = value
+		}
+	}
 }
 
 // we use UserService of interface type to implement the interface
@@ -174,4 +207,18 @@ func UpdateMany[T any](
 	res, err := coll.UpdateMany(ctx, filter, update, opts...)
 	return res, err
 
+}
+
+// removeElement removes an element from a slice
+func removeElement(slice *[]bson.ObjectID, element bson.ObjectID) *[]bson.ObjectID {
+	if slice == nil {
+		return slice
+	}
+	result := make([]bson.ObjectID, 0, len(*slice))
+	for _, item := range *slice {
+		if item != element {
+			result = append(result, item)
+		}
+	}
+	return &result
 }

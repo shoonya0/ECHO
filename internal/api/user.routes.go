@@ -30,37 +30,35 @@ func RegisterUserRoutes(r *gin.Engine) {
 		// 	profileRoutes.GET("/statistics", controller.GetUserStatistics)      // Get user statistics
 	}
 
-	// // // ============ USER DISCOVERY & SEARCH ============
-	// userRoutes := userApi.Group("users")
-	// {
-	// 	userRoutes.GET("/:id", controller.GetUserProfile) // Get specific user profile
-	// 	// 	userRoutes.GET("/suggestions", controller.GetUserSuggestions) // Get friend suggestions
-	// 	// 	userRoutes.GET("/nearby", controller.GetNearbyUsers)          // Get nearby users (if location enabled)
-	// 	// 	userRoutes.GET("/popular", controller.GetPopularUsers)        // Get popular users
-	// 	userRoutes.GET("/recent", controller.GetRecentUsers) // Get recently joined users
-	// }
+	// ============ USER DISCOVERY & SEARCH ============
+	userRoutes := userApi.Group("users")
+	{
+		userRoutes.GET("/:id", controller.GetUserProfile)             // Get specific user profile
+		userRoutes.GET("/suggestions", controller.GetUserSuggestions) // Get friend suggestions
+		userRoutes.GET("/nearby", controller.GetNearbyUsers)          // Get nearby users (if location enabled)
+		userRoutes.GET("/popular", controller.GetPopularUsers)        // Get popular users
+	}
 
-	// // for later
+	// ============ CONTACTS & FRIENDS MANAGEMENT ============
+	contactRoutes := userApi.Group("users/contacts")
+	{
+		// Contact List Management
+		contactRoutes.GET("/", controller.GetUsersContacts)                    // Get users contacts
+		contactRoutes.GET("/requests", controller.GetContactRequests)          // Get pending contact requests
+		contactRoutes.GET("/sent-requests", controller.GetSentContactRequests) // Get sent contact requests show all the users who you have sent the contact request
+		contactRoutes.GET("/blocked", controller.GetBlockedUsers)              // Get blocked users list
+		contactRoutes.GET("/favorites", controller.GetFavoriteContacts)        // Get favorite contacts
 
-	// // // ============ CONTACTS & FRIENDS MANAGEMENT ============
-	// contactRoutes := userApi.Group("users/contacts")
-	// {
-	// 	// Contact List Management
-	// 	contactRoutes.GET("/", controller.GetContacts)                         // Get user's contacts/friends
-	// 	contactRoutes.GET("/requests", controller.GetContactRequests)          // Get pending contact requests
-	// 	contactRoutes.GET("/sent-requests", controller.GetSentContactRequests) // Get sent contact requests show all the users who you have sent the contact request
-	// 	contactRoutes.GET("/blocked", controller.GetBlockedUsers)              // Get blocked users list
-
-	// 	// Contact Actions
-	// 	contactRoutes.POST("/:targetUserId", controller.SendContactRequest) // Send contact request
-	// 	// contactRoutes.PUT("/:requestId", controller.AcceptOrDeclineContactRequest) // Accept/decline contact request
-	// 	// 	contactRoutes.DELETE("/:contactId", controller.RemoveContact)              // Remove contact/friend
-	// 	// 	contactRoutes.POST("/:userId/block", controller.BlockUser)                 // Block user
-	// 	// 	contactRoutes.DELETE("/:userId/block", controller.UnblockUser)             // Unblock user
-	// 	// 	contactRoutes.POST("/:userId/favorite", controller.AddToFavorites)         // Add to favorites
-	// 	// 	contactRoutes.DELETE("/:userId/favorite", controller.RemoveFromFavorites)  // Remove from favorites
-	// 	// 	contactRoutes.GET("/favorites", controller.GetFavoriteContacts)            // Get favorite contacts
-	// }
+		// Contact Actions
+		contactRoutes.POST("/:targetUserId", controller.SendContactRequest)        // Send contact request
+		contactRoutes.PUT("/:requestId", controller.AcceptOrDeclineContactRequest) // Accept/decline contact request
+		// 	// 	contactRoutes.DELETE("/:contactId", controller.RemoveContact)              // Remove contact/friend
+		// 	// 	contactRoutes.POST("/:userId/block", controller.BlockUser)                 // Block user
+		// 	// 	contactRoutes.DELETE("/:userId/block", controller.UnblockUser)             // Unblock user
+		// 	// 	contactRoutes.POST("/:userId/favorite", controller.AddToFavorites)         // Add to favorites
+		// 	// 	contactRoutes.DELETE("/:userId/favorite", controller.RemoveFromFavorites)  // Remove from favorites
+		// 	// 	contactRoutes.GET("/favorites", controller.GetFavoriteContacts)            // Get favorite contacts
+	}
 
 	// // ============ PRESENCE & STATUS ============
 	// presenceRoutes := userApi.Group("users/me/status")

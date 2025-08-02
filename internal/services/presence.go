@@ -75,8 +75,8 @@ func (ps *PresenceService) UpdatePresence(c *gin.Context, req *models.UpdatePres
 	}
 
 	// Validate status
-	if !isValidStatus(req.Status) {
-		return fmt.Errorf("invalid status: %s", req.Status)
+	if !isValidStatus(*req.Status) {
+		return fmt.Errorf("invalid status: %s", *req.Status)
 	}
 
 	// Get custom status and device info
@@ -88,7 +88,7 @@ func (ps *PresenceService) UpdatePresence(c *gin.Context, req *models.UpdatePres
 	// Update presence using pub/sub manager
 	err := ps.pubsub.UpdatePresence(
 		userID.(string),
-		req.Status,
+		*req.Status,
 		customStatus,
 		req.DeviceInfo,
 		req.Location,
@@ -390,7 +390,7 @@ func UpdatePresence(c *gin.Context) (string, error) {
 	}
 
 	req := &models.UpdatePresenceRequest{
-		Status: status,
+		Status: &status,
 	}
 
 	err := PresenceServiceInstance.UpdatePresence(c, req)

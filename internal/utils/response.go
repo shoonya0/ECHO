@@ -43,14 +43,13 @@ func CreatedResponse(c *gin.Context, message string, data interface{}) {
 }
 
 // PaginatedResponse sends a standardized paginated response
-func PaginatedResponse(c *gin.Context, message string, data interface{}, page, limit, total int) {
+func PaginatedResponse(c *gin.Context, message string, data interface{}, limit, total int) {
 	response := APIResponse{
 		Success: true,
 		Message: message,
 		Data: map[string]interface{}{
 			"items": data,
 			"pagination": map[string]interface{}{
-				"page":        page,
 				"limit":       limit,
 				"total":       total,
 				"total_pages": (total + limit - 1) / limit,

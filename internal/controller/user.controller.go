@@ -4,6 +4,7 @@ import (
 	"context"
 	"gin/internal/models"
 	"gin/internal/services"
+	"gin/internal/utils"
 	"gin/objects"
 	"net/http"
 
@@ -17,75 +18,88 @@ import (
 func GetProfile(ctx *gin.Context) {
 	userID, ok := ctx.Get("userId")
 	if !ok {
-		ctx.JSON(http.StatusUnauthorized, gin.H{"error": "user id not found"})
+		utils.ErrorResponse(ctx, http.StatusUnauthorized, "user id not found", nil)
 		return
 	}
 
 	projection := bson.M{
-		"_id":                      1,
-		"username":                 1,
-		"email":                    1,
-		"phone":                    1,
-		"presence":                 1,
-		"profile":                  1,
-		"accountStatus.isVerified": 1,
+		"_id":           1,
+		"username":      1,
+		"email":         1,
+		"phone":         1,
+		"presence":      1,
+		"profile":       1,
+		"accountStatus": 1,
 	}
 
 	objectID, err := bson.ObjectIDFromHex(userID.(string))
 	if err != nil {
-		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		utils.ErrorResponse(ctx, http.StatusBadRequest, "invalid user id format", err.Error())
 		return
 	}
 
-	userData, err := services.FindByID[models.GetUserProfile](context.Background(), objects.DB.Collection(string(objects.UserColl)), bson.M{"_id": objectID}, projection)
+	userData, err := services.FindByID[models.GetProfileRequest](context.Background(), objects.DB.Collection(string(objects.UserColl)), bson.M{"_id": objectID}, projection)
 	if err != nil {
-		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		utils.ErrorResponse(ctx, http.StatusInternalServerError, "failed to get user profile", err.Error())
 		return
 	}
 
-	ctx.JSON(http.StatusOK, userData)
+	utils.SuccessResponse(ctx, "User profile fetched successfully", userData)
 }
 
 // Update profile fields (display name, avatar URL, status message ,etc...).
 func UpdateProfile(ctx *gin.Context) {
-	var err error
-	user := models.User{}
-	if err := ctx.ShouldBindJSON(&user); err != nil {
-		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+	// Parse the partial update request
+	var updateReq models.UpdateUserRequest
+	if err := ctx.ShouldBindJSON(&updateReq); err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{
+			"error":   "Invalid request format",
+			"details": err.Error(),
+		})
 		return
 	}
+
+	// Get user ID from context (set by auth middleware)
 	userID, ok := ctx.Get("userId")
 	if !ok {
 		ctx.JSON(http.StatusUnauthorized, gin.H{"error": "user id not found"})
 		return
 	}
-	user.ID, err = bson.ObjectIDFromHex(userID.(string))
+
+	// Convert string ID to ObjectID
+	objectID, err := bson.ObjectIDFromHex(userID.(string))
 	if err != nil {
-		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": "invalid user id format"})
 		return
 	}
 
-	userData, err := services.UpdateProfile(user)
+	// Update user profile with only provided fields
+	res, err := services.UpdateProfile(objectID, updateReq)
 	if err != nil {
 		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
-	ctx.JSON(http.StatusOK, userData)
+
+	// Return updated user data
+	ctx.JSON(http.StatusOK, gin.H{
+		"message": "Profile updated successfully",
+		"user":    res,
+	})
 }
 
 // ============ USER DISCOVERY & SEARCH ============
 func GetUserProfile(ctx *gin.Context) {
 	userID := ctx.Param("id")
 	if userID == "" {
-		ctx.JSON(http.StatusBadRequest, gin.H{"error": "user id is required"})
+		utils.ErrorResponse(ctx, http.StatusBadRequest, "user id is required", nil)
 		return
 	}
 	userData, err := services.GetUserProfile(userID)
 	if err != nil {
-		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		utils.ErrorResponse(ctx, http.StatusInternalServerError, "failed to get user profile", err.Error())
 		return
 	}
-	ctx.JSON(http.StatusOK, userData)
+	utils.SuccessResponse(ctx, "User profile fetched successfully", userData)
 }
 
 func GetUserSuggestions(ctx *gin.Context) {

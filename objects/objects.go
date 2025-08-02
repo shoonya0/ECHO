@@ -62,6 +62,8 @@ const (
 	StatusAccepted ContactStatus = "accepted"
 	StatusBlocked  ContactStatus = "blocked"
 	StatusFavorite ContactStatus = "favorite"
+	StatusContact  ContactStatus = "contact"
+	StatusDeclined ContactStatus = "declined"
 
 	// message type
 	MessageTypeText     MessageType = "text"

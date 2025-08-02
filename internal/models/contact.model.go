@@ -17,6 +17,7 @@ type ContactInfoEmbed struct {
 	PendingOut   []bson.ObjectID `json:"pendingOut" bson:"pendingOut"`
 	PendingIn    []bson.ObjectID `json:"pendingIn" bson:"pendingIn"`
 	Favorites    []bson.ObjectID `json:"favorites" bson:"favorites"`
+	ActiveChats  []bson.ObjectID `json:"activeChats" bson:"activeChats"`
 
 	// Cached stats
 	Stats ContactStatsEmbed `json:"stats" bson:"stats"`
@@ -35,6 +36,8 @@ type ContactRelationship struct {
 	RequestedBy  bson.ObjectID `json:"requestedBy" bson:"requestedBy"`
 	IsFavorite   bool          `json:"isFavorite" bson:"isFavorite"`
 
+	ChatID bson.ObjectID `json:"chatId" bson:"chatId"`
+
 	// Embedded user data for quick access
 	UserInfo ContactUserInfo `json:"userInfo" bson:"userInfo"`
 
@@ -51,7 +54,7 @@ type ContactUserInfo struct {
 	Username    string `json:"username" bson:"username"`
 	DisplayName string `json:"displayName" bson:"displayName"`
 	Avatar      string `json:"avatar" bson:"avatar"`
-	Status      string `json:"status" bson:"status"`
+	// Status      string `json:"status" bson:"status"` // "online", "away", "dnd", "invisible", "offline"
 	// IsOnline    bool      `json:"isOnline" bson:"isOnline"`
 	// LastSeen    time.Time `json:"lastSeen" bson:"lastSeen"`
 }
