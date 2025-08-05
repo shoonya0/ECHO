@@ -38,7 +38,7 @@ func GetProfile(ctx *gin.Context) {
 		return
 	}
 
-	userData, err := services.FindByID[models.GetProfileRequest](context.Background(), objects.DB.Collection(string(objects.UserColl)), bson.M{"_id": objectID}, projection)
+	userData, err := services.FindByID[models.GetProfileResponse](context.Background(), objects.DB.Collection(string(objects.UserColl)), bson.M{"_id": objectID}, projection)
 	if err != nil {
 		utils.ErrorResponse(ctx, http.StatusInternalServerError, "failed to get user profile", err.Error())
 		return

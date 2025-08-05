@@ -32,7 +32,7 @@ type ContactInfoEmbed struct {
 
 type ContactRelationship struct {
 	TargetUserID bson.ObjectID `json:"targetUserId" bson:"targetUserId"`
-	Status       string        `json:"status" bson:"status"` // "active", "blocked", "pending_out", "pending_in"
+	Status       string        `json:"status" bson:"status"` // "blocked", "pending", "accepted", "declined", "favorite"
 	RequestedBy  bson.ObjectID `json:"requestedBy" bson:"requestedBy"`
 	IsFavorite   bool          `json:"isFavorite" bson:"isFavorite"`
 

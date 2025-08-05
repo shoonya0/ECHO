@@ -10,26 +10,26 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-func getStatus(ctx *gin.Context) objects.ContactStatus {
-	status := ctx.Query("status")
-	switch status {
-	case "pending":
-		return objects.StatusPending
-	case "accepted":
-		return objects.StatusAccepted
-	case "blocked":
-		return objects.StatusBlocked
-	case "favorite":
-		return objects.StatusFavorite
-	case "contact":
-		return objects.StatusContact
-	default:
-		return objects.StatusContact
-	}
-}
+// func getStatus(ctx *gin.Context) objects.ContactStatus {
+// 	status := ctx.Query("status")
+// 	switch status {
+// 	case "pending":
+// 		return objects.StatusPending
+// 	case "accepted":
+// 		return objects.StatusAccepted
+// 	case "blocked":
+// 		return objects.StatusBlocked
+// 	case "favorite":
+// 		return objects.StatusFavorite
+// 	case "contact":
+// 		return objects.StatusContact
+// 	default:
+// 		return objects.StatusContact
+// 	}
+// }
 
-// ============ CONTACTS & FRIENDS MANAGEMENT ============
-// Contact List Management
+// // ============ CONTACTS & FRIENDS MANAGEMENT ============
+// // Contact List Management
 
 func GetUsersContacts(ctx *gin.Context) {
 	userID, ok := ctx.Get("userId")
@@ -146,29 +146,38 @@ func AcceptOrDeclineContactRequest(ctx *gin.Context) {
 		utils.ErrorResponse(ctx, http.StatusUnauthorized, "user id not found", nil)
 		return
 	}
-	requestId := ctx.Param("requestId")
+
+	targetUserID := ctx.Param("requestId")
+
 	action := ctx.Query("action")
-	if action != "accept" && action != "decline" {
-		utils.ErrorResponse(ctx, http.StatusBadRequest, "Invalid action", nil)
+
+	if action != string(objects.StatusAccepted) && action != string(objects.StatusDeclined) {
+		utils.ErrorResponse(ctx, http.StatusBadRequest, "Invalid action please provide your action as (accepted or declined)", nil)
 		return
 	}
-	userData, err := services.AcceptOrDeclineContactRequest(userID.(string), requestId, action)
+	userData, err := services.AcceptOrDeclineContactRequest(userID.(string), targetUserID, action)
 	if err != nil {
-		utils.ErrorResponse(ctx, http.StatusInternalServerError, "Failed to accept or decline contact request", err.Error())
+		utils.ErrorResponse(ctx, http.StatusInternalServerError, "Failed to "+action+" contact request", err.Error())
 		return
 	}
-	utils.SuccessResponse(ctx, "Contact request accepted or declined successfully", userData)
+	utils.SuccessResponse(ctx, "Contact request "+action+" successfully", userData)
 }
 
-// // // Remove a contact.
-// // func RemoveContact(c *gin.Context) {
-// // 	userData, err := services.RemoveContact(c)
-// // 	if err != nil {
-// // 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-// // 		return
-// // 	}
-// // 	c.JSON(http.StatusOK, userData)
-// // }
+// // Remove a contact.
+// func RemoveContact(ctx *gin.Context) {
+// 	userID, ok := ctx.Get("userId")
+// 	if !ok {
+// 		utils.ErrorResponse(ctx, http.StatusUnauthorized, "user id not found", nil)
+// 		return
+// 	}
+// 	targetUserID := ctx.Param("targetUserId")
+// 	userData, err := services.RemoveContact(userID.(string), targetUserID)
+// 	if err != nil {
+// 		utils.ErrorResponse(ctx, http.StatusInternalServerError, "Failed to remove contact", err.Error())
+// 		return
+// 	}
+// 	utils.SuccessResponse(ctx, "Contact removed successfully", userData)
+// }
 
 // // // Block a user.
 // // func BlockUser(c *gin.Context) {

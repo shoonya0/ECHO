@@ -36,28 +36,29 @@ func UpdateProfile(userID bson.ObjectID, updateReq models.UpdateUserRequest) (*m
 	return res, nil
 }
 
-func GetUserProfile(userID string) (*models.GetUserProfileRequest, error) {
+func GetUserProfile(userID string) (models.GetUserProfileResponse, error) {
 	if userID == "" {
-		return nil, fmt.Errorf("user id is required")
+		return models.GetUserProfileResponse{}, fmt.Errorf("user id is required")
 	}
 
 	objectID, err := bson.ObjectIDFromHex(userID)
 	if err != nil {
-		return nil, err
+		return models.GetUserProfileResponse{}, err
 	}
 
 	filter := bson.M{"_id": objectID}
 
 	projection := bson.M{
-		"_id":           1,
-		"profile":       1,
-		"accountStatus": 1,
+		"_id":                      1,
+		"profile":                  1,
+		"accountStatus.isVerified": 1,
+		"accountStatus.isBanned":   1,
 	}
 
-	userData, err := FindByID[models.GetUserProfileRequest](context.Background(), objects.DB.Collection(string(objects.UserColl)), filter, projection)
+	userData, err := FindByID[models.GetUserProfileResponse](context.Background(), objects.DB.Collection(string(objects.UserColl)), filter, projection)
 	if err != nil {
-		return nil, err
+		return models.GetUserProfileResponse{}, err
 	}
 
-	return userData, nil
+	return *userData, nil
 }

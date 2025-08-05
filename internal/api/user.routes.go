@@ -39,7 +39,7 @@ func RegisterUserRoutes(r *gin.Engine) {
 		userRoutes.GET("/popular", controller.GetPopularUsers)        // Get popular users
 	}
 
-	// ============ CONTACTS & FRIENDS MANAGEMENT ============
+	// // ============ CONTACTS & FRIENDS MANAGEMENT ============
 	contactRoutes := userApi.Group("users/contacts")
 	{
 		// Contact List Management
@@ -49,10 +49,10 @@ func RegisterUserRoutes(r *gin.Engine) {
 		contactRoutes.GET("/blocked", controller.GetBlockedUsers)              // Get blocked users list
 		contactRoutes.GET("/favorites", controller.GetFavoriteContacts)        // Get favorite contacts
 
-		// Contact Actions
+		// 	// Contact Actions
 		contactRoutes.POST("/:targetUserId", controller.SendContactRequest)        // Send contact request
 		contactRoutes.PUT("/:requestId", controller.AcceptOrDeclineContactRequest) // Accept/decline contact request
-		// 	// 	contactRoutes.DELETE("/:contactId", controller.RemoveContact)              // Remove contact/friend
+		// 	contactRoutes.DELETE("/:contactId", controller.RemoveContact)              // Remove contact/friend
 		// 	// 	contactRoutes.POST("/:userId/block", controller.BlockUser)                 // Block user
 		// 	// 	contactRoutes.DELETE("/:userId/block", controller.UnblockUser)             // Unblock user
 		// 	// 	contactRoutes.POST("/:userId/favorite", controller.AddToFavorites)         // Add to favorites

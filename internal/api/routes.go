@@ -59,12 +59,8 @@ func Signup() gin.HandlerFunc {
 			return
 		}
 
-		user := models.User{
-			ID:           req.ID,
-			Email:        req.Email,
-			PasswordHash: string(hash),
-			CreatedAt:    time.Now(),
-		}
+		// Create user with all embedded structures properly initialized
+		user := utils.NewUserWithDefaults(req.ID, req.Email, string(hash))
 
 		if _, err := objects.DB.Collection(string(objects.UserColl)).InsertOne(c.Request.Context(), user); err != nil {
 			utils.ErrorResponse(c, http.StatusInternalServerError, "failed to create user", err)
