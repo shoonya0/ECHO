@@ -5,60 +5,218 @@ import (
 	"fmt"
 	"gin/internal/models"
 	"gin/objects"
-	"time"
 
 	"go.mongodb.org/mongo-driver/v2/bson"
 	"go.mongodb.org/mongo-driver/v2/mongo"
 )
 
-func UpdateProfile(userID bson.ObjectID, updateReq models.UpdateUserRequest) (*mongo.UpdateResult, error) {
-	_, err := FindByID[models.User](context.Background(), objects.DB.Collection(string(objects.UserColl)), bson.M{"_id": userID}, bson.M{})
+// ============ USER SERVICE FUNCTIONS ============
+
+// GetUserByID retrieves a user by their ObjectID
+func GetUserByID(userID bson.ObjectID) (*models.User, error) {
+	filter := bson.M{"_id": userID}
+	projection := bson.M{
+		"_id":                    1,
+		"username":               1,
+		"email":                  1,
+		"profile.displayName":    1,
+		"profile.avatar":         1,
+		"profile.statusMessage":  1,
+		"presence.status":        1,
+		"presence.lastSeen":      1,
+		"accountStatus.isActive": 1,
+		"createdAt":              1,
+		"updatedAt":              1,
+	}
+
+	user, err := FindByID[models.User](context.Background(), objects.DB.Collection(string(objects.UserColl)), filter, projection)
 	if err != nil {
 		if err == mongo.ErrNoDocuments {
 			return nil, fmt.Errorf("user not found")
 		}
-		return nil, err
+		return nil, fmt.Errorf("failed to get user: %w", err)
 	}
 
-	updateDoc := BuildPartialUpdateDocument(updateReq)
-
-	filter := bson.M{"_id": userID}
-
-	// due to below code the updatedAt field will be always returned ModifiedCount = 1
-	updateDoc["updatedAt"] = time.Now().UTC()
-	updateDoc = bson.M{"$set": updateDoc}
-
-	res, err := UpdateOne(context.Background(), objects.DB.Collection(string(objects.UserColl)), filter, updateDoc)
-	if err != nil {
-		return nil, fmt.Errorf("failed to update user: %w", err)
-	}
-
-	return res, nil
+	return user, nil
 }
 
-func GetUserProfile(userID string) (models.GetUserProfileResponse, error) {
-	if userID == "" {
-		return models.GetUserProfileResponse{}, fmt.Errorf("user id is required")
+// GetUsersByIDs retrieves multiple users by their ObjectIDs
+func GetUsersByIDs(userIDs []bson.ObjectID) ([]models.User, error) {
+	if len(userIDs) == 0 {
+		return []models.User{}, nil
 	}
 
-	objectID, err := bson.ObjectIDFromHex(userID)
+	filter := bson.M{"_id": bson.M{"$in": userIDs}}
+	projection := bson.M{
+		"_id":                    1,
+		"username":               1,
+		"email":                  1,
+		"profile.displayName":    1,
+		"profile.avatar":         1,
+		"profile.statusMessage":  1,
+		"presence.status":        1,
+		"presence.lastSeen":      1,
+		"accountStatus.isActive": 1,
+	}
+
+	users, err := FindAll[models.User](
+		context.Background(),
+		objects.DB.Collection(string(objects.UserColl)),
+		filter,
+		projection,
+		bson.M{},
+		0,
+		0,
+	)
 	if err != nil {
-		return models.GetUserProfileResponse{}, err
+		return nil, fmt.Errorf("failed to get users: %w", err)
 	}
 
-	filter := bson.M{"_id": objectID}
+	return users, nil
+}
+
+// UpdateUserPresence updates a user's presence status
+func UpdateUserPresence(userID bson.ObjectID, status string) error {
+	filter := bson.M{"_id": userID}
+	update := bson.M{
+		"$set": bson.M{
+			"presence.status":   status,
+			"presence.lastSeen": bson.M{"$currentDate": true},
+		},
+	}
+
+	_, err := objects.DB.Collection(string(objects.UserColl)).UpdateOne(context.Background(), filter, update)
+	if err != nil {
+		return fmt.Errorf("failed to update user presence: %w", err)
+	}
+
+	return nil
+}
+
+// SearchUsers searches for users by username or display name
+func SearchUsers(query string, limit int) ([]models.User, error) {
+	filter := bson.M{
+		"$or": []bson.M{
+			{"username": bson.M{"$regex": query, "$options": "i"}},
+			{"profile.displayName": bson.M{"$regex": query, "$options": "i"}},
+		},
+		"accountStatus.isActive": true,
+	}
 
 	projection := bson.M{
-		"_id":                      1,
-		"profile":                  1,
-		"accountStatus.isVerified": 1,
-		"accountStatus.isBanned":   1,
+		"_id":                   1,
+		"username":              1,
+		"profile.displayName":   1,
+		"profile.avatar":        1,
+		"profile.statusMessage": 1,
+		"presence.status":       1,
 	}
 
-	userData, err := FindByID[models.GetUserProfileResponse](context.Background(), objects.DB.Collection(string(objects.UserColl)), filter, projection)
+	users, err := FindAll[models.User](
+		context.Background(),
+		objects.DB.Collection(string(objects.UserColl)),
+		filter,
+		projection,
+		bson.M{"username": 1},
+		int64(limit),
+		0,
+	)
 	if err != nil {
-		return models.GetUserProfileResponse{}, err
+		return nil, fmt.Errorf("failed to search users: %w", err)
 	}
 
-	return *userData, nil
+	return users, nil
+}
+
+// GetUserBasicInfo retrieves basic user information for display purposes
+func GetUserBasicInfo(userID bson.ObjectID) (*models.UserProfileEmbed, error) {
+	filter := bson.M{"_id": userID}
+	projection := bson.M{
+		"username":            1,
+		"profile.displayName": 1,
+		"profile.avatar":      1,
+	}
+
+	user, err := FindByID[models.User](context.Background(), objects.DB.Collection(string(objects.UserColl)), filter, projection)
+	if err != nil {
+		if err == mongo.ErrNoDocuments {
+			return nil, fmt.Errorf("user not found")
+		}
+		return nil, fmt.Errorf("failed to get user basic info: %w", err)
+	}
+
+	// Return a simplified profile structure
+	profile := &models.UserProfileEmbed{
+		DisplayName: user.Profile.DisplayName,
+		Avatar:      user.Profile.Avatar,
+	}
+
+	return profile, nil
+}
+
+// CheckUserExists checks if a user exists and is active
+func CheckUserExists(userID bson.ObjectID) (bool, error) {
+	filter := bson.M{
+		"_id":                    userID,
+		"accountStatus.isActive": true,
+	}
+
+	count, err := objects.DB.Collection(string(objects.UserColl)).CountDocuments(context.Background(), filter)
+	if err != nil {
+		return false, fmt.Errorf("failed to check user existence: %w", err)
+	}
+
+	return count > 0, nil
+}
+
+// UpdateUserLastActivity updates the user's last activity timestamp
+func UpdateUserLastActivity(userID bson.ObjectID) error {
+	filter := bson.M{"_id": userID}
+	update := bson.M{
+		"$set": bson.M{
+			"presence.lastSeen": bson.M{"$currentDate": true},
+		},
+	}
+
+	_, err := objects.DB.Collection(string(objects.UserColl)).UpdateOne(context.Background(), filter, update)
+	return err
+}
+
+// UpdateProfile updates a user's profile information
+func UpdateProfile(userID bson.ObjectID, profileUpdate map[string]interface{}) error {
+	filter := bson.M{"_id": userID}
+	update := bson.M{"$set": profileUpdate}
+
+	_, err := objects.DB.Collection(string(objects.UserColl)).UpdateOne(context.Background(), filter, update)
+	if err != nil {
+		return fmt.Errorf("failed to update profile: %w", err)
+	}
+	return nil
+}
+
+// GetUserProfile retrieves a user's complete profile
+func GetUserProfile(userID bson.ObjectID) (*models.User, error) {
+	filter := bson.M{"_id": userID}
+	projection := bson.M{
+		"_id":           1,
+		"username":      1,
+		"email":         1,
+		"phone":         1,
+		"profile":       1,
+		"presence":      1,
+		"accountStatus": 1,
+		"settings":      1,
+		"createdAt":     1,
+		"updatedAt":     1,
+	}
+
+	user, err := FindByID[models.User](context.Background(), objects.DB.Collection(string(objects.UserColl)), filter, projection)
+	if err != nil {
+		if err == mongo.ErrNoDocuments {
+			return nil, fmt.Errorf("user not found")
+		}
+		return nil, fmt.Errorf("failed to get user profile: %w", err)
+	}
+
+	return user, nil
 }

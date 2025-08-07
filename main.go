@@ -7,6 +7,7 @@ import (
 	routes "gin/internal/api"
 	"gin/internal/db"
 	"gin/internal/middleware"
+	"gin/internal/services"
 	"gin/objects"
 	"log"
 
@@ -87,7 +88,12 @@ func main() {
 	// auth service configuration
 	// authApi := r.Group(objects.AuthBasePath)
 
-	// websocket service configuration
+	// ============ WEBSOCKET SERVICE CONFIGURATION ============
+	// Start WebSocket hub in a separate goroutine
+	go func() {
+		log.Println("Starting WebSocket Hub for real-time chat...")
+		services.RunHub()
+	}()
 
 	// Message service configuration
 
@@ -96,5 +102,7 @@ func main() {
 	// Media service configuration
 
 	// Notification service configuration
+
+	log.Printf("Starting Echo Chat Server on port %s with WebSocket support", objects.MainConfiguration.Port)
 	r.Run(":" + objects.MainConfiguration.Port)
 }

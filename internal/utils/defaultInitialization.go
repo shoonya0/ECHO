@@ -39,7 +39,7 @@ func NewUserWithDefaults(id bson.ObjectID, email, passwordHash string) models.Us
 		// Initialize ContactInfo with empty arrays
 		ContactInfo: models.ContactInfoEmbed{
 			Relationships: make(map[string]models.ContactRelationship),
-			BlockedUsers:  make([]bson.ObjectID, 0),
+			BlockedChats:  make([]bson.ObjectID, 0),
 			PendingOut:    make([]bson.ObjectID, 0),
 			PendingIn:     make([]bson.ObjectID, 0),
 			Favorites:     make([]bson.ObjectID, 0),
@@ -89,8 +89,8 @@ func NewUserWithDefaults(id bson.ObjectID, email, passwordHash string) models.Us
 
 		// Initialize Cache with empty arrays
 		Cache: models.UserCacheEmbed{
-			ActiveChats:     make([]string, 0),
-			RecentContacts:  make([]string, 0),
+			ActiveChats:     make([]bson.ObjectID, 0),
+			RecentContacts:  make([]bson.ObjectID, 0),
 			UnreadCount:     0,
 			LastCacheUpdate: now,
 		},

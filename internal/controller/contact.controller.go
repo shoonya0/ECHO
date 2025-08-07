@@ -163,51 +163,53 @@ func AcceptOrDeclineContactRequest(ctx *gin.Context) {
 	utils.SuccessResponse(ctx, "Contact request "+action+" successfully", userData)
 }
 
-// // Remove a contact.
-// func RemoveContact(ctx *gin.Context) {
-// 	userID, ok := ctx.Get("userId")
-// 	if !ok {
-// 		utils.ErrorResponse(ctx, http.StatusUnauthorized, "user id not found", nil)
-// 		return
-// 	}
-// 	targetUserID := ctx.Param("targetUserId")
-// 	userData, err := services.RemoveContact(userID.(string), targetUserID)
-// 	if err != nil {
-// 		utils.ErrorResponse(ctx, http.StatusInternalServerError, "Failed to remove contact", err.Error())
-// 		return
-// 	}
-// 	utils.SuccessResponse(ctx, "Contact removed successfully", userData)
-// }
+// Remove a contact.
+func RemoveContact(ctx *gin.Context) {
+	userID, ok := ctx.Get("userId")
+	if !ok {
+		utils.ErrorResponse(ctx, http.StatusUnauthorized, "user id not found", nil)
+		return
+	}
+	targetUserID := ctx.Param("contactId")
+	userData, err := services.RemoveContact(userID.(string), targetUserID)
+	if err != nil {
+		utils.ErrorResponse(ctx, http.StatusInternalServerError, "Failed to remove contact", err.Error())
+		return
+	}
+	utils.SuccessResponse(ctx, "Contact removed successfully", userData)
+}
 
-// // // Block a user.
-// // func BlockUser(c *gin.Context) {
-// // 	userData, err := services.BlockUser(c)
-// // 	if err != nil {
-// // 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-// // 		return
-// // 	}
-// // 	c.JSON(http.StatusOK, userData)
-// // }
+// Block a user.
+func BlockUser(ctx *gin.Context) {
+	userID, ok := ctx.Get("userId")
+	if !ok {
+		utils.ErrorResponse(ctx, http.StatusUnauthorized, "user id not found", nil)
+		return
+	}
+	targetUserID := ctx.Param("userId")
+	userData, err := services.BlockUser(userID.(string), targetUserID)
+	if err != nil {
+		utils.ErrorResponse(ctx, http.StatusInternalServerError, "Failed to block user", err.Error())
+		return
+	}
+	utils.SuccessResponse(ctx, "User blocked successfully", userData)
+}
 
-// // // Unblock a user.
-// // func UnblockUser(c *gin.Context) {
-// // 	userData, err := services.UnblockUser(c)
-// // 	if err != nil {
-// // 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-// // 		return
-// // 	}
-// // 	c.JSON(http.StatusOK, userData)
-// // }
-
-// // // Add a user to your favorites.
-// // func AddToFavorites(c *gin.Context) {
-// // 	userData, err := services.AddToFavorites(c)
-// // 	if err != nil {
-// // 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-// // 		return
-// // 	}
-// // 	c.JSON(http.StatusOK, userData)
-// // }
+// Add a user to your favorites.
+func AddToFavorites(ctx *gin.Context) {
+	userID, ok := ctx.Get("userId")
+	if !ok {
+		utils.ErrorResponse(ctx, http.StatusUnauthorized, "user id not found", nil)
+		return
+	}
+	targetUserID := ctx.Param("userId")
+	userData, err := services.AddToFavorites(userID.(string), targetUserID)
+	if err != nil {
+		utils.ErrorResponse(ctx, http.StatusInternalServerError, "Failed to add user to favorites", err.Error())
+		return
+	}
+	utils.SuccessResponse(ctx, "User added to favorites successfully", userData)
+}
 
 // // // Remove a user from your favorites.
 // // func RemoveFromFavorites(c *gin.Context) {

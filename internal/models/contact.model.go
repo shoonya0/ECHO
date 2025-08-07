@@ -13,7 +13,7 @@ type ContactInfoEmbed struct {
 	Relationships map[string]ContactRelationship `json:"relationships" bson:"relationships"` // targetUserID -> relationship
 
 	// Quick lookup arrays (duplicated for performance)
-	BlockedUsers []bson.ObjectID `json:"blockedUsers" bson:"blockedUsers"`
+	BlockedChats []bson.ObjectID `json:"blockedChats" bson:"blockedChats"`
 	PendingOut   []bson.ObjectID `json:"pendingOut" bson:"pendingOut"`
 	PendingIn    []bson.ObjectID `json:"pendingIn" bson:"pendingIn"`
 	Favorites    []bson.ObjectID `json:"favorites" bson:"favorites"`
@@ -32,7 +32,7 @@ type ContactInfoEmbed struct {
 
 type ContactRelationship struct {
 	TargetUserID bson.ObjectID `json:"targetUserId" bson:"targetUserId"`
-	Status       string        `json:"status" bson:"status"` // "blocked", "pending", "accepted", "declined", "favorite"
+	Status       string        `json:"status" bson:"status"` // "blocked", "pending", "accepted", "declined"
 	RequestedBy  bson.ObjectID `json:"requestedBy" bson:"requestedBy"`
 	IsFavorite   bool          `json:"isFavorite" bson:"isFavorite"`
 

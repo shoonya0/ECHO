@@ -65,3 +65,20 @@ type GetContactInfo struct {
 	IsFavorite  bool          `json:"isFavorite" bson:"isFavorite"`
 	ChatID      bson.ObjectID `json:"chatId" bson:"chatId"`
 }
+
+// ============ CHAT MODEL ============
+type GetChatResponse struct {
+	ID          bson.ObjectID `json:"_id" bson:"_id"`
+	Type        string        `json:"type" bson:"type"`
+	Name        string        `json:"name" bson:"name"`
+	Description string        `json:"description" bson:"description"`
+	Avatar      string        `json:"avatar" bson:"avatar"`
+	Messages    []Message     `json:"messages" bson:"messages"`
+}
+
+// ============ BATCH MESSAGE MODEL ============
+// get message by chatId in batch
+type BatchMessageByChatID struct {
+	ChatID   bson.ObjectID `json:"chatId" bson:"chatId"`
+	Messages []Message     `json:"messages" bson:"messages"`
+}

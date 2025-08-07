@@ -39,25 +39,23 @@ func RegisterUserRoutes(r *gin.Engine) {
 		userRoutes.GET("/popular", controller.GetPopularUsers)        // Get popular users
 	}
 
-	// // ============ CONTACTS & FRIENDS MANAGEMENT ============
+	// ============ CONTACTS & FRIENDS MANAGEMENT ============
 	contactRoutes := userApi.Group("users/contacts")
 	{
 		// Contact List Management
-		contactRoutes.GET("/", controller.GetUsersContacts)                    // Get users contacts
+		contactRoutes.GET("/", controller.GetUsersContacts)                    // Get users contacts for this we retrieve the chatIds if user click on specific chat
 		contactRoutes.GET("/requests", controller.GetContactRequests)          // Get pending contact requests
 		contactRoutes.GET("/sent-requests", controller.GetSentContactRequests) // Get sent contact requests show all the users who you have sent the contact request
 		contactRoutes.GET("/blocked", controller.GetBlockedUsers)              // Get blocked users list
 		contactRoutes.GET("/favorites", controller.GetFavoriteContacts)        // Get favorite contacts
 
-		// 	// Contact Actions
+		// Contact Actions
 		contactRoutes.POST("/:targetUserId", controller.SendContactRequest)        // Send contact request
 		contactRoutes.PUT("/:requestId", controller.AcceptOrDeclineContactRequest) // Accept/decline contact request
-		// 	contactRoutes.DELETE("/:contactId", controller.RemoveContact)              // Remove contact/friend
-		// 	// 	contactRoutes.POST("/:userId/block", controller.BlockUser)                 // Block user
-		// 	// 	contactRoutes.DELETE("/:userId/block", controller.UnblockUser)             // Unblock user
-		// 	// 	contactRoutes.POST("/:userId/favorite", controller.AddToFavorites)         // Add to favorites
-		// 	// 	contactRoutes.DELETE("/:userId/favorite", controller.RemoveFromFavorites)  // Remove from favorites
-		// 	// 	contactRoutes.GET("/favorites", controller.GetFavoriteContacts)            // Get favorite contacts
+		contactRoutes.DELETE("/:contactId", controller.RemoveContact)              // Remove contact/friend
+		// need to test this
+		contactRoutes.POST("/blockUnblock/:userId", controller.BlockUser)  // Block/Unblock user
+		contactRoutes.POST("/favorite/:userId", controller.AddToFavorites) // Add to favorites
 	}
 
 	// // ============ PRESENCE & STATUS ============

@@ -222,3 +222,21 @@ func removeElement(slice *[]bson.ObjectID, element bson.ObjectID) *[]bson.Object
 	}
 	return &result
 }
+
+// FindByFilter finds a single document by filter
+func FindByFilter[T any](
+	ctx context.Context,
+	collection *mongo.Collection,
+	filter bson.M,
+	projection bson.M,
+) (T, error) {
+	var result T
+	options := options.FindOne()
+
+	if len(projection) > 0 {
+		options.SetProjection(projection)
+	}
+
+	err := collection.FindOne(ctx, filter, options).Decode(&result)
+	return result, err
+}

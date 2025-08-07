@@ -37,13 +37,13 @@ func GetContacts(userID string, contactStatus objects.ContactStatus, limit int) 
 	case objects.StatusFavorite:
 		contactProjection["contactInfo.favorites"] = 1
 	case objects.StatusBlocked:
-		contactProjection["contactInfo.blockedUsers"] = 1
+		contactProjection["contactInfo.blockedChats"] = 1
 	case objects.StatusContact:
 		contactProjection["contactInfo.activeChats"] = 1
 		contactProjection["contactInfo.favorites"] = 1
 		contactProjection["contactInfo.pendingIn"] = 1
 		contactProjection["contactInfo.pendingOut"] = 1
-		contactProjection["contactInfo.blockedUsers"] = 1
+		contactProjection["contactInfo.blockedChats"] = 1
 	}
 
 	// first we have to get the information from the contact collection
@@ -65,9 +65,9 @@ func GetContacts(userID string, contactStatus objects.ContactStatus, limit int) 
 	case objects.StatusFavorite:
 		contacts = append(contacts, contactIds.Favorites...)
 	case objects.StatusBlocked:
-		contacts = append(contacts, contactIds.BlockedUsers...)
+		contacts = append(contacts, contactIds.BlockedChats...)
 	case objects.StatusContact:
-		contacts = append(contacts, contactIds.BlockedUsers...)
+		contacts = append(contacts, contactIds.BlockedChats...)
 		contacts = append(contacts, contactIds.PendingOut...)
 		contacts = append(contacts, contactIds.PendingIn...)
 		contacts = append(contacts, contactIds.Favorites...)
@@ -79,7 +79,7 @@ func GetContacts(userID string, contactStatus objects.ContactStatus, limit int) 
 		"contactInfo.relationships": 1,
 	}
 
-	userContactsInfo, err := FindByID[models.User](context.Background(), objects.DB.Collection(string(objects.UserColl)), bson.M{"_id": bson.M{"$in": contacts}}, userProjection)
+	userContactsInfo, err := FindByID[models.ContactRequest](context.Background(), objects.DB.Collection(string(objects.UserColl)), bson.M{"_id": bson.M{"$in": contacts}}, userProjection)
 	if err != nil {
 		return []models.GetContactInfo{}, err
 	}
@@ -161,7 +161,7 @@ func SendContactRequest(userID, targetUserID string) (models.ContactRelationship
 			if rel, exists := user.ContactInfo.Relationships[targetUserID]; exists {
 				switch rel.Status {
 				case string(objects.StatusAccepted):
-					return nil, fmt.Errorf("users are already contacts")
+					return nil, fmt.Errorf("users already connected")
 				case string(objects.StatusPending):
 					return nil, fmt.Errorf("contact request already sent")
 				case string(objects.StatusBlocked):
@@ -407,179 +407,251 @@ func AcceptOrDeclineContactRequest(userID, targetUserID, action string) (models.
 	return userRelationship, nil
 }
 
-// func RemoveContact(userID, targetUserID string) (string, error) {
-// 	// userObjectID, err := bson.ObjectIDFromHex(userID)
-// 	// if err != nil {
-// 	// 	return "", fmt.Errorf("failed to convert user id to object id: %w", err)
-// 	// }
+func RemoveContact(userID, targetUserID string) (models.GetContactInfo, error) {
+	userObjectID, err := bson.ObjectIDFromHex(userID)
+	if err != nil {
+		return models.GetContactInfo{}, fmt.Errorf("failed to convert user id to object id: %w", err)
+	}
 
-// 	// // search in contact collection for the contactId
-// 	// contact := models.Contact{}
-// 	// if err := objects.DBClient.Database("ECHO").Collection("contacts").FindOne(c.Request.Context(), bson.M{"_id": contactId}).Decode(&contact); err != nil {
-// 	// 	return "", fmt.Errorf("failed to fetch contact: %w", err)
-// 	// }
+	targetObjectID, err := bson.ObjectIDFromHex(targetUserID)
+	if err != nil {
+		return models.GetContactInfo{}, fmt.Errorf("failed to convert target user id to object id: %w", err)
+	}
 
-// 	// remove the chatId from the contact
-// 	// for _, contactStatus := range contact.Contacts {
-// 	// if contactStatus.ChatId == chatId {
-// 	// 	delete(contact.Contacts, contactStatus)
-// 	// 	// update the contact in the database
-// 	// 	if _, err := objects.DBClient.Database("ECHO").Collection("contacts").UpdateOne(c.Request.Context(), bson.M{"_id": contactId}, bson.M{"$set": contact}); err != nil {
-// 	// 		return "", fmt.Errorf("failed to update contact: %w", err)
-// 	// 	}
+	sess, err := objects.DBClient.StartSession()
+	if err != nil {
+		return models.GetContactInfo{}, fmt.Errorf("failed to start session: %w", err)
+	}
+	defer sess.EndSession(context.Background())
 
-// 	// 	// remove the chat from the chat collection
-// 	// 	if _, err := objects.DBClient.Database("ECHO").Collection("chats").DeleteOne(c.Request.Context(), bson.M{"_id": chatId}); err != nil {
-// 	// 		return "", fmt.Errorf("failed to delete chat: %w", err)
-// 	// 	}
-// 	// 	return "contact removed", nil
-// 	// }
-// 	// }
+	var contactInfo models.GetContactInfo
 
-// 	return "contact removed", nil
-// }
+	// the sess will return the userContact and the error
+	_, err = sess.WithTransaction(context.Background(), func(sessCtx context.Context) (interface{}, error) {
+		// search in contact collection for the contactId
+		userFilter := bson.M{"_id": userObjectID, "contactInfo.relationships." + targetObjectID.Hex(): bson.M{"$exists": true}}
+		targetFilter := bson.M{"_id": targetObjectID, "contactInfo.relationships." + userObjectID.Hex(): bson.M{"$exists": true}}
 
-// func BlockUser(c *gin.Context) (string, error) {
-// 	// userID, ok := c.Get("user_id")
-// 	// if !ok {
-// 	// 	return "", fmt.Errorf("user id not found")
-// 	// }
+		userContact, err := FindByID[models.ContactRequest](sessCtx, objects.DB.Collection(string(objects.UserColl)), userFilter, bson.M{
+			"_id": 1,
+			"contactInfo.relationships." + targetObjectID.Hex(): 1,
+		})
+		if err != nil {
+			return nil, fmt.Errorf("failed to fetch user contact: %w", err)
+		}
 
-// 	// targetUserId := c.Param("userId")
+		targetContact, err := FindByID[models.ContactRequest](sessCtx, objects.DB.Collection(string(objects.UserColl)), targetFilter, bson.M{
+			"_id": 1,
+			"contactInfo.relationships." + userObjectID.Hex(): 1,
+		})
+		if err != nil {
+			return nil, fmt.Errorf("failed to fetch target contact: %w", err)
+		}
 
-// 	// // get the contact of the user from the database
-// 	// contact := models.Contact{}
-// 	// if err := objects.DBClient.Database("ECHO").Collection("contacts").FindOne(c.Request.Context(), bson.M{"_id": userID.(string)}).Decode(&contact); err != nil {
-// 	// 	return "", fmt.Errorf("failed to fetch contact: %w", err)
-// 	// }
+		// remove the target user from the user's contact info
+		// to delete the relationship we have to set it to an empty struct
+		if userContact.ContactInfo.Relationships[targetObjectID.Hex()].IsFavorite {
+			userContact.ContactInfo.Stats.FavoriteCount--
+		}
+		// remove the user from the target user's contact info
+		if targetContact.ContactInfo.Relationships[userObjectID.Hex()].IsFavorite {
+			targetContact.ContactInfo.Stats.FavoriteCount--
+		}
+		now := time.Now()
 
-// 	// // update the contact status to blocked
-// 	// contact.Contacts[targetUserId] = models.ContactRequest{
-// 	// 	RequestedBy: userID.(string),
-// 	// 	Status:      "blocked",
-// 	// 	ChatID:      contact.Contacts[targetUserId].ChatID,
-// 	// }
+		userUpdate := bson.M{
+			"$unset": bson.M{
+				"contactInfo.relationships." + targetObjectID.Hex(): "",
+			},
+			"$pull": bson.M{
+				"contactInfo.pendingIn":    targetObjectID,
+				"contactInfo.pendingOut":   targetObjectID,
+				"contactInfo.activeChats":  targetObjectID,
+				"contactInfo.favorites":    targetObjectID,
+				"contactInfo.blockedChats": targetObjectID,
+			},
+			"$set": bson.M{
+				"contactInfo.updatedAt":           now,
+				"contactInfo.stats.favoriteCount": userContact.ContactInfo.Stats.FavoriteCount,
+			},
+			"$inc": bson.M{
+				"contactInfo.stats.totalContacts": -1,
+			},
+		}
 
-// 	// // update the contact in the database
-// 	// if _, err := objects.DBClient.Database("ECHO").Collection("contacts").UpdateOne(c.Request.Context(), bson.M{"user_id": userID.(string)}, bson.M{"$set": contact}); err != nil {
-// 	// 	return "", fmt.Errorf("failed to update contact: %w", err)
-// 	// }
+		targetUpdate := bson.M{
+			"$unset": bson.M{
+				"contactInfo.relationships." + userObjectID.Hex(): "",
+			},
+			"$pull": bson.M{
+				"contactInfo.pendingOut":   userObjectID,
+				"contactInfo.pendingIn":    userObjectID,
+				"contactInfo.activeChats":  userObjectID,
+				"contactInfo.favorites":    userObjectID,
+				"contactInfo.blockedChats": userObjectID,
+			},
+			"$set": bson.M{
+				"contactInfo.updatedAt":           now,
+				"contactInfo.stats.favoriteCount": targetContact.ContactInfo.Stats.FavoriteCount,
+			},
+			"$inc": bson.M{
+				"contactInfo.stats.totalContacts": -1,
+			},
+		}
 
-// 	return "user blocked", nil
-// }
+		_, err = UpdateOne(sessCtx, objects.DB.Collection(string(objects.UserColl)), userFilter, userUpdate)
+		if err != nil {
+			return nil, fmt.Errorf("failed to update user contact: %w", err)
+		}
+		_, err = UpdateOne(sessCtx, objects.DB.Collection(string(objects.UserColl)), targetFilter, targetUpdate)
+		if err != nil {
+			return nil, fmt.Errorf("failed to update target contact: %w", err)
+		}
 
-// // func UnblockUser(c *gin.Context) (string, error) {
-// // 	userID, ok := c.Get("user_id")
-// // 	if !ok {
-// // 		return "", fmt.Errorf("user id not found")
-// // 	}
+		// remove the target user from the user's contact info
+		contactInfo = models.GetContactInfo{
+			ID:          userContact.ContactInfo.Relationships[targetObjectID.Hex()].TargetUserID,
+			Status:      userContact.ContactInfo.Relationships[targetObjectID.Hex()].Status,
+			Username:    userContact.ContactInfo.Relationships[targetObjectID.Hex()].UserInfo.Username,
+			DisplayName: userContact.ContactInfo.Relationships[targetObjectID.Hex()].UserInfo.DisplayName,
+			Avatar:      userContact.ContactInfo.Relationships[targetObjectID.Hex()].UserInfo.Avatar,
+			IsFavorite:  userContact.ContactInfo.Relationships[targetObjectID.Hex()].IsFavorite,
+			ChatID:      userContact.ContactInfo.Relationships[targetObjectID.Hex()].ChatID,
+		}
 
-// // 	targetUserId := c.Param("userId")
+		return userContact, nil
+	})
 
-// // 	// get the contact of the user from the database
-// // 	contact := models.Contact{}
-// // 	if err := objects.DBClient.Database("ECHO").Collection("contacts").FindOne(c.Request.Context(), bson.M{"_id": userID.(string)}).Decode(&contact); err != nil {
-// // 		return "", fmt.Errorf("failed to fetch contact: %w", err)
-// // 	}
+	return contactInfo, err
+}
 
-// // 	// update the contact status to unblocked
-// // 	contact.Contacts[targetUserId] = models.ContactRequest{
-// // 		RequestedBy: userID.(string),
-// // 		Status:      "accepted",
-// // 		ChatID:      contact.Contacts[targetUserId].ChatID,
-// // 	}
+func BlockUser(userID, targetUserID string) (models.GetContactInfo, error) {
+	userObjectID, err := bson.ObjectIDFromHex(userID)
+	if err != nil {
+		return models.GetContactInfo{}, fmt.Errorf("failed to convert user id to object id: %w", err)
+	}
 
-// // 	// update the contact in the database
-// // 	if _, err := objects.DBClient.Database("ECHO").Collection("contacts").UpdateOne(c.Request.Context(), bson.M{"_id": userID.(string)}, bson.M{"$set": contact}); err != nil {
-// // 		return "", fmt.Errorf("failed to update contact: %w", err)
-// // 	}
+	targetObjectID, err := bson.ObjectIDFromHex(targetUserID)
+	if err != nil {
+		return models.GetContactInfo{}, fmt.Errorf("failed to convert target user id to object id: %w", err)
+	}
 
-// // 	return "user unblocked", nil
-// // }
+	var contactInfo models.GetContactInfo
 
-// // func AddToFavorites(c *gin.Context) (string, error) {
-// // 	userID, ok := c.Get("user_id")
-// // 	if !ok {
-// // 		return "", fmt.Errorf("user id not found")
-// // 	}
+	// search in contact collection for the contactId
+	userFilter := bson.M{"_id": userObjectID, "contactInfo.relationships." + targetObjectID.Hex(): bson.M{"$exists": true}}
 
-// // 	targetUserId := c.Param("userId")
+	userContact, err := FindByID[models.ContactRequest](context.Background(), objects.DB.Collection(string(objects.UserColl)), userFilter, bson.M{
+		"_id": 1,
+		"contactInfo.relationships." + targetObjectID.Hex(): 1,
+		"contactInfo.blockedChats":                          1,
+		"contactInfo.activeChats":                           1,
+		"contactInfo.stats.blockedCount":                    1,
+	})
+	if err != nil {
+		if err == mongo.ErrNoDocuments {
+			return models.GetContactInfo{}, fmt.Errorf("user not found")
+		}
+		return models.GetContactInfo{}, fmt.Errorf("failed to fetch user contact: %w", err)
+	}
 
-// // 	// get the contact of the user from the database
-// // 	contact := models.Contact{}
-// // 	if err := objects.DBClient.Database("ECHO").Collection("contacts").FindOne(c.Request.Context(), bson.M{"_id": userID.(string)}).Decode(&contact); err != nil {
-// // 		return "", fmt.Errorf("failed to fetch contact: %w", err)
-// // 	}
+	userUpdateProjection := bson.M{}
 
-// // 	// update the contact status to favorite
-// // 	contact.Contacts[targetUserId] = models.ContactRequest{
-// // 		RequestedBy: userID.(string),
-// // 		Status:      "favorite",
-// // 		ChatID:      contact.Contacts[targetUserId].ChatID,
-// // 	}
+	if userContact.ContactInfo.Relationships[targetObjectID.Hex()].Status == string(objects.StatusBlocked) {
+		userUpdateProjection["contactInfo.relationships."+targetObjectID.Hex()+".status"] = string(objects.StatusAccepted)
+		userUpdateProjection["contactInfo.blockedChats"] = append(userContact.ContactInfo.BlockedChats, targetObjectID)
+		userUpdateProjection["contactInfo.activeChats"] = *removeElement(&userContact.ContactInfo.ActiveChats, targetObjectID)
+		userUpdateProjection["contactInfo.stats.blockedCount"] = userContact.ContactInfo.Stats.BlockedCount + 1
+	} else {
+		userUpdateProjection["contactInfo.relationships."+targetObjectID.Hex()+".status"] = string(objects.StatusBlocked)
+		userUpdateProjection["contactInfo.activeChats"] = append(userContact.ContactInfo.ActiveChats, targetObjectID)
+		userUpdateProjection["contactInfo.blockedChats"] = *removeElement(&userContact.ContactInfo.BlockedChats, targetObjectID)
+		userUpdateProjection["contactInfo.stats.blockedCount"] = userContact.ContactInfo.Stats.BlockedCount - 1
+	}
 
-// // 	// update the contact in the database
-// // 	if _, err := objects.DBClient.Database("ECHO").Collection("contacts").UpdateOne(c.Request.Context(), bson.M{"_id": userID.(string)}, bson.M{"$set": contact}); err != nil {
-// // 		return "", fmt.Errorf("failed to update contact: %w", err)
-// // 	}
+	now := time.Now()
 
-// // 	return "user added to favorites", nil
-// // }
+	userUpdateProjection["contactInfo.updatedAt"] = now
 
-// // func RemoveFromFavorites(c *gin.Context) (string, error) {
-// // 	userID, ok := c.Get("user_id")
-// // 	if !ok {
-// // 		return "", fmt.Errorf("user id not found")
-// // 	}
-// // 	targetUserId := c.Param("userId")
+	_, err = UpdateOne(context.Background(), objects.DB.Collection(string(objects.UserColl)), userFilter, userUpdateProjection)
+	if err != nil {
+		return models.GetContactInfo{}, fmt.Errorf("failed to update user contact: %w", err)
+	}
 
-// // 	// get the contact of the user from the database
-// // 	contact := models.Contact{}
-// // 	if err := objects.DBClient.Database("ECHO").Collection("contacts").FindOne(c.Request.Context(), bson.M{"_id": userID.(string)}).Decode(&contact); err != nil {
-// // 		return "", fmt.Errorf("failed to fetch contact: %w", err)
-// // 	}
+	// update the contact status to blocked
+	contactInfo = models.GetContactInfo{
+		ID:          userContact.ContactInfo.Relationships[targetObjectID.Hex()].TargetUserID,
+		Status:      userContact.ContactInfo.Relationships[targetObjectID.Hex()].Status,
+		Username:    userContact.ContactInfo.Relationships[targetObjectID.Hex()].UserInfo.Username,
+		DisplayName: userContact.ContactInfo.Relationships[targetObjectID.Hex()].UserInfo.DisplayName,
+		Avatar:      userContact.ContactInfo.Relationships[targetObjectID.Hex()].UserInfo.Avatar,
+		IsFavorite:  userContact.ContactInfo.Relationships[targetObjectID.Hex()].IsFavorite,
+		ChatID:      userContact.ContactInfo.Relationships[targetObjectID.Hex()].ChatID,
+	}
 
-// // 	// update the contact status to not favorite
-// // 	contact.Contacts[targetUserId] = models.ContactRequest{
-// // 		RequestedBy: userID.(string),
-// // 		Status:      "accepted",
-// // 		ChatID:      contact.Contacts[targetUserId].ChatID,
-// // 	}
+	return contactInfo, err
+}
 
-// // 	// update the contact in the database
-// // 	if _, err := objects.DBClient.Database("ECHO").Collection("contacts").UpdateOne(c.Request.Context(), bson.M{"_id": userID.(string)}, bson.M{"$set": contact}); err != nil {
-// // 		return "", fmt.Errorf("failed to update contact: %w", err)
-// // 	}
+func AddToFavorites(userID, targetUserID string) (models.GetContactInfo, error) {
+	userObjectID, err := bson.ObjectIDFromHex(userID)
+	if err != nil {
+		return models.GetContactInfo{}, fmt.Errorf("failed to convert user id to object id: %w", err)
+	}
 
-// // 	return "user removed from favorites", nil
-// // }
+	targetObjectID, err := bson.ObjectIDFromHex(targetUserID)
+	if err != nil {
+		return models.GetContactInfo{}, fmt.Errorf("failed to convert target user id to object id: %w", err)
+	}
 
-// // func GetFavoriteContacts(c *gin.Context) ([]models.Chat, error) {
-// // 	userID, ok := c.Get("user_id")
-// // 	if !ok {
-// // 		return nil, fmt.Errorf("user id not found")
-// // 	}
+	var contactInfo models.GetContactInfo
 
-// // 	// get the contact of the user from the database
-// // 	contact := models.Contact{}
-// // 	if err := objects.DBClient.Database("ECHO").Collection("contacts").FindOne(c.Request.Context(), bson.M{"_id": userID.(string)}).Decode(&contact); err != nil {
-// // 		return nil, fmt.Errorf("failed to fetch contact: %w", err)
-// // 	}
+	// search in contact collection for the contactId
+	userFilter := bson.M{"_id": userObjectID, "contactInfo.relationships." + targetObjectID.Hex(): bson.M{"$exists": true}}
 
-// // 	favoriteChats := []models.Chat{}
+	userContact, err := FindByID[models.ContactRequest](context.Background(), objects.DB.Collection(string(objects.UserColl)), userFilter, bson.M{
+		"_id": 1,
+		"contactInfo.relationships." + targetObjectID.Hex(): 1,
+		"contactInfo.favorites":                             1,
+		"contactInfo.stats.favoriteCount":                   1,
+	})
+	if err != nil {
+		if err == mongo.ErrNoDocuments {
+			return models.GetContactInfo{}, fmt.Errorf("user not found")
+		}
+		return models.GetContactInfo{}, fmt.Errorf("failed to fetch user contact: %w", err)
+	}
 
-// // 	// get the favorite contacts
-// // 	for _, contactStatus := range contact.Contacts {
-// // 		if contactStatus.Status == "favorite" {
-// // 			chat := models.Chat{}
+	userUpdateProjection := bson.M{}
 
-// // 			// in this case we have to get the chat info from the chat collection
-// // 			if err := objects.DBClient.Database("ECHO").Collection("chats").FindOne(c.Request.Context(), bson.M{"_id": contactStatus.ChatID}).Decode(&chat); err != nil {
-// // 				return nil, fmt.Errorf("failed to fetch chat: %w", err)
-// // 			}
-// // 			favoriteChats = append(favoriteChats, chat)
-// // 		}
-// // 	}
+	if userContact.ContactInfo.Relationships[targetObjectID.Hex()].Status == string(objects.StatusFavorite) {
+		userUpdateProjection["contactInfo.relationships."+targetObjectID.Hex()+".isFavorite"] = true
+		userUpdateProjection["contactInfo.favorites"] = append(userContact.ContactInfo.Favorites, targetObjectID)
+		userUpdateProjection["contactInfo.stats.favoriteCount"] = userContact.ContactInfo.Stats.FavoriteCount + 1
+	} else if userContact.ContactInfo.Relationships[targetObjectID.Hex()].Status == string(objects.StatusAccepted) {
+		userUpdateProjection["contactInfo.relationships."+targetObjectID.Hex()+".isFavorite"] = false
+		userUpdateProjection["contactInfo.favorites"] = *removeElement(&userContact.ContactInfo.Favorites, targetObjectID)
+		userUpdateProjection["contactInfo.stats.favoriteCount"] = userContact.ContactInfo.Stats.FavoriteCount - 1
+	}
 
-// // 	return favoriteChats, nil
-// // }
+	now := time.Now()
+
+	userUpdateProjection["contactInfo.updatedAt"] = now
+
+	_, err = UpdateOne(context.Background(), objects.DB.Collection(string(objects.UserColl)), userFilter, userUpdateProjection)
+	if err != nil {
+		return models.GetContactInfo{}, fmt.Errorf("failed to update user contact: %w", err)
+	}
+
+	// update the contact status to blocked
+	contactInfo = models.GetContactInfo{
+		ID:          userContact.ContactInfo.Relationships[targetObjectID.Hex()].TargetUserID,
+		Status:      userContact.ContactInfo.Relationships[targetObjectID.Hex()].Status,
+		Username:    userContact.ContactInfo.Relationships[targetObjectID.Hex()].UserInfo.Username,
+		DisplayName: userContact.ContactInfo.Relationships[targetObjectID.Hex()].UserInfo.DisplayName,
+		Avatar:      userContact.ContactInfo.Relationships[targetObjectID.Hex()].UserInfo.Avatar,
+		IsFavorite:  userContact.ContactInfo.Relationships[targetObjectID.Hex()].IsFavorite,
+		ChatID:      userContact.ContactInfo.Relationships[targetObjectID.Hex()].ChatID,
+	}
+
+	return contactInfo, err
+}

@@ -1,38 +1,56 @@
 package routes
 
 import (
+	"gin/internal/controller"
+	"gin/internal/middleware"
+	"gin/objects"
+
 	"github.com/gin-gonic/gin"
 )
 
 // RegisterChatRoutes registers all chat-related routes
 func RegisterChatRoutes(r *gin.Engine) {
-	// 	// Apply authentication middleware to all chat routes
-	// 	chatApi := r.Group(objects.ApiBasePath)
-	// 	// chatApi.Use(middleware.AuthMiddleware()) // Add when implemented
+	// Apply authentication middleware to all chat routes
+	chatApi := r.Group(objects.ApiBasePath)
+	chatApi.Use(middleware.AuthMiddleware)
 
-	// 	// ============ MESSAGING ROUTES ============
-	// 	messageRoutes := chatApi.Group("messages")
-	// 	{
-	// 		// Direct Messages (DM)
-	// 		messageRoutes.POST("/direct", controller.SendDirectMessage)                  // Send DM
-	// 		messageRoutes.GET("/direct/:userID", controller.GetDirectMessages)           // Get DM history
-	// 		messageRoutes.GET("/direct/:userID/search", controller.SearchDirectMessages) // Search in DMs
+	// ============ WEBSOCKET ROUTES ============
+	wsRoutes := chatApi.Group("ws")
+	{
+		// Real-time chat WebSocket connection
+		wsRoutes.GET("/chat", controller.HandleWebSocketChat) // Main WebSocket endpoint for real-time chat
+	}
 
-	// 		// Group Messages
-	// 		messageRoutes.POST("/groups/:groupID", controller.SendGroupMessage)          // Send group message
-	// 		messageRoutes.GET("/groups/:groupID", controller.GetGroupMessages)           // Get group message history
-	// 		messageRoutes.GET("/groups/:groupID/search", controller.SearchGroupMessages) // Search in group
+	// ============ CHAT MANAGEMENT ROUTES ============
+	chatRoutes := chatApi.Group("chats")
+	{
+		// Chat creation
+		chatRoutes.POST("/direct", controller.CreateDirectChatHTTP) // Create direct chat
+		chatRoutes.POST("/group", controller.CreateGroupChatHTTP)   // Create group chat
 
-	// 		// Message Operations
-	// 		messageRoutes.PUT("/:messageID", controller.EditMessage)                        // Edit message
-	// 		messageRoutes.DELETE("/:messageID", controller.DeleteMessage)                   // Delete message
-	// 		messageRoutes.POST("/:messageID/reactions", controller.AddReaction)             // Add reaction
-	// 		messageRoutes.DELETE("/:messageID/reactions/:emoji", controller.RemoveReaction) // Remove reaction
-	// 		messageRoutes.POST("/:messageID/reply", controller.ReplyToMessage)              // Reply to message
-	// 		messageRoutes.POST("/:messageID/forward", controller.ForwardMessage)            // Forward message
-	// 		messageRoutes.PUT("/:messageID/pin", controller.PinMessage)                     // Pin message
-	// 		messageRoutes.DELETE("/:messageID/pin", controller.UnpinMessage)                // Unpin message
-	// 	}
+		// Chat operations
+		chatRoutes.GET("/messages", controller.GetChatMessagesHTTP) // Get chat messages with pagination
+
+		// Monitoring (for admin/debugging)
+		chatRoutes.GET("/hub/stats", controller.GetHubStatsHTTP) // Get WebSocket hub statistics
+	}
+
+	// ============ MESSAGING ROUTES ============
+	messageRoutes := chatApi.Group("messages")
+	{
+		// Group Messages (legacy endpoint for backward compatibility)
+		messageRoutes.GET("/groups/chat", controller.GetGroupMessages) // Get group message history
+
+		// 		// Message Operations (Future implementations)
+		// 		messageRoutes.PUT("/:messageID", controller.EditMessage)                        // Edit message
+		// 		messageRoutes.DELETE("/:messageID", controller.DeleteMessage)                   // Delete message
+		// 		messageRoutes.POST("/:messageID/reactions", controller.AddReaction)             // Add reaction
+		// 		messageRoutes.DELETE("/:messageID/reactions/:emoji", controller.RemoveReaction) // Remove reaction
+		// 		messageRoutes.POST("/:messageID/reply", controller.ReplyToMessage)              // Reply to message
+		// 		messageRoutes.POST("/:messageID/forward", controller.ForwardMessage)            // Forward message
+		// 		messageRoutes.PUT("/:messageID/pin", controller.PinMessage)                     // Pin message
+		// 		messageRoutes.DELETE("/:messageID/pin", controller.UnpinMessage)                // Unpin message
+	}
 
 	// 	// ============ GROUP MANAGEMENT ROUTES ============
 	// 	groupRoutes := chatApi.Group("groups")
@@ -129,16 +147,16 @@ func RegisterChatRoutes(r *gin.Engine) {
 }
 
 // // ============ WEBSOCKET ROUTES ============
-func RegisterWebSocketRoutes(r *gin.Engine) {
-	// 	wsApi := r.Group(objects.WebSocketBasePath)
-	// 	{
-	// 		// Real-time messaging
-	// 		wsApi.GET("/chat", controller.HandleWebSocketChat)                   // Main chat WebSocket
-	// 		wsApi.GET("/notifications", controller.HandleWebSocketNotifications) // Notifications WebSocket
-	// 		wsApi.GET("/presence", controller.HandleWebSocketPresence)           // Presence WebSocket
+// func RegisterWebSocketRoutes(r *gin.Engine) {
+// 	wsApi := r.Group(objects.WebSocketBasePath)
+// 	{
+// 		// Real-time messaging
+// 		wsApi.GET("/chat", controller.HandleWebSocketChat)                   // Main chat WebSocket
+// 		wsApi.GET("/notifications", controller.HandleWebSocketNotifications) // Notifications WebSocket
+// 		wsApi.GET("/presence", controller.HandleWebSocketPresence)           // Presence WebSocket
 
-	// 		// Voice/Video calling (future implementation)
-	// 		// 	wsApi.GET("/voice/:channelID", controller.HandleVoiceChannel) // Voice channel
-	// 		// 	wsApi.GET("/video/:channelID", controller.HandleVideoChannel) // Video channel
-	// }
-}
+// 		// Voice/Video calling (future implementation)
+// 		// 	wsApi.GET("/voice/:channelID", controller.HandleVoiceChannel) // Voice channel
+// 		// 	wsApi.GET("/video/:channelID", controller.HandleVideoChannel) // Video channel
+// }
+// }

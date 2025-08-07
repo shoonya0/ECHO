@@ -23,7 +23,7 @@ type Chat struct {
 	AdminIDs []bson.ObjectID `json:"adminIds" bson:"adminIds"`
 
 	// Last message embedded for quick access
-	LastMessage LastMessageEmbed `json:"lastMessage" bson:"lastMessage"`
+	LastMessageID bson.ObjectID `json:"lastMessageId" bson:"lastMessageId"`
 
 	// Aggregated data
 	Stats ChatStatsEmbed `json:"stats" bson:"stats"`
@@ -48,6 +48,7 @@ type ParticipantEmbed struct {
 	DisplayName string        `json:"displayName" bson:"displayName"`
 	Avatar      string        `json:"avatar" bson:"avatar"`
 	Role        string        `json:"role" bson:"role"` // "member", "admin", "owner"
+	IsBlocked   bool          `json:"isBlocked" bson:"isBlocked"`
 	JoinedAt    time.Time     `json:"joinedAt" bson:"joinedAt"`
 	LastActive  time.Time     `json:"lastActive" bson:"lastActive"`
 	IsMuted     bool          `json:"isMuted" bson:"isMuted"`

@@ -93,10 +93,10 @@ type MessagePrefsEmbed struct {
 }
 
 type UserCacheEmbed struct {
-	ActiveChats     []string  `json:"activeChats" bson:"activeChats"`         // Recently active chat IDs
-	RecentContacts  []string  `json:"recentContacts" bson:"recentContacts"`   // Recently contacted user IDs
-	UnreadCount     int       `json:"unreadCount" bson:"unreadCount"`         // Total unread messages
-	LastCacheUpdate time.Time `json:"lastCacheUpdate" bson:"lastCacheUpdate"` // TTL reference
+	ActiveChats     []bson.ObjectID `json:"activeChats" bson:"activeChats"`         // Recently active chat IDs
+	RecentContacts  []bson.ObjectID `json:"recentContacts" bson:"recentContacts"`   // Recently contacted user IDs
+	UnreadCount     int             `json:"unreadCount" bson:"unreadCount"`         // Total unread messages
+	LastCacheUpdate time.Time       `json:"lastCacheUpdate" bson:"lastCacheUpdate"` // TTL reference
 }
 
 // ============ BATCH OPERATIONS MODELS ============

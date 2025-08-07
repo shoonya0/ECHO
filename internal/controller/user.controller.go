@@ -73,17 +73,27 @@ func UpdateProfile(ctx *gin.Context) {
 		return
 	}
 
+	// Build update document from request
+	updateDoc := services.BuildPartialUpdateDocument(updateReq)
+
 	// Update user profile with only provided fields
-	res, err := services.UpdateProfile(objectID, updateReq)
+	err = services.UpdateProfile(objectID, updateDoc)
 	if err != nil {
 		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	// Get updated user data
+	updatedUser, err := services.GetUserProfile(objectID)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": "failed to fetch updated profile"})
 		return
 	}
 
 	// Return updated user data
 	ctx.JSON(http.StatusOK, gin.H{
 		"message": "Profile updated successfully",
-		"user":    res,
+		"user":    updatedUser,
 	})
 }
 
@@ -94,7 +104,14 @@ func GetUserProfile(ctx *gin.Context) {
 		utils.ErrorResponse(ctx, http.StatusBadRequest, "user id is required", nil)
 		return
 	}
-	userData, err := services.GetUserProfile(userID)
+	// Convert string ID to ObjectID
+	objectID, err := bson.ObjectIDFromHex(userID)
+	if err != nil {
+		utils.ErrorResponse(ctx, http.StatusBadRequest, "invalid user id format", nil)
+		return
+	}
+
+	userData, err := services.GetUserProfile(objectID)
 	if err != nil {
 		utils.ErrorResponse(ctx, http.StatusInternalServerError, "failed to get user profile", err.Error())
 		return
