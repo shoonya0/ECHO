@@ -1,6 +1,7 @@
 package models
 
 import (
+	"sync"
 	"time"
 
 	"github.com/gorilla/websocket"
@@ -75,38 +76,98 @@ type ErrorMessage struct {
 	Details string `json:"details,omitempty"`
 }
 
+// MessageReaction represents message reaction events
+type MessageReaction struct {
+	MessageID string    `json:"messageId"`
+	UserID    string    `json:"userId"`
+	Username  string    `json:"username"`
+	Emoji     string    `json:"emoji"`
+	Action    string    `json:"action"` // "add", "remove"
+	Timestamp time.Time `json:"timestamp"`
+}
+
+// MessageEdit represents message edit events
+type MessageEdit struct {
+	MessageID   string    `json:"messageId"`
+	UserID      string    `json:"userId"`
+	Username    string    `json:"username"`
+	NewContent  string    `json:"newContent"`
+	EditedAt    time.Time `json:"editedAt"`
+	EditHistory bool      `json:"editHistory"` // Whether to show edit history
+}
+
+// MessageDelete represents message deletion events
+type MessageDelete struct {
+	MessageID string    `json:"messageId"`
+	UserID    string    `json:"userId"`
+	Username  string    `json:"username"`
+	DeletedAt time.Time `json:"deletedAt"`
+	Reason    string    `json:"reason,omitempty"`
+}
+
+// ChatUpdate represents chat information updates
+type ChatUpdate struct {
+	ChatID     string                 `json:"chatId"`
+	UpdatedBy  string                 `json:"updatedBy"`
+	Changes    map[string]interface{} `json:"changes"`
+	Timestamp  time.Time              `json:"timestamp"`
+	UpdateType string                 `json:"updateType"` // "name", "description", "avatar", "settings"
+}
+
+// UserInvite represents user invitation events
+type UserInvite struct {
+	ChatID      string    `json:"chatId"`
+	InviterID   string    `json:"inviterId"`
+	InviterName string    `json:"inviterName"`
+	InviteeID   string    `json:"inviteeId"`
+	InviteeName string    `json:"inviteeName"`
+	Timestamp   time.Time `json:"timestamp"`
+}
+
+// UserRemove represents user removal events
+type UserRemove struct {
+	ChatID      string    `json:"chatId"`
+	RemovedByID string    `json:"removedById"`
+	RemovedBy   string    `json:"removedBy"`
+	RemovedID   string    `json:"removedId"`
+	RemovedUser string    `json:"removedUser"`
+	Reason      string    `json:"reason,omitempty"`
+	Timestamp   time.Time `json:"timestamp"`
+}
+
+// ChatNotification represents various chat notifications
+type ChatNotification struct {
+	ChatID    string                 `json:"chatId"`
+	Type      string                 `json:"type"` // "mention", "invite", "role_change", "system"
+	Title     string                 `json:"title"`
+	Message   string                 `json:"message"`
+	Data      map[string]interface{} `json:"data,omitempty"`
+	Priority  string                 `json:"priority"` // "low", "normal", "high", "urgent"
+	Timestamp time.Time              `json:"timestamp"`
+}
+
 // ============ CLIENT CONNECTION MODELS ============
 
-// Client represents a WebSocket client connection
+// Client represents a WebSocket client connection (simplified - no redundant user data)
 type Client struct {
 	ID           string                 `json:"id"`
 	UserID       bson.ObjectID          `json:"userId"`
-	Username     string                 `json:"username"`
 	Connection   *websocket.Conn        `json:"-"`
 	Send         chan WebSocketMessage  `json:"-"`
-	ChatRooms    map[string]bool        `json:"chatRooms"` // Set of chat room IDs the client is subscribed to
+	ActiveChats  []string               `json:"activeChats"` // Chat IDs the client is subscribed to
 	LastActivity time.Time              `json:"lastActivity"`
 	Metadata     map[string]interface{} `json:"metadata,omitempty"`
 }
 
-// ChatRoom represents a chat room with connected clients
-type ChatRoom struct {
-	ID           string             `json:"id"`
-	Name         string             `json:"name"`
-	Type         string             `json:"type"` // "direct", "group", "channel"
-	Clients      map[string]*Client `json:"-"`    // Map of client IDs to clients
-	CreatedAt    time.Time          `json:"createdAt"`
-	LastActivity time.Time          `json:"lastActivity"`
-	Settings     ChatRoomSettings   `json:"settings"`
-}
-
-// ChatRoomSettings represents room-specific settings
-type ChatRoomSettings struct {
-	MaxClients      int  `json:"maxClients"`
-	AllowAnonymous  bool `json:"allowAnonymous"`
-	MessageHistory  bool `json:"messageHistory"`
-	TypingIndicator bool `json:"typingIndicator"`
-	ReadReceipts    bool `json:"readReceipts"`
+// UserDisplayInfo represents cached user display information for UI
+type UserDisplayInfo struct {
+	UserID      bson.ObjectID `json:"userId"`
+	Username    string        `json:"username"`
+	DisplayName string        `json:"displayName"`
+	Avatar      string        `json:"avatar"`
+	Status      string        `json:"status"`
+	IsOnline    bool          `json:"isOnline"`
+	LastSeen    time.Time     `json:"lastSeen"`
 }
 
 // Hub represents the WebSocket hub managing all connections
@@ -114,11 +175,15 @@ type Hub struct {
 	// Registered clients
 	Clients map[string]*Client `json:"-"`
 
-	// Chat rooms
-	ChatRooms map[string]*ChatRoom `json:"-"`
+	// Chat to clients mapping (replaces ChatRooms)
+	ChatClients map[string]map[string]*Client `json:"-"` // ChatID -> ClientID -> Client
 
 	// User to client mapping
 	UserClients map[string]map[string]*Client `json:"-"` // UserID -> ClientID -> Client
+
+	// User display info cache (TTL: 5 minutes)
+	UserInfoCache map[string]*UserDisplayInfo `json:"-"`
+	CacheExpiry   map[string]time.Time        `json:"-"`
 
 	// Channel for client registration
 	Register chan *Client `json:"-"`
@@ -129,11 +194,14 @@ type Hub struct {
 	// Channel for broadcasting messages
 	Broadcast chan HubMessage `json:"-"`
 
-	// Channel for joining chat rooms
-	JoinRoom chan JoinRoomRequest `json:"-"`
+	// Channel for joining chats
+	JoinChat chan JoinChatRequest `json:"-"`
 
-	// Channel for leaving chat rooms
-	LeaveRoom chan LeaveRoomRequest `json:"-"`
+	// Channel for leaving chats
+	LeaveChat chan LeaveChatRequest `json:"-"`
+
+	// Mutex for thread safety
+	Mutex sync.RWMutex `json:"-"`
 }
 
 // HubMessage represents a message to be broadcasted
@@ -143,14 +211,14 @@ type HubMessage struct {
 	Exclude map[string]bool  `json:"exclude,omitempty"` // Client IDs to exclude from broadcast
 }
 
-// JoinRoomRequest represents a request to join a chat room
-type JoinRoomRequest struct {
+// JoinChatRequest represents a request to join a chat
+type JoinChatRequest struct {
 	Client *Client `json:"-"`
 	ChatID string  `json:"chatId"`
 }
 
-// LeaveRoomRequest represents a request to leave a chat room
-type LeaveRoomRequest struct {
+// LeaveChatRequest represents a request to leave a chat
+type LeaveChatRequest struct {
 	Client *Client `json:"-"`
 	ChatID string  `json:"chatId"`
 }
@@ -181,20 +249,33 @@ type MessageResponse struct {
 
 const (
 	// Message types
-	WSMessageTypeChat     = "message"
-	WSMessageTypeTyping   = "typing"
-	WSMessageTypePresence = "presence"
-	WSMessageTypeJoin     = "join"
-	WSMessageTypeLeave    = "leave"
-	WSMessageTypeDelivery = "delivery"
-	WSMessageTypeError    = "error"
-	WSMessageTypeResponse = "response"
+	WSMessageTypeChat          = "message"
+	WSMessageTypeTyping        = "typing"
+	WSMessageTypePresence      = "presence"
+	WSMessageTypeJoin          = "join"
+	WSMessageTypeLeave         = "leave"
+	WSMessageTypeDelivery      = "delivery"
+	WSMessageTypeError         = "error"
+	WSMessageTypeResponse      = "response"
+	WSMessageTypeUserUpdated   = "user_updated"
+	WSMessageTypeChatUpdated   = "chat_updated"
+	WSMessageTypeMessageEdit   = "message_edited"
+	WSMessageTypeMessageDelete = "message_deleted"
+	WSMessageTypeReaction      = "reaction"
+	WSMessageTypeNotification  = "notification"
 
-	// Request types
-	WSRequestTypeSendMessage = "send_message"
-	WSRequestTypeJoinRoom    = "join_room"
-	WSRequestTypeLeaveRoom   = "leave_room"
-	WSRequestTypeSetTyping   = "set_typing"
-	WSRequestTypeSetPresence = "set_presence"
-	WSRequestTypeMarkRead    = "mark_read"
+	// Request types (updated from "room" to "chat")
+	WSRequestTypeSendMessage    = "send_message"
+	WSRequestTypeJoinChat       = "join_chat"
+	WSRequestTypeLeaveChat      = "leave_chat"
+	WSRequestTypeSetTyping      = "set_typing"
+	WSRequestTypeSetPresence    = "set_presence"
+	WSRequestTypeMarkRead       = "mark_read"
+	WSRequestTypeEditMessage    = "edit_message"
+	WSRequestTypeDeleteMessage  = "delete_message"
+	WSRequestTypeAddReaction    = "add_reaction"
+	WSRequestTypeRemoveReaction = "remove_reaction"
+	WSRequestTypeInviteUser     = "invite_user"
+	WSRequestTypeRemoveUser     = "remove_user"
+	WSRequestTypeUpdateChat     = "update_chat"
 )

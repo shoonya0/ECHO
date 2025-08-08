@@ -3,3 +3,4 @@ config/envConfig/dev.env
 config/envConfig/prod.env
 config/envConfig/test.env
 .cursor
+build

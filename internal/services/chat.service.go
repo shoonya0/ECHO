@@ -12,6 +12,47 @@ import (
 
 // ============ ENHANCED CHAT SERVICE WITH REAL-TIME SUPPORT ============
 
+// GetUserChats retrieves all chats where the user is a participant
+func GetUserChats(userID bson.ObjectID) ([]models.Chat, error) {
+	ctx := context.Background()
+
+	// Find all chats where user is a participant
+	filter := bson.M{
+		"participants." + userID.Hex(): bson.M{"$exists": true},
+	}
+
+	// Get basic chat info (no need for full participants data for this query)
+	projection := bson.M{
+		"_id":           1,
+		"type":          1,
+		"name":          1,
+		"description":   1,
+		"avatar":        1,
+		"lastMessageId": 1,
+		"participants":  1, // We need this to check if user is blocked
+		"stats":         1,
+		"settings":      1,
+		"readReceipts":  1,
+		"createdAt":     1,
+		"updatedAt":     1,
+	}
+
+	chats, err := FindAll[models.Chat](
+		ctx,
+		objects.DB.Collection(string(objects.ChatColl)),
+		filter,
+		projection,
+		bson.M{"updatedAt": -1}, // Sort by most recently updated
+		0,                       // No limit
+		0,                       // No offset
+	)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get user chats: %w", err)
+	}
+
+	return chats, nil
+}
+
 // GetChat retrieves chat information with basic details
 func GetChat(chatInfo models.GetContactInfo) (models.Chat, error) {
 	chatFilter := bson.M{"_id": chatInfo.ChatID}
@@ -87,39 +128,33 @@ func CreateDirectChat(userID1, userID2 bson.ObjectID) (*models.Chat, error) {
 		return &existingChat, nil
 	}
 
-	// Get user details for participants
-	user1, err := GetUserByID(userID1)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get user1: %w", err)
-	}
+	// // Get user details for participants
+	// user1, err := GetUserByID(userID1)
+	// if err != nil {
+	// 	return nil, fmt.Errorf("failed to get user1: %w", err)
+	// }
 
-	user2, err := GetUserByID(userID2)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get user2: %w", err)
-	}
+	// user2, err := GetUserByID(userID2)
+	// if err != nil {
+	// 	return nil, fmt.Errorf("failed to get user2: %w", err)
+	// }
 
-	// Create new direct chat
+	// Create new direct chat with ParticipantRef (no embedded user data)
 	now := time.Now()
 	chat := models.Chat{
 		Type: "direct",
-		Participants: map[string]models.ParticipantEmbed{
+		Participants: map[string]models.ParticipantRef{
 			userID1.Hex(): {
-				UserID:      userID1,
-				Username:    user1.Username,
-				DisplayName: user1.Profile.DisplayName,
-				Avatar:      user1.Profile.Avatar,
-				Role:        "member",
-				JoinedAt:    now,
-				LastActive:  now,
+				UserID:     userID1,
+				Role:       "member",
+				JoinedAt:   now,
+				LastActive: now,
 			},
 			userID2.Hex(): {
-				UserID:      userID2,
-				Username:    user2.Username,
-				DisplayName: user2.Profile.DisplayName,
-				Avatar:      user2.Profile.Avatar,
-				Role:        "member",
-				JoinedAt:    now,
-				LastActive:  now,
+				UserID:     userID2,
+				Role:       "member",
+				JoinedAt:   now,
+				LastActive: now,
 			},
 		},
 		Stats: models.ChatStatsEmbed{
@@ -131,10 +166,13 @@ func CreateDirectChat(userID1, userID2 bson.ObjectID) (*models.Chat, error) {
 			MessageRetention: 0, // Forever
 			MaxParticipants:  2,
 		},
-		ReadReceipts: make(map[string]time.Time),
-		TypingUsers:  make(map[string]time.Time),
-		CreatedAt:    now,
-		UpdatedAt:    now,
+		ReadReceipts:  make(map[string]time.Time),
+		TypingUsers:   make(map[string]time.Time),
+		ActiveClients: make(map[string]*models.Client), // Initialize for real-time capabilities
+		IsActive:      false,
+		LastActivity:  now,
+		CreatedAt:     now,
+		UpdatedAt:     now,
 	}
 
 	result, err := objects.DB.Collection(string(objects.ChatColl)).InsertOne(ctx, chat)
@@ -152,22 +190,19 @@ func CreateGroupChat(creatorID bson.ObjectID, name, description string, particip
 	now := time.Now()
 
 	// Get creator details
-	creator, err := GetUserByID(creatorID)
+	_, err := GetUserByID(creatorID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get creator: %w", err)
 	}
 
-	participants := make(map[string]models.ParticipantEmbed)
+	participants := make(map[string]models.ParticipantRef)
 
-	// Add creator as owner
-	participants[creatorID.Hex()] = models.ParticipantEmbed{
-		UserID:      creatorID,
-		Username:    creator.Username,
-		DisplayName: creator.Profile.DisplayName,
-		Avatar:      creator.Profile.Avatar,
-		Role:        "owner",
-		JoinedAt:    now,
-		LastActive:  now,
+	// Add creator as owner (using ParticipantRef without embedded user data)
+	participants[creatorID.Hex()] = models.ParticipantRef{
+		UserID:     creatorID,
+		Role:       "owner",
+		JoinedAt:   now,
+		LastActive: now,
 	}
 
 	// Add other participants
@@ -176,19 +211,17 @@ func CreateGroupChat(creatorID bson.ObjectID, name, description string, particip
 			continue // Skip creator, already added
 		}
 
-		user, err := GetUserByID(userID)
+		// Just verify user exists, but don't embed user data
+		_, err := GetUserByID(userID)
 		if err != nil {
 			continue // Skip invalid users
 		}
 
-		participants[userID.Hex()] = models.ParticipantEmbed{
-			UserID:      userID,
-			Username:    user.Username,
-			DisplayName: user.Profile.DisplayName,
-			Avatar:      user.Profile.Avatar,
-			Role:        "member",
-			JoinedAt:    now,
-			LastActive:  now,
+		participants[userID.Hex()] = models.ParticipantRef{
+			UserID:     userID,
+			Role:       "member",
+			JoinedAt:   now,
+			LastActive: now,
 		}
 	}
 
@@ -209,10 +242,13 @@ func CreateGroupChat(creatorID bson.ObjectID, name, description string, particip
 			MessageRetention: 0, // Forever
 			MaxParticipants:  100,
 		},
-		ReadReceipts: make(map[string]time.Time),
-		TypingUsers:  make(map[string]time.Time),
-		CreatedAt:    now,
-		UpdatedAt:    now,
+		ReadReceipts:  make(map[string]time.Time),
+		TypingUsers:   make(map[string]time.Time),
+		ActiveClients: make(map[string]*models.Client), // Initialize for real-time capabilities
+		IsActive:      false,
+		LastActivity:  now,
+		CreatedAt:     now,
+		UpdatedAt:     now,
 	}
 
 	result, err := objects.DB.Collection(string(objects.ChatColl)).InsertOne(ctx, chat)
@@ -460,4 +496,102 @@ func broadcastReadReceipts(chatID, userID bson.ObjectID, messageIDs []bson.Objec
 	}
 
 	BroadcastToChat(chatID.Hex(), wsMessage)
+}
+
+// AddMessageReaction adds a reaction to a message
+func AddMessageReaction(chatID, messageID, userID bson.ObjectID, emoji string) error {
+	ctx := context.Background()
+
+	// Validate emoji (basic validation)
+	if len(emoji) == 0 || len(emoji) > 10 {
+		return fmt.Errorf("invalid emoji")
+	}
+
+	// Update message with new reaction
+	filter := bson.M{
+		"_id":    messageID,
+		"chatId": chatID,
+	}
+
+	update := bson.M{
+		"$addToSet": bson.M{
+			"reactions." + emoji + ".users": userID,
+		},
+		"$inc": bson.M{
+			"reactions." + emoji + ".count": 1,
+		},
+		"$set": bson.M{
+			"reactions." + emoji + ".details." + userID.Hex(): "", // Will be filled with username
+			"updatedAt": time.Now(),
+		},
+	}
+
+	result, err := objects.DB.Collection(string(objects.MessageColl)).UpdateOne(ctx, filter, update)
+	if err != nil {
+		return fmt.Errorf("failed to add reaction: %w", err)
+	}
+
+	if result.MatchedCount == 0 {
+		return fmt.Errorf("message not found")
+	}
+
+	return nil
+}
+
+// RemoveMessageReaction removes a reaction from a message
+func RemoveMessageReaction(chatID, messageID, userID bson.ObjectID, emoji string) error {
+	ctx := context.Background()
+
+	// Remove user from reaction
+	filter := bson.M{
+		"_id":    messageID,
+		"chatId": chatID,
+	}
+
+	update := bson.M{
+		"$pull": bson.M{
+			"reactions." + emoji + ".users": userID,
+		},
+		"$inc": bson.M{
+			"reactions." + emoji + ".count": -1,
+		},
+		"$unset": bson.M{
+			"reactions." + emoji + ".details." + userID.Hex(): "",
+		},
+		"$set": bson.M{
+			"updatedAt": time.Now(),
+		},
+	}
+
+	result, err := objects.DB.Collection(string(objects.MessageColl)).UpdateOne(ctx, filter, update)
+	if err != nil {
+		return fmt.Errorf("failed to remove reaction: %w", err)
+	}
+
+	if result.MatchedCount == 0 {
+		return fmt.Errorf("message not found")
+	}
+
+	// Clean up empty reaction if count is 0
+	go cleanupEmptyReaction(messageID, emoji)
+
+	return nil
+}
+
+// cleanupEmptyReaction removes reaction entry if count reaches 0
+func cleanupEmptyReaction(messageID bson.ObjectID, emoji string) {
+	ctx := context.Background()
+
+	filter := bson.M{
+		"_id":                           messageID,
+		"reactions." + emoji + ".count": bson.M{"$lte": 0},
+	}
+
+	update := bson.M{
+		"$unset": bson.M{
+			"reactions." + emoji: "",
+		},
+	}
+
+	objects.DB.Collection(string(objects.MessageColl)).UpdateOne(ctx, filter, update)
 }

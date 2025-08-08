@@ -89,6 +89,9 @@ func main() {
 	// authApi := r.Group(objects.AuthBasePath)
 
 	// ============ WEBSOCKET SERVICE CONFIGURATION ============
+	// Initialize user lookup service with caching
+	services.InitUserLookupService()
+
 	// Start WebSocket hub in a separate goroutine
 	go func() {
 		log.Println("Starting WebSocket Hub for real-time chat...")

@@ -2,12 +2,16 @@ package middleware
 
 import (
 	"fmt"
+	"gin/internal/models"
+	"gin/internal/utils"
 	"gin/objects"
 	"net/http"
 	"strings"
+	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/golang-jwt/jwt/v5"
+	"go.mongodb.org/mongo-driver/v2/bson"
 )
 
 type JwtClaims struct {
@@ -99,6 +103,22 @@ func AuthMiddleware(ctx *gin.Context) {
 	ctx.Set("userId", claims.UserID)
 	ctx.Set("email", claims.Email)
 	ctx.Set("exp", claims.Exp)
+
+	objectID, err := bson.ObjectIDFromHex(claims.UserID)
+	if err != nil {
+		utils.ErrorResponse(ctx, http.StatusUnauthorized, "invalid user id format", err.Error())
+		ctx.Abort()
+		return
+	}
+
+	ctx.Set("user", models.User{
+		ID:        objectID,
+		Username:  claims.Email,
+		Email:     claims.Email,
+		CreatedAt: time.Now(),
+		UpdatedAt: time.Now(),
+	})
+
 	// Continue to next handler
 	ctx.Next()
 }

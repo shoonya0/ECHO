@@ -6,8 +6,8 @@ import (
 	"go.mongodb.org/mongo-driver/v2/bson"
 )
 
-// ============ OPTIMIZED CHAT MODEL WITH EMBEDDED PARTICIPANT DATA ============
-// Embeds participant info and last message to reduce queries
+// ============ UNIFIED CHAT MODEL WITH REAL-TIME CAPABILITIES ============
+// Consolidated model for both persistence and real-time operations
 type Chat struct {
 	ChatID      bson.ObjectID `json:"_id,omitempty" bson:"_id,omitempty"`
 	Type        string        `json:"type" bson:"type"` // "direct", "group", "channel"
@@ -15,8 +15,8 @@ type Chat struct {
 	Description string        `json:"description,omitempty" bson:"description,omitempty"`
 	Avatar      string        `json:"avatar,omitempty" bson:"avatar,omitempty"`
 
-	// Embedded participant data to avoid joins
-	Participants map[string]ParticipantEmbed `json:"participants" bson:"participants"` // userID -> participant data
+	// Participant references only (no embedded user data)
+	Participants map[string]ParticipantRef `json:"participants" bson:"participants"` // userID -> participant reference
 
 	// Owner/Admin info
 	OwnerID  bson.ObjectID   `json:"ownerId,omitempty" bson:"ownerId,omitempty"`
@@ -37,11 +37,28 @@ type Chat struct {
 	// Typing indicators (TTL: 10 seconds)
 	TypingUsers map[string]time.Time `json:"typingUsers" bson:"typingUsers"` // userID -> typing timestamp
 
+	// Real-time capabilities (not persisted)
+	ActiveClients map[string]*Client `json:"-" bson:"-"` // clientID -> client (in-memory only)
+	IsActive      bool               `json:"isActive" bson:"isActive"`
+	LastActivity  time.Time          `json:"lastActivity" bson:"lastActivity"`
+
 	// Timestamps
 	CreatedAt time.Time `json:"createdAt" bson:"createdAt"`
 	UpdatedAt time.Time `json:"updatedAt" bson:"updatedAt"`
 }
 
+// ParticipantRef represents a participant reference without embedded user data
+type ParticipantRef struct {
+	UserID      bson.ObjectID `json:"userId" bson:"userId"`
+	Role        string        `json:"role" bson:"role"` // "member", "admin", "owner"
+	IsBlocked   bool          `json:"isBlocked" bson:"isBlocked"`
+	JoinedAt    time.Time     `json:"joinedAt" bson:"joinedAt"`
+	LastActive  time.Time     `json:"lastActive" bson:"lastActive"`
+	IsMuted     bool          `json:"isMuted" bson:"isMuted"`
+	Permissions []string      `json:"permissions" bson:"permissions"`
+}
+
+// ParticipantEmbed kept for backward compatibility and response models
 type ParticipantEmbed struct {
 	UserID      bson.ObjectID `json:"userId" bson:"userId"`
 	Username    string        `json:"username" bson:"username"`
