@@ -30,11 +30,6 @@ func GetHubInstance() *models.Hub {
 			UserClients:   make(map[string]map[string]*models.Client),
 			UserInfoCache: make(map[string]*models.UserDisplayInfo),
 			CacheExpiry:   make(map[string]time.Time),
-			Register:      make(chan *models.Client, 256),
-			Unregister:    make(chan *models.Client, 256),
-			Broadcast:     make(chan models.HubMessage, 1024),
-			JoinChat:      make(chan models.JoinChatRequest, 256),
-			LeaveChat:     make(chan models.LeaveChatRequest, 256),
 		}
 		// Initialize user lookup service
 		InitUserLookupService()
@@ -42,33 +37,15 @@ func GetHubInstance() *models.Hub {
 	return hubInstance
 }
 
-// RunHub starts the WebSocket hub and handles all real-time operations
+// RunHub starts the WebSocket hub and handles all real-time operations (simplified)
 func RunHub() {
-	hub := GetHubInstance()
-
-	// Start cleanup goroutine for inactive connections
-	go cleanupInactiveConnections()
-
 	log.Println("WebSocket Hub started - Managing real-time connections")
 
-	for {
-		select {
-		case client := <-hub.Register:
-			registerClient(client)
+	// Start cleanup routine for inactive connections
+	go cleanupInactiveConnections()
 
-		case client := <-hub.Unregister:
-			unregisterClient(client)
-
-		case message := <-hub.Broadcast:
-			broadcastMessage(message)
-
-		case joinReq := <-hub.JoinChat:
-			handleJoinChat(joinReq)
-
-		case leaveReq := <-hub.LeaveChat:
-			handleLeaveChat(leaveReq)
-		}
-	}
+	// Hub now operates without complex channel management
+	// Individual operations are called directly from API endpoints
 }
 
 // ============ CLIENT MANAGEMENT ============
@@ -88,7 +65,7 @@ func registerClient(client *models.Client) {
 	hub.UserClients[userID][client.ID] = client
 
 	// Update user presence to online
-	go UpdateUserPresence(client.UserID, string(objects.UserStatusOnline))
+	UpdateUserPresence(client.UserID, string(objects.UserStatusOnline))
 
 	// Send welcome message
 	welcomeMsg := models.WebSocketMessage{
@@ -115,7 +92,7 @@ func registerClient(client *models.Client) {
 	}
 
 	// Notify user's contacts about online status
-	go notifyUserPresence(client, string(objects.UserStatusOnline))
+	notifyUserPresence(client, string(objects.UserStatusOnline))
 }
 
 // unregisterClient removes a client connection
@@ -139,8 +116,8 @@ func unregisterClient(client *models.Client) {
 			// If no more clients for this user, update presence to offline
 			if len(userClients) == 0 {
 				delete(hub.UserClients, userID)
-				go UpdateUserPresence(client.UserID, string(objects.UserStatusOffline))
-				go notifyUserPresence(client, string(objects.UserStatusOffline))
+				UpdateUserPresence(client.UserID, string(objects.UserStatusOffline))
+				notifyUserPresence(client, string(objects.UserStatusOffline))
 			}
 		}
 
@@ -382,9 +359,7 @@ func broadcastToChat(chatID string, message models.WebSocketMessage, exclude map
 		case client.Send <- message:
 		default:
 			// Client's send channel is full or closed, remove client
-			go func(c *models.Client) {
-				hub.Unregister <- c
-			}(client)
+			unregisterClient(client)
 			log.Printf("Removed unresponsive client %s from chat %s", clientID, chatID)
 		}
 	}
@@ -463,10 +438,9 @@ func canJoinChat(client *models.Client, chatID string) bool {
 	return true
 }
 
-// scheduleRoomCleanup schedules cleanup of empty rooms
+// scheduleChatCleanup schedules cleanup of empty rooms (simplified)
 func scheduleChatCleanup(chatID string) {
-	time.Sleep(5 * time.Minute) // Wait 5 minutes before cleanup
-
+	// Immediate cleanup instead of delayed
 	hub := GetHubInstance()
 	hub.Mutex.Lock()
 	defer hub.Mutex.Unlock()
@@ -482,23 +456,20 @@ func cleanupInactiveConnections() {
 	ticker := time.NewTicker(30 * time.Second)
 	defer ticker.Stop()
 
-	for {
-		select {
-		case <-ticker.C:
-			hub := GetHubInstance()
-			now := time.Now()
-			inactiveClients := make([]*models.Client, 0)
+	for range ticker.C {
+		hub := GetHubInstance()
+		now := time.Now()
+		inactiveClients := make([]*models.Client, 0)
 
-			for _, client := range hub.Clients {
-				if now.Sub(client.LastActivity) > 5*time.Minute {
-					inactiveClients = append(inactiveClients, client)
-				}
+		for _, client := range hub.Clients {
+			if now.Sub(client.LastActivity) > 5*time.Minute {
+				inactiveClients = append(inactiveClients, client)
 			}
+		}
 
-			for _, client := range inactiveClients {
-				log.Printf("Removing inactive client: %s", client.ID)
-				unregisterClient(client)
-			}
+		for _, client := range inactiveClients {
+			log.Printf("Removing inactive client: %s", client.ID)
+			unregisterClient(client)
 		}
 	}
 }
@@ -539,46 +510,37 @@ func CreateClient(userID bson.ObjectID, conn *websocket.Conn) *models.Client {
 	}
 }
 
-// RegisterClient registers a client with the hub
+// RegisterClient registers a client with the hub (direct call)
 func RegisterClient(client *models.Client) {
-	hub := GetHubInstance()
-	hub.Register <- client
+	registerClient(client)
 }
 
-// UnregisterClient unregisters a client from the hub
+// UnregisterClient unregisters a client from the hub (direct call)
 func UnregisterClient(client *models.Client) {
-	hub := GetHubInstance()
-	hub.Unregister <- client
+	unregisterClient(client)
 }
 
-// BroadcastToChat broadcasts a message to a specific chat
+// BroadcastToChat broadcasts a message to a specific chat (direct call)
 func BroadcastToChat(chatID string, message models.WebSocketMessage) {
-	hub := GetHubInstance()
-	hubMsg := models.HubMessage{
-		ChatID:  chatID,
-		Message: message,
-	}
-	hub.Broadcast <- hubMsg
+	broadcastToChat(chatID, message, nil)
 }
 
-// JoinChatRoom adds a client to a chat
+// JoinChatRoom adds a client to a chat (direct call)
 func JoinChatRoom(client *models.Client, chatID string) {
-	hub := GetHubInstance()
 	joinReq := models.JoinChatRequest{
 		Client: client,
 		ChatID: chatID,
 	}
-	hub.JoinChat <- joinReq
+	handleJoinChat(joinReq)
 }
 
-// LeaveChatRoom removes a client from a chat
+// LeaveChatRoom removes a client from a chat (direct call)
 func LeaveChatRoom(client *models.Client, chatID string) {
-	hub := GetHubInstance()
 	leaveReq := models.LeaveChatRequest{
 		Client: client,
 		ChatID: chatID,
 	}
-	hub.LeaveChat <- leaveReq
+	handleLeaveChat(leaveReq)
 }
 
 // GetChatClients returns clients connected to a chat

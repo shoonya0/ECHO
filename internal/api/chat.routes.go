@@ -10,16 +10,16 @@ import (
 
 // RegisterChatRoutes registers all chat-related routes
 func RegisterChatRoutes(r *gin.Engine) {
-	// Apply authentication middleware to all chat routes
+	// ============ WEBSOCKET ROUTES (NO AUTH MIDDLEWARE) ============
+	wsApi := r.Group(objects.ApiBasePath + "ws")
+	{
+		// Real-time chat WebSocket connection (handles auth internally)
+		wsApi.GET("/chat", controller.HandleWebSocketChat) // Main WebSocket endpoint for real-time chat
+	}
+
+	// Apply authentication middleware to HTTP chat routes
 	chatApi := r.Group(objects.ApiBasePath)
 	chatApi.Use(middleware.AuthMiddleware)
-
-	// ============ WEBSOCKET ROUTES ============
-	wsRoutes := chatApi.Group("ws")
-	{
-		// Real-time chat WebSocket connection
-		wsRoutes.GET("/chat", controller.HandleWebSocketChat) // Main WebSocket endpoint for real-time chat
-	}
 
 	// ============ CHAT MANAGEMENT ROUTES ============
 	chatRoutes := chatApi.Group("chats")

@@ -170,7 +170,7 @@ type UserDisplayInfo struct {
 	LastSeen    time.Time     `json:"lastSeen"`
 }
 
-// Hub represents the WebSocket hub managing all connections
+// Hub represents the WebSocket hub managing all connections (simplified)
 type Hub struct {
 	// Registered clients
 	Clients map[string]*Client `json:"-"`
@@ -184,21 +184,6 @@ type Hub struct {
 	// User display info cache (TTL: 5 minutes)
 	UserInfoCache map[string]*UserDisplayInfo `json:"-"`
 	CacheExpiry   map[string]time.Time        `json:"-"`
-
-	// Channel for client registration
-	Register chan *Client `json:"-"`
-
-	// Channel for client unregistration
-	Unregister chan *Client `json:"-"`
-
-	// Channel for broadcasting messages
-	Broadcast chan HubMessage `json:"-"`
-
-	// Channel for joining chats
-	JoinChat chan JoinChatRequest `json:"-"`
-
-	// Channel for leaving chats
-	LeaveChat chan LeaveChatRequest `json:"-"`
 
 	// Mutex for thread safety
 	Mutex sync.RWMutex `json:"-"`

@@ -5,16 +5,82 @@ import (
 	"gin/internal/models"
 	"gin/internal/services"
 	"gin/internal/utils"
+	"gin/objects"
 	"log"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/gin-gonic/gin"
+	"github.com/golang-jwt/jwt/v5"
 	"github.com/gorilla/websocket"
 	"go.mongodb.org/mongo-driver/v2/bson"
 )
 
 // ============ WEBSOCKET CONTROLLER FOR REAL-TIME CHAT ============
+
+// JwtClaims represents JWT token claims
+type JwtClaims struct {
+	jwt.RegisteredClaims
+	UserID string `json:"user_id"`
+	Email  string `json:"email"`
+	Exp    int64  `json:"exp"`
+}
+
+// authenticateWebSocketToken verifies JWT token for WebSocket connections
+func authenticateWebSocketToken(tokenString string) (models.User, error) {
+	if !strings.HasPrefix(tokenString, "Bearer ") {
+		return models.User{}, fmt.Errorf("authorization header must be in 'Bearer <token>' format")
+	}
+
+	// Extract token from header
+	token := strings.TrimPrefix(tokenString, "Bearer ")
+	if token == "" {
+		return models.User{}, fmt.Errorf("token cannot be empty")
+	}
+	claims := JwtClaims{}
+
+	// Parse and validate the token
+	parsedToken, err := jwt.ParseWithClaims(token, &claims, func(token *jwt.Token) (interface{}, error) {
+		// Verify the signing method
+		if token.Method.Alg() != jwt.SigningMethodHS256.Alg() {
+			return nil, fmt.Errorf("unexpected signing method: %v", token.Header["alg"])
+		}
+		return []byte(objects.MainConfiguration.JwtSecret), nil
+	})
+
+	if err != nil {
+		return models.User{}, fmt.Errorf("token parsing failed: %w", err)
+	}
+
+	// Check if token is valid
+	if !parsedToken.Valid {
+		return models.User{}, fmt.Errorf("invalid token")
+	}
+
+	// Validate required claims
+	if claims.UserID == "" {
+		return models.User{}, fmt.Errorf("missing user_id in token claims")
+	}
+
+	if claims.Email == "" {
+		return models.User{}, fmt.Errorf("missing email in token claims")
+	}
+
+	// Convert user ID to ObjectID
+	objectID, err := bson.ObjectIDFromHex(claims.UserID)
+	if err != nil {
+		return models.User{}, fmt.Errorf("invalid user ID format: %w", err)
+	}
+
+	// Get user details from database
+	user, err := services.GetUserByID(objectID)
+	if err != nil {
+		return models.User{}, fmt.Errorf("%w", err)
+	}
+
+	return *user, nil
+}
 
 // Helper function to get username from client
 func getUsernameFromClient(client *models.Client) string {
@@ -31,24 +97,24 @@ var upgrader = websocket.Upgrader{
 	WriteBufferSize: 1024,
 	CheckOrigin: func(r *http.Request) bool {
 		// Allow connections from any origin (configure appropriately for production)
-		fmt.Println("CheckOrigin", r.Header)
 		return true
 	},
 }
 
 // HandleWebSocketChat handles WebSocket connections for chat functionality
 func HandleWebSocketChat(ctx *gin.Context) {
-	// Get user from JWT token (should be set by auth middleware)
-	userInterface, exists := ctx.Get("user")
-	if !exists {
-		utils.ErrorResponse(ctx, http.StatusUnauthorized, "User not authenticated", nil)
+	// For WebSocket connections, authenticate via query parameter
+	token := ctx.GetHeader("Authorization")
+	if token == "" {
+		utils.ErrorResponse(ctx, http.StatusUnauthorized, "Token parameter required", nil)
 		return
 	}
 
-	// Extract user information
-	user, ok := userInterface.(models.User)
-	if !ok {
-		utils.ErrorResponse(ctx, http.StatusUnauthorized, "Invalid user data", nil)
+	// Verify the token using our auth logic
+	user, err := authenticateWebSocketToken(token)
+	if err != nil {
+		log.Printf("WebSocket authentication failed: %v", err)
+		utils.ErrorResponse(ctx, http.StatusUnauthorized, "Authentication failed", err.Error())
 		return
 	}
 
@@ -69,11 +135,19 @@ func HandleWebSocketChat(ctx *gin.Context) {
 	services.RegisterClient(client)
 
 	// Auto-join user to their active chats
-	go autoJoinUserChats(client)
+	err = autoJoinUserChats(client)
+	if err != nil {
+		log.Printf("Failed to auto-join user to chats: %v", err)
+	}
 
-	// Start goroutines for reading and writing
-	go handleClientWrite(client)
-	go handleClientRead(client)
+	// Start sequential handlers for reading and writing
+	go func() {
+		// Handle writing in a simple goroutine
+		handleClientWrite(client)
+	}()
+
+	// // Handle reading in the main routine (blocking)
+	handleClientRead(client)
 }
 
 // handleClientWrite handles writing messages to the WebSocket connection
@@ -81,7 +155,6 @@ func handleClientWrite(client *models.Client) {
 	ticker := time.NewTicker(54 * time.Second) // Ping every 54 seconds
 	defer func() {
 		ticker.Stop()
-		client.Connection.Close()
 		log.Printf("Write goroutine closed for client: %s", client.ID)
 	}()
 
@@ -89,7 +162,6 @@ func handleClientWrite(client *models.Client) {
 		select {
 		case message, ok := <-client.Send:
 			client.Connection.SetWriteDeadline(time.Now().Add(10 * time.Second))
-
 			if !ok {
 				// Channel was closed
 				client.Connection.WriteMessage(websocket.CloseMessage, []byte{})
@@ -97,6 +169,9 @@ func handleClientWrite(client *models.Client) {
 			}
 
 			// Send message as JSON
+			// utils.PrintColored("response to the client")
+			// utils.PrintColored(message)
+
 			if err := client.Connection.WriteJSON(message); err != nil {
 				log.Printf("Failed to write message to client %s: %v", client.ID, err)
 				return
@@ -136,16 +211,48 @@ func handleClientRead(client *models.Client) {
 	for {
 		// Read message from client
 		var request models.MessageRequest
-		err := client.Connection.ReadJSON(&request)
+		_, message, err := client.Connection.ReadMessage()
 		if err != nil {
 			if websocket.IsUnexpectedCloseError(err, websocket.CloseGoingAway, websocket.CloseAbnormalClosure) {
 				log.Printf("WebSocket error for client %s: %v", client.ID, err)
+			} else {
+				// Log other errors (like JSON parsing errors) but don't immediately close
+				log.Printf("Failed to parse message from client %s: %v", client.ID, err)
+
+				// Send error response to client instead of closing connection
+				errorMsg := models.WebSocketMessage{
+					Type: models.WSMessageTypeError,
+					Data: models.ErrorMessage{
+						Code:    "PARSE_ERROR",
+						Message: "Failed to parse message: " + err.Error(),
+					},
+					Timestamp: time.Now(),
+				}
+
+				select {
+				case client.Send <- errorMsg:
+				default:
+					// If can't send error, then close
+					log.Printf("Cannot send error message to client %s, closing connection", client.ID)
+					break
+				}
+				continue // Don't close, try to read next message
 			}
 			break
 		}
 
 		// Update client activity
 		client.LastActivity = time.Now()
+
+		// Log received request for debugging
+		// utils.PrintColored("message from the client")
+		// utils.PrintColored(string(message))
+		contentPreview := request.Content
+		if len(contentPreview) > 50 {
+			contentPreview = contentPreview[:50] + "..."
+		}
+		log.Printf("Received WebSocket request from client %s: Type=%s, ChatID=%s, Content=%s",
+			client.ID, request.Type, request.ChatID, contentPreview+" "+string(message))
 
 		// Process the request
 		handleClientRequest(client, request)
@@ -275,7 +382,23 @@ func handleSendMessage(client *models.Client, request models.MessageRequest) {
 	select {
 	case client.Send <- wsMessage:
 	default:
-		log.Printf("Client %s send channel is full", client.ID)
+		log.Printf("Client %s send channel is full, dropping message", client.ID)
+		// Send error response about dropped message
+		errorResponse := models.WebSocketMessage{
+			Type: models.WSMessageTypeError,
+			Data: models.ErrorMessage{
+				Code:    "CHANNEL_FULL",
+				Message: "Message dropped due to full send channel",
+			},
+			RequestID: request.RequestID,
+			Timestamp: time.Now(),
+		}
+		// Try to send error, if that fails too, the client is probably unresponsive
+		select {
+		case client.Send <- errorResponse:
+		default:
+			log.Printf("Client %s is unresponsive, marking for cleanup", client.ID)
+		}
 	}
 
 	log.Printf("Message sent by client %s in chat %s", client.ID, request.ChatID)
@@ -560,33 +683,32 @@ func handleUpdateChat(client *models.Client, request models.MessageRequest) {
 
 // ============ UTILITY FUNCTIONS ============
 
-// autoJoinUserChats automatically joins the user to their active chats
-func autoJoinUserChats(client *models.Client) {
-	// Small delay to ensure client is properly registered
-	time.Sleep(100 * time.Millisecond)
-
+// autoJoinUserChats automatically joins the user to their active chats (sequential)
+func autoJoinUserChats(client *models.Client) error {
 	// Get user's chats
-	userChats, err := services.GetUserChats(client.UserID)
+	userChats, err := services.GetUserChats(client.UserID, []string{"chatId", "status", "username", "displayName", "avatar", "isFavorite"})
 	if err != nil {
 		log.Printf("Failed to get user chats for auto-join: %v", err)
-		return
+		return err
 	}
 
-	// Join each chat
+	if len(userChats) == 0 {
+		return fmt.Errorf("no chats found for auto-join for client %s", client.ID)
+	}
+
+	// Join each chat sequentially
 	for _, chat := range userChats {
 		chatID := chat.ChatID.Hex()
 
 		// Check if user is still a participant and not blocked
-		if participant, exists := chat.Participants[client.UserID.Hex()]; exists && !participant.IsBlocked {
+		if chat.Status == string(objects.StatusAccepted) {
 			services.JoinChatRoom(client, chatID)
-			log.Printf("Auto-joined client %s to chat %s (%s)", client.ID, chatID, chat.Type)
-
-			// Small delay between joins to avoid overwhelming the system
-			time.Sleep(10 * time.Millisecond)
+			log.Printf("Auto-joined client %s to chat %s (%s)", client.ID, chatID, chat.Status)
 		}
 	}
 
 	log.Printf("Auto-join completed for client %s (%d chats)", client.ID, len(userChats))
+	return nil
 }
 
 // validateMessagePermissions checks if a user can send messages in a chat

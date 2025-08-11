@@ -97,6 +97,23 @@ func UpdateProfile(ctx *gin.Context) {
 	})
 }
 
+func DeleteProfile(ctx *gin.Context) {
+
+	userID, ok := ctx.Get("userId")
+	if !ok {
+		utils.ErrorResponse(ctx, http.StatusUnauthorized, "user id not found", nil)
+		return
+	}
+
+	err := services.DeleteProfile(userID.(string))
+	if err != nil {
+		utils.ErrorResponse(ctx, http.StatusInternalServerError, "failed to delete profile", err.Error())
+		return
+	}
+
+	utils.SuccessResponse(ctx, "Profile deleted successfully", nil)
+}
+
 // ============ USER DISCOVERY & SEARCH ============
 func GetUserProfile(ctx *gin.Context) {
 	userID := ctx.Param("id")

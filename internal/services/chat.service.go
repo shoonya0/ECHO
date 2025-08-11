@@ -13,44 +13,47 @@ import (
 // ============ ENHANCED CHAT SERVICE WITH REAL-TIME SUPPORT ============
 
 // GetUserChats retrieves all chats where the user is a participant
-func GetUserChats(userID bson.ObjectID) ([]models.Chat, error) {
+func GetUserChats(userID bson.ObjectID, infoToGetFromChat []string) ([]models.GetContactInfo, error) {
 	ctx := context.Background()
 
-	// Find all chats where user is a participant
-	filter := bson.M{
-		"participants." + userID.Hex(): bson.M{"$exists": true},
+	userFilter := bson.M{"_id": userID}
+	userProjection := bson.M{
+		"contactInfo.relationships": 1,
 	}
 
-	// Get basic chat info (no need for full participants data for this query)
-	projection := bson.M{
-		"_id":           1,
-		"type":          1,
-		"name":          1,
-		"description":   1,
-		"avatar":        1,
-		"lastMessageId": 1,
-		"participants":  1, // We need this to check if user is blocked
-		"stats":         1,
-		"settings":      1,
-		"readReceipts":  1,
-		"createdAt":     1,
-		"updatedAt":     1,
-	}
-
-	chats, err := FindAll[models.Chat](
-		ctx,
-		objects.DB.Collection(string(objects.ChatColl)),
-		filter,
-		projection,
-		bson.M{"updatedAt": -1}, // Sort by most recently updated
-		0,                       // No limit
-		0,                       // No offset
-	)
+	user, err := FindByID[models.ContactRequest](ctx, objects.DB.Collection(string(objects.UserColl)), userFilter, userProjection)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get user chats: %w", err)
+		return nil, fmt.Errorf("failed to get user: %w", err)
 	}
 
-	return chats, nil
+	chatInfo := []models.GetContactInfo{}
+
+	var itr int = 0
+
+	// now we will retrive the chat info which we want to get from the infoToGetFromChat
+	for _, relationship := range user.ContactInfo.Relationships {
+		for _, info := range infoToGetFromChat {
+			singleInfo := models.GetContactInfo{}
+			switch info {
+			case "chatId", "relationships.chatId":
+				singleInfo.ChatID = relationship.ChatID
+			case "status", "relationships.status":
+				singleInfo.Status = relationship.Status
+			case "username", "relationships.userInfo.username":
+				singleInfo.Username = relationship.UserInfo.Username
+			case "displayName", "relationships.userInfo.displayName":
+				singleInfo.DisplayName = relationship.UserInfo.DisplayName
+			case "avatar", "relationships.userInfo.avatar":
+				singleInfo.Avatar = relationship.UserInfo.Avatar
+			case "isFavorite", "relationships.userInfo.isFavorite":
+				singleInfo.IsFavorite = relationship.IsFavorite
+			}
+			chatInfo = append(chatInfo, singleInfo)
+		}
+		itr++
+	}
+
+	return chatInfo, nil
 }
 
 // GetChat retrieves chat information with basic details
@@ -324,10 +327,10 @@ func SendMessage(chatID, senderID bson.ObjectID, content, messageType string, at
 	message.ID = result.InsertedID.(bson.ObjectID)
 
 	// Update chat's last message and stats
-	go updateChatLastMessage(chatID, message.ID, now)
+	updateChatLastMessage(chatID, message.ID, now)
 
 	// Broadcast message in real-time
-	go broadcastNewMessage(chatID, message)
+	broadcastNewMessage(chatID, message)
 
 	return &message, nil
 }
@@ -359,7 +362,7 @@ func UpdateTypingStatus(chatID, userID bson.ObjectID, isTyping bool) error {
 
 	// Update typing users in chat document (with TTL)
 	if isTyping {
-		go updateChatTypingStatus(chatID, userID, time.Now())
+		updateChatTypingStatus(chatID, userID, time.Now())
 	}
 
 	return nil
@@ -388,10 +391,10 @@ func MarkMessagesAsRead(chatID, userID bson.ObjectID, messageIDs []bson.ObjectID
 	}
 
 	// Update chat read receipts
-	go updateChatReadReceipts(chatID, userID, now)
+	updateChatReadReceipts(chatID, userID, now)
 
 	// Broadcast read receipts to other participants
-	go broadcastReadReceipts(chatID, userID, messageIDs, now)
+	broadcastReadReceipts(chatID, userID, messageIDs, now)
 
 	return nil
 }
@@ -573,7 +576,7 @@ func RemoveMessageReaction(chatID, messageID, userID bson.ObjectID, emoji string
 	}
 
 	// Clean up empty reaction if count is 0
-	go cleanupEmptyReaction(messageID, emoji)
+	cleanupEmptyReaction(messageID, emoji)
 
 	return nil
 }

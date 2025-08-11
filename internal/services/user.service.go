@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"gin/internal/models"
 	"gin/objects"
+	"time"
 
 	"go.mongodb.org/mongo-driver/v2/bson"
 	"go.mongodb.org/mongo-driver/v2/mongo"
@@ -78,10 +79,11 @@ func GetUsersByIDs(userIDs []bson.ObjectID) ([]models.User, error) {
 // UpdateUserPresence updates a user's presence status
 func UpdateUserPresence(userID bson.ObjectID, status string) error {
 	filter := bson.M{"_id": userID}
+	now := time.Now()
 	update := bson.M{
 		"$set": bson.M{
 			"presence.status":   status,
-			"presence.lastSeen": bson.M{"$currentDate": true},
+			"presence.lastSeen": now,
 		},
 	}
 
@@ -219,4 +221,19 @@ func GetUserProfile(userID bson.ObjectID) (*models.User, error) {
 	}
 
 	return user, nil
+}
+
+func DeleteProfile(userID string) error {
+	objectID, err := bson.ObjectIDFromHex(userID)
+	if err != nil {
+		return fmt.Errorf("invalid user id format: %w", err)
+	}
+
+	filter := bson.M{"_id": objectID}
+
+	_, err = objects.DB.Collection(string(objects.UserColl)).DeleteOne(context.Background(), filter)
+	if err != nil {
+		return fmt.Errorf("failed to delete profile: %w", err)
+	}
+	return nil
 }

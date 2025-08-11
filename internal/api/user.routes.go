@@ -19,6 +19,8 @@ func RegisterUserRoutes(r *gin.Engine) {
 	{
 		profileRoutes.GET("/", controller.GetProfile)    // Get current user profile
 		profileRoutes.PUT("/", controller.UpdateProfile) // Update current user profile
+		// delete profile
+		profileRoutes.DELETE("/delete", controller.DeleteProfile)
 
 		// 	profileRoutes.POST("/avatar", controller.UpdateAvatar)              // Update profile avatar
 		// 	profileRoutes.DELETE("/avatar", controller.DeleteAvatar)            // Delete profile avatar
