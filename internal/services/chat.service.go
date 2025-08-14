@@ -8,60 +8,44 @@ import (
 	"time"
 
 	"go.mongodb.org/mongo-driver/v2/bson"
+	"go.mongodb.org/mongo-driver/v2/mongo"
 )
 
 // ============ ENHANCED CHAT SERVICE WITH REAL-TIME SUPPORT ============
 
 // GetUserChats retrieves all chats where the user is a participant
-func GetUserChats(userID bson.ObjectID, infoToGetFromChat []string) ([]models.GetContactInfo, error) {
+func GetUserChats(userID bson.ObjectID) (map[bson.ObjectID]bson.ObjectID, error) {
 	ctx := context.Background()
 
 	userFilter := bson.M{"_id": userID}
 	userProjection := bson.M{
-		"contactInfo.relationships": 1,
+		"contactInfo.contacts": 1,
 	}
 
 	user, err := FindByID[models.ContactRequest](ctx, objects.DB.Collection(string(objects.UserColl)), userFilter, userProjection)
 	if err != nil {
+		if err == mongo.ErrNoDocuments {
+			return nil, fmt.Errorf("user have no contacts")
+		}
 		return nil, fmt.Errorf("failed to get user: %w", err)
 	}
 
-	chatInfo := []models.GetContactInfo{}
-
-	var itr int = 0
+	chatInfo := make(map[bson.ObjectID]bson.ObjectID)
 
 	// now we will retrive the chat info which we want to get from the infoToGetFromChat
-	for _, relationship := range user.ContactInfo.Relationships {
-		for _, info := range infoToGetFromChat {
-			singleInfo := models.GetContactInfo{}
-			switch info {
-			case "chatId", "relationships.chatId":
-				singleInfo.ChatID = relationship.ChatID
-			case "status", "relationships.status":
-				singleInfo.Status = relationship.Status
-			case "username", "relationships.userInfo.username":
-				singleInfo.Username = relationship.UserInfo.Username
-			case "displayName", "relationships.userInfo.displayName":
-				singleInfo.DisplayName = relationship.UserInfo.DisplayName
-			case "avatar", "relationships.userInfo.avatar":
-				singleInfo.Avatar = relationship.UserInfo.Avatar
-			case "isFavorite", "relationships.userInfo.isFavorite":
-				singleInfo.IsFavorite = relationship.IsFavorite
-			}
-			chatInfo = append(chatInfo, singleInfo)
-		}
-		itr++
+	for chatUserID, chatID := range user.ContactInfo.Contacts {
+		chatInfo[chatUserID] = chatID
 	}
 
 	return chatInfo, nil
 }
 
 // GetChat retrieves chat information with basic details
-func GetChat(chatInfo models.GetContactInfo) (models.Chat, error) {
+func GetChat(chatInfo models.ContactInfo) (models.Chat, error) {
 	chatFilter := bson.M{"_id": chatInfo.ChatID}
 	chatProjection := bson.M{
 		"_id":           1,
-		"type":          1,
+		"chatType":      1,
 		"name":          1,
 		"lastMessageId": 1,
 		"participants":  1,
@@ -83,7 +67,7 @@ func GetChatWithMessages(chatID bson.ObjectID, limit int, offset int) (models.Ch
 	ctx := context.Background()
 
 	// Get chat details
-	chat, err := GetChat(models.GetContactInfo{ChatID: chatID})
+	chat, err := GetChat(models.ContactInfo{ChatID: chatID})
 	if err != nil {
 		return models.Chat{}, nil, fmt.Errorf("failed to get chat: %w", err)
 	}
@@ -120,9 +104,10 @@ func CreateDirectChat(userID1, userID2 bson.ObjectID) (*models.Chat, error) {
 
 	// Check if direct chat already exists
 	filter := bson.M{
-		"type": "direct",
-		"$or": []bson.M{
-			{"participants." + userID1.Hex(): bson.M{"$exists": true}, "participants." + userID2.Hex(): bson.M{"$exists": true}},
+		"chatType": "direct",
+		"$and": []bson.M{
+			{"participants." + userID1.Hex(): bson.M{"$exists": true}},
+			{"participants." + userID2.Hex(): bson.M{"$exists": true}},
 		},
 	}
 
@@ -131,60 +116,7 @@ func CreateDirectChat(userID1, userID2 bson.ObjectID) (*models.Chat, error) {
 		return &existingChat, nil
 	}
 
-	// // Get user details for participants
-	// user1, err := GetUserByID(userID1)
-	// if err != nil {
-	// 	return nil, fmt.Errorf("failed to get user1: %w", err)
-	// }
-
-	// user2, err := GetUserByID(userID2)
-	// if err != nil {
-	// 	return nil, fmt.Errorf("failed to get user2: %w", err)
-	// }
-
-	// Create new direct chat with ParticipantRef (no embedded user data)
-	now := time.Now()
-	chat := models.Chat{
-		Type: "direct",
-		Participants: map[string]models.ParticipantRef{
-			userID1.Hex(): {
-				UserID:     userID1,
-				Role:       "member",
-				JoinedAt:   now,
-				LastActive: now,
-			},
-			userID2.Hex(): {
-				UserID:     userID2,
-				Role:       "member",
-				JoinedAt:   now,
-				LastActive: now,
-			},
-		},
-		Stats: models.ChatStatsEmbed{
-			ParticipantCount: 2,
-			UnreadCount:      make(map[string]int),
-		},
-		Settings: models.ChatSettingsEmbed{
-			AllowFileSharing: true,
-			MessageRetention: 0, // Forever
-			MaxParticipants:  2,
-		},
-		ReadReceipts:  make(map[string]time.Time),
-		TypingUsers:   make(map[string]time.Time),
-		ActiveClients: make(map[string]*models.Client), // Initialize for real-time capabilities
-		IsActive:      false,
-		LastActivity:  now,
-		CreatedAt:     now,
-		UpdatedAt:     now,
-	}
-
-	result, err := objects.DB.Collection(string(objects.ChatColl)).InsertOne(ctx, chat)
-	if err != nil {
-		return nil, fmt.Errorf("failed to create chat: %w", err)
-	}
-
-	chat.ChatID = result.InsertedID.(bson.ObjectID)
-	return &chat, nil
+	return &existingChat, nil
 }
 
 // CreateGroupChat creates a new group chat
@@ -198,14 +130,18 @@ func CreateGroupChat(creatorID bson.ObjectID, name, description string, particip
 		return nil, fmt.Errorf("failed to get creator: %w", err)
 	}
 
-	participants := make(map[string]models.ParticipantRef)
+	participants := make(map[bson.ObjectID]models.ParticipantEmbed)
 
 	// Add creator as owner (using ParticipantRef without embedded user data)
-	participants[creatorID.Hex()] = models.ParticipantRef{
-		UserID:     creatorID,
-		Role:       "owner",
-		JoinedAt:   now,
-		LastActive: now,
+	participants[creatorID] = models.ParticipantEmbed{
+		Role: "owner",
+		UserInfo: models.ContactUserInfo{
+			UserID:      creatorID,
+			DisplayName: "Owner",
+			Username:    "owner",
+			Avatar:      "https://example.com/avatar.png",
+		},
+		JoinedAt: now,
 	}
 
 	// Add other participants
@@ -220,16 +156,20 @@ func CreateGroupChat(creatorID bson.ObjectID, name, description string, particip
 			continue // Skip invalid users
 		}
 
-		participants[userID.Hex()] = models.ParticipantRef{
-			UserID:     userID,
-			Role:       "member",
-			JoinedAt:   now,
-			LastActive: now,
+		participants[userID] = models.ParticipantEmbed{
+			Role: "member",
+			UserInfo: models.ContactUserInfo{
+				UserID:      userID,
+				DisplayName: "Member",
+				Username:    "member",
+				Avatar:      "https://example.com/avatar.png",
+			},
+			JoinedAt: now,
 		}
 	}
 
 	chat := models.Chat{
-		Type:         "group",
+		ChatType:     "group",
 		Name:         name,
 		Description:  description,
 		OwnerID:      creatorID,
@@ -237,7 +177,7 @@ func CreateGroupChat(creatorID bson.ObjectID, name, description string, particip
 		Participants: participants,
 		Stats: models.ChatStatsEmbed{
 			ParticipantCount: len(participants),
-			UnreadCount:      make(map[string]int),
+			UnreadCount:      make(map[bson.ObjectID]int),
 		},
 		Settings: models.ChatSettingsEmbed{
 			AllowInvites:     true,
@@ -245,10 +185,9 @@ func CreateGroupChat(creatorID bson.ObjectID, name, description string, particip
 			MessageRetention: 0, // Forever
 			MaxParticipants:  100,
 		},
-		ReadReceipts:  make(map[string]time.Time),
-		TypingUsers:   make(map[string]time.Time),
+		ReadReceipts:  make(map[bson.ObjectID]time.Time),
+		TypingUsers:   make(map[bson.ObjectID]time.Time),
 		ActiveClients: make(map[string]*models.Client), // Initialize for real-time capabilities
-		IsActive:      false,
 		LastActivity:  now,
 		CreatedAt:     now,
 		UpdatedAt:     now,

@@ -209,41 +209,41 @@ skipAdd:
 	// Add chat information if available
 	if err == nil {
 		responseData["chatName"] = chatInfo.Name
-		responseData["chatType"] = chatInfo.Type
+		responseData["chatType"] = chatInfo.ChatType
 		responseData["participantCount"] = chatInfo.Stats.ParticipantCount
 
 		// Add participant list for group chats (with user lookup)
-		if chatInfo.Type == "group" {
+		if chatInfo.ChatType == "group" {
 			participants := make([]map[string]interface{}, 0)
 			for _, participant := range chatInfo.Participants {
-				userInfo, err := GetUserDisplayInfo(participant.UserID)
+				userInfo, err := GetUserDisplayInfo(participant.UserInfo.UserID)
 				if err != nil {
 					continue // Skip users we can't fetch info for
 				}
 				participants = append(participants, map[string]interface{}{
-					"userId":      participant.UserID.Hex(),
+					"userId":      participant.UserInfo.UserID.Hex(),
 					"username":    userInfo.Username,
 					"displayName": userInfo.DisplayName,
 					"avatar":      userInfo.Avatar,
 					"role":        participant.Role,
-					"isOnline":    IsUserOnline(participant.UserID.Hex()),
+					"isOnline":    IsUserOnline(participant.UserInfo.UserID.Hex()),
 				})
 			}
 			responseData["participants"] = participants
 		}
 
 		// For direct chats, add the other participant's info
-		if chatInfo.Type == "direct" {
+		if chatInfo.ChatType == string(objects.ChatTypeDirect) {
 			for userID, participant := range chatInfo.Participants {
-				if userID != req.Client.UserID.Hex() {
-					userInfo, err := GetUserDisplayInfo(participant.UserID)
+				if userID != req.Client.UserID {
+					userInfo, err := GetUserDisplayInfo(participant.UserInfo.UserID)
 					if err == nil {
 						responseData["otherUser"] = map[string]interface{}{
-							"userId":      participant.UserID.Hex(),
+							"userId":      participant.UserInfo.UserID.Hex(),
 							"username":    userInfo.Username,
 							"displayName": userInfo.DisplayName,
 							"avatar":      userInfo.Avatar,
-							"isOnline":    IsUserOnline(participant.UserID.Hex()),
+							"isOnline":    IsUserOnline(participant.UserInfo.UserID.Hex()),
 						}
 					}
 					break
@@ -397,7 +397,7 @@ func getChatInfoFromDB(chatID string) (*models.Chat, error) {
 		return nil, fmt.Errorf("invalid chat ID: %w", err)
 	}
 
-	chat, err := GetChat(models.GetContactInfo{ChatID: chatObjectID})
+	chat, err := GetChat(models.ContactInfo{ChatID: chatObjectID})
 	if err != nil {
 		return nil, fmt.Errorf("failed to get chat: %w", err)
 	}
@@ -416,7 +416,7 @@ func canJoinChat(client *models.Client, chatID string) bool {
 
 	// Check if user is a participant in the chat
 	userID := client.UserID.Hex()
-	participant, isParticipant := chatInfo.Participants[userID]
+	participant, isParticipant := chatInfo.Participants[client.UserID]
 
 	if !isParticipant {
 		log.Printf("User %s is not a participant in chat %s", userID, chatID)

@@ -42,6 +42,12 @@ type CacheTTL int
 // cache keys
 type CacheKey string
 
+// chat type
+type ChatType string
+
+// permission type
+type ChatPermissionType string
+
 const (
 	// collection names
 	DBName      Database   = "Echo"
@@ -92,6 +98,15 @@ const (
 	CacheChatList        CacheTTL = 1800 // 30 minutes
 	CachePresence        CacheTTL = 300  // 5 minutes
 	CacheTypingIndicator CacheTTL = 10   // 10 seconds
+
+	// chat type
+	ChatTypeDirect  ChatType = "direct"
+	ChatTypeGroup   ChatType = "group"
+	ChatTypeChannel ChatType = "channel"
+
+	// chat permission type
+	ChatPermissionRead  ChatPermissionType = "read"
+	ChatPermissionWrite ChatPermissionType = "write"
 )
 
 // api paths

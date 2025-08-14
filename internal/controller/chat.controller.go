@@ -10,7 +10,7 @@ import (
 )
 
 func GetGroupMessages(ctx *gin.Context) {
-	chatInfo := models.GetContactInfo{}
+	chatInfo := models.ContactInfo{}
 	if err := ctx.ShouldBindJSON(&chatInfo); err != nil {
 		utils.ErrorResponse(ctx, http.StatusBadRequest, "invalid chat info", nil)
 		return

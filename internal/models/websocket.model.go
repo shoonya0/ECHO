@@ -210,6 +210,7 @@ type LeaveChatRequest struct {
 
 // MessageRequest represents incoming message requests
 type MessageRequest struct {
+	// here type represents the type of the message eg: send_message, join_chat, leave_chat, set_typing, set_presence, mark_read, edit_message, delete_message, add_reaction, remove_reaction, invite_user, remove_user, update_chat
 	Type        string                 `json:"type"`
 	ChatID      string                 `json:"chatId"`
 	Content     string                 `json:"content,omitempty"`

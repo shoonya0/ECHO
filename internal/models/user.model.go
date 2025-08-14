@@ -33,9 +33,6 @@ type User struct {
 	// Settings - embedded to avoid separate collection
 	Settings UserSettingsEmbed `json:"settings" bson:"settings"`
 
-	// Cached data for performance (TTL: 1 hour)
-	Cache UserCacheEmbed `json:"cache" bson:"cache"`
-
 	// Timestamps
 	CreatedAt time.Time `json:"createdAt" bson:"createdAt"`
 	UpdatedAt time.Time `json:"updatedAt" bson:"updatedAt"`
@@ -81,7 +78,7 @@ type NotificationPrefsEmbed struct {
 }
 
 type PrivacySettingsEmbed struct {
-	ShowOnlineStatus bool   `json:"showOnlineStatus" bson:"showOnlineStatus"`
+	ShowOnlineStatus string `json:"showOnlineStatus" bson:"showOnlineStatus"` // "everyone", "contacts", "none"
 	ShowLastSeen     bool   `json:"showLastSeen" bson:"showLastSeen"`
 	AllowContactBy   string `json:"allowContactBy" bson:"allowContactBy"` // "everyone", "contacts", "none"
 }
@@ -90,13 +87,6 @@ type MessagePrefsEmbed struct {
 	AutoDownloadImages   bool `json:"autoDownloadImages" bson:"autoDownloadImages"`
 	AutoDownloadFiles    bool `json:"autoDownloadFiles" bson:"autoDownloadFiles"`
 	ShowEmojiSuggestions bool `json:"showEmojiSuggestions" bson:"showEmojiSuggestions"`
-}
-
-type UserCacheEmbed struct {
-	ActiveChats     []bson.ObjectID `json:"activeChats" bson:"activeChats"`         // Recently active chat IDs
-	RecentContacts  []bson.ObjectID `json:"recentContacts" bson:"recentContacts"`   // Recently contacted user IDs
-	UnreadCount     int             `json:"unreadCount" bson:"unreadCount"`         // Total unread messages
-	LastCacheUpdate time.Time       `json:"lastCacheUpdate" bson:"lastCacheUpdate"` // TTL reference
 }
 
 // ============ BATCH OPERATIONS MODELS ============

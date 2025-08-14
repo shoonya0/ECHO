@@ -10,13 +10,13 @@ import (
 // Consolidated model for both persistence and real-time operations
 type Chat struct {
 	ChatID      bson.ObjectID `json:"_id,omitempty" bson:"_id,omitempty"`
-	Type        string        `json:"type" bson:"type"` // "direct", "group", "channel"
-	Name        string        `json:"name,omitempty" bson:"name,omitempty"`
+	ChatType    string        `json:"chatType" bson:"chatType"` // "direct", "group", "channel"
+	Name        string        `json:"name" bson:"name"`
 	Description string        `json:"description,omitempty" bson:"description,omitempty"`
 	Avatar      string        `json:"avatar,omitempty" bson:"avatar,omitempty"`
 
 	// Participant references only (no embedded user data)
-	Participants map[string]ParticipantRef `json:"participants" bson:"participants"` // userID -> participant reference
+	Participants map[bson.ObjectID]ParticipantEmbed `json:"participants" bson:"participants"` // userID -> participant reference
 
 	// Owner/Admin info
 	OwnerID  bson.ObjectID   `json:"ownerId,omitempty" bson:"ownerId,omitempty"`
@@ -32,14 +32,13 @@ type Chat struct {
 	Settings ChatSettingsEmbed `json:"settings" bson:"settings"`
 
 	// Read receipts aggregated
-	ReadReceipts map[string]time.Time `json:"readReceipts" bson:"readReceipts"` // userID -> last read timestamp
+	ReadReceipts map[bson.ObjectID]time.Time `json:"readReceipts" bson:"readReceipts"` // userID -> last read timestamp
 
 	// Typing indicators (TTL: 10 seconds)
-	TypingUsers map[string]time.Time `json:"typingUsers" bson:"typingUsers"` // userID -> typing timestamp
+	TypingUsers map[bson.ObjectID]time.Time `json:"typingUsers" bson:"typingUsers"` // userID -> typing timestamp
 
 	// Real-time capabilities (not persisted)
 	ActiveClients map[string]*Client `json:"-" bson:"-"` // clientID -> client (in-memory only)
-	IsActive      bool               `json:"isActive" bson:"isActive"`
 	LastActivity  time.Time          `json:"lastActivity" bson:"lastActivity"`
 
 	// Timestamps
@@ -48,46 +47,37 @@ type Chat struct {
 }
 
 // ParticipantRef represents a participant reference without embedded user data
-type ParticipantRef struct {
-	UserID      bson.ObjectID `json:"userId" bson:"userId"`
-	Role        string        `json:"role" bson:"role"` // "member", "admin", "owner"
-	IsBlocked   bool          `json:"isBlocked" bson:"isBlocked"`
-	JoinedAt    time.Time     `json:"joinedAt" bson:"joinedAt"`
-	LastActive  time.Time     `json:"lastActive" bson:"lastActive"`
-	IsMuted     bool          `json:"isMuted" bson:"isMuted"`
-	Permissions []string      `json:"permissions" bson:"permissions"`
-}
-
-// ParticipantEmbed kept for backward compatibility and response models
 type ParticipantEmbed struct {
-	UserID      bson.ObjectID `json:"userId" bson:"userId"`
-	Username    string        `json:"username" bson:"username"`
-	DisplayName string        `json:"displayName" bson:"displayName"`
-	Avatar      string        `json:"avatar" bson:"avatar"`
-	Role        string        `json:"role" bson:"role"` // "member", "admin", "owner"
-	IsBlocked   bool          `json:"isBlocked" bson:"isBlocked"`
-	JoinedAt    time.Time     `json:"joinedAt" bson:"joinedAt"`
-	LastActive  time.Time     `json:"lastActive" bson:"lastActive"`
-	IsMuted     bool          `json:"isMuted" bson:"isMuted"`
-	Permissions []string      `json:"permissions" bson:"permissions"`
+	RequestStatus string          `json:"requestStatus" bson:"requestStatus"` // "blocked", "pending", "accepted", "declined"
+	OnlineStatus  string          `json:"onlineStatus" bson:"onlineStatus"`   // "online", "away", "dnd", "invisible", "offline"
+	RequestedBy   bson.ObjectID   `json:"requestedBy" bson:"requestedBy"`     // the user who requested to join the chat
+	Permissions   []string        `json:"permissions" bson:"permissions"`
+	IsBlocked     bool            `json:"isBlocked" bson:"isBlocked"`
+	UserInfo      ContactUserInfo `json:"userInfo" bson:"userInfo"`
+	LastSeen      time.Time       `json:"lastSeen" bson:"lastSeen"`
+	IsMuted       bool            `json:"isMuted" bson:"isMuted"`
+	Role          string          `json:"role" bson:"role"` // "member", "admin", "owner"
+
+	// Timestamps
+	CreatedAt time.Time `json:"createdAt" bson:"createdAt"`
+	UpdatedAt time.Time `json:"updatedAt" bson:"updatedAt"`
+	JoinedAt  time.Time `json:"joinedAt" bson:"joinedAt"`
+	LeftAt    time.Time `json:"leftAt" bson:"leftAt"`
 }
 
-type LastMessageEmbed struct {
-	MessageID   bson.ObjectID `json:"messageId" bson:"messageId"`
-	Content     string        `json:"content" bson:"content"`
-	SenderID    bson.ObjectID `json:"senderId" bson:"senderId"`
-	SenderName  string        `json:"senderName" bson:"senderName"`
-	MessageType string        `json:"messageType" bson:"messageType"`
-	CreatedAt   time.Time     `json:"createdAt" bson:"createdAt"`
-	IsDeleted   bool          `json:"isDeleted" bson:"isDeleted"`
+type ContactUserInfo struct {
+	DisplayName string        `json:"displayName" bson:"displayName"`
+	Username    string        `json:"username" bson:"username"`
+	UserID      bson.ObjectID `json:"userId" bson:"userId"`
+	Avatar      string        `json:"avatar" bson:"avatar"`
 }
 
 type ChatStatsEmbed struct {
-	MessageCount     int64          `json:"messageCount" bson:"messageCount"`
-	ParticipantCount int            `json:"participantCount" bson:"participantCount"`
-	FileCount        int64          `json:"fileCount" bson:"fileCount"`
-	ImageCount       int64          `json:"imageCount" bson:"imageCount"`
-	UnreadCount      map[string]int `json:"unreadCount" bson:"unreadCount"` // userID -> unread count
+	ParticipantCount int                   `json:"participantCount" bson:"participantCount"`
+	MessageCount     int64                 `json:"messageCount" bson:"messageCount"`
+	UnreadCount      map[bson.ObjectID]int `json:"unreadCount" bson:"unreadCount"` // userID -> unread count
+	ImageCount       int64                 `json:"imageCount" bson:"imageCount"`
+	FileCount        int64                 `json:"fileCount" bson:"fileCount"`
 }
 
 type ChatSettingsEmbed struct {
@@ -96,4 +86,15 @@ type ChatSettingsEmbed struct {
 	AllowFileSharing bool `json:"allowFileSharing" bson:"allowFileSharing"`
 	MessageRetention int  `json:"messageRetention" bson:"messageRetention"` // days, 0 = forever
 	MaxParticipants  int  `json:"maxParticipants" bson:"maxParticipants"`
+}
+
+// no used till now
+type LastMessageEmbed struct {
+	MessageID   bson.ObjectID `json:"messageId" bson:"messageId"`
+	Content     string        `json:"content" bson:"content"`
+	SenderID    bson.ObjectID `json:"senderId" bson:"senderId"`
+	SenderName  string        `json:"senderName" bson:"senderName"`
+	MessageType string        `json:"messageType" bson:"messageType"`
+	CreatedAt   time.Time     `json:"createdAt" bson:"createdAt"`
+	IsDeleted   bool          `json:"isDeleted" bson:"isDeleted"`
 }

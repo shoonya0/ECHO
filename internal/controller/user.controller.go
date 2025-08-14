@@ -98,7 +98,6 @@ func UpdateProfile(ctx *gin.Context) {
 }
 
 func DeleteProfile(ctx *gin.Context) {
-
 	userID, ok := ctx.Get("userId")
 	if !ok {
 		utils.ErrorResponse(ctx, http.StatusUnauthorized, "user id not found", nil)

@@ -16,9 +16,9 @@ func ExpandChatParticipants(chat *models.Chat) (*models.ChatDetailResponse, erro
 	}
 
 	// Build participant embeds from participant refs
-	participantEmbeds, err := BuildMultipleParticipantEmbeds(chat.Participants)
-	if err != nil {
-		return nil, fmt.Errorf("failed to build participant embeds: %w", err)
+	participantEmbeds := make([]models.ParticipantEmbed, 0, len(chat.Participants))
+	for _, participant := range chat.Participants {
+		participantEmbeds = append(participantEmbeds, participant)
 	}
 
 	// Convert map to slice for response
@@ -35,7 +35,7 @@ func ExpandChatParticipants(chat *models.Chat) (*models.ChatDetailResponse, erro
 	response := &models.ChatDetailResponse{
 		Chat: models.Chat{
 			ChatID:        chat.ChatID,
-			Type:          chat.Type,
+			ChatType:      chat.ChatType,
 			Name:          chat.Name,
 			Description:   chat.Description,
 			Avatar:        chat.Avatar,
@@ -47,7 +47,6 @@ func ExpandChatParticipants(chat *models.Chat) (*models.ChatDetailResponse, erro
 			Settings:      chat.Settings,
 			ReadReceipts:  chat.ReadReceipts,
 			TypingUsers:   chat.TypingUsers,
-			IsActive:      chat.IsActive,
 			LastActivity:  chat.LastActivity,
 			CreatedAt:     chat.CreatedAt,
 			UpdatedAt:     chat.UpdatedAt,
@@ -64,7 +63,7 @@ func ExpandChatParticipants(chat *models.Chat) (*models.ChatDetailResponse, erro
 func GetChatParticipantUserIDs(chat *models.Chat) []bson.ObjectID {
 	userIDs := make([]bson.ObjectID, 0, len(chat.Participants))
 	for _, participant := range chat.Participants {
-		userIDs = append(userIDs, participant.UserID)
+		userIDs = append(userIDs, participant.UserInfo.UserID)
 	}
 	return userIDs
 }
@@ -75,7 +74,7 @@ func CheckUserChatPermission(chat *models.Chat, userID bson.ObjectID) bool {
 		return false
 	}
 
-	participant, exists := chat.Participants[userID.Hex()]
+	participant, exists := chat.Participants[userID]
 	if !exists {
 		return false
 	}
@@ -90,11 +89,11 @@ func CheckUserChatPermission(chat *models.Chat, userID bson.ObjectID) bool {
 
 // GetChatDisplayName returns the display name for a chat based on its type and user context
 func GetChatDisplayName(chat *models.Chat, currentUserID bson.ObjectID) (string, error) {
-	if chat.Type == "direct" {
+	if chat.ChatType == "direct" {
 		// For direct chats, find the other user and return their display name
 		for userIDStr, participant := range chat.Participants {
-			if participant.UserID != currentUserID {
-				userInfo, err := GetUserDisplayInfo(participant.UserID)
+			if participant.UserInfo.UserID != currentUserID {
+				userInfo, err := GetUserDisplayInfo(participant.UserInfo.UserID)
 				if err != nil {
 					return fmt.Sprintf("User %s", userIDStr[:8]), nil // Fallback
 				}
@@ -113,14 +112,14 @@ func GetChatDisplayName(chat *models.Chat, currentUserID bson.ObjectID) (string,
 	participantNames := make([]string, 0, min(3, len(chat.Participants)))
 	count := 0
 	for _, participant := range chat.Participants {
-		if participant.UserID == currentUserID {
+		if participant.UserInfo.UserID == currentUserID {
 			continue // Skip current user
 		}
 		if count >= 2 {
 			break // Limit to 2 other participants for name
 		}
 
-		userInfo, err := GetUserDisplayInfo(participant.UserID)
+		userInfo, err := GetUserDisplayInfo(participant.UserInfo.UserID)
 		if err != nil {
 			continue
 		}

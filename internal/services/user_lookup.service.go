@@ -119,65 +119,44 @@ func InvalidateUserCache(userID bson.ObjectID) {
 	cacheMutex.Unlock()
 }
 
-// BuildParticipantEmbedFromRef builds a ParticipantEmbed from ParticipantRef with user lookup
-func BuildParticipantEmbedFromRef(participantRef models.ParticipantRef) (*models.ParticipantEmbed, error) {
-	userInfo, err := GetUserDisplayInfo(participantRef.UserID)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get user display info: %w", err)
-	}
+// // BuildMultipleParticipantEmbeds builds multiple ParticipantEmbeds efficiently
+// func BuildMultipleParticipantEmbeds(participantRefs map[string]models.ParticipantRef) (map[string]models.ParticipantEmbed, error) {
+// 	// Extract user IDs
+// 	userIDs := make([]bson.ObjectID, 0, len(participantRefs))
+// 	for _, ref := range participantRefs {
+// 		userIDs = append(userIDs, ref.UserID)
+// 	}
 
-	return &models.ParticipantEmbed{
-		UserID:      participantRef.UserID,
-		Username:    userInfo.Username,
-		DisplayName: userInfo.DisplayName,
-		Avatar:      userInfo.Avatar,
-		Role:        participantRef.Role,
-		IsBlocked:   participantRef.IsBlocked,
-		JoinedAt:    participantRef.JoinedAt,
-		LastActive:  participantRef.LastActive,
-		IsMuted:     participantRef.IsMuted,
-		Permissions: participantRef.Permissions,
-	}, nil
-}
+// 	// Get user display info for all participants
+// 	userInfoMap, err := GetMultipleUserDisplayInfo(userIDs)
+// 	if err != nil {
+// 		return nil, fmt.Errorf("failed to get multiple user display info: %w", err)
+// 	}
 
-// BuildMultipleParticipantEmbeds builds multiple ParticipantEmbeds efficiently
-func BuildMultipleParticipantEmbeds(participantRefs map[string]models.ParticipantRef) (map[string]models.ParticipantEmbed, error) {
-	// Extract user IDs
-	userIDs := make([]bson.ObjectID, 0, len(participantRefs))
-	for _, ref := range participantRefs {
-		userIDs = append(userIDs, ref.UserID)
-	}
+// 	// Build participant embeds
+// 	result := make(map[string]models.ParticipantEmbed)
+// 	for userIDStr, ref := range participantRefs {
+// 		userInfo, exists := userInfoMap[userIDStr]
+// 		if !exists {
+// 			return nil, fmt.Errorf("user info not found for user ID: %s", userIDStr)
+// 		}
 
-	// Get user display info for all participants
-	userInfoMap, err := GetMultipleUserDisplayInfo(userIDs)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get multiple user display info: %w", err)
-	}
+// 		result[userIDStr] = models.ParticipantEmbed{
+// 			UserID:      ref.UserID,
+// 			Username:    userInfo.Username,
+// 			DisplayName: userInfo.DisplayName,
+// 			Avatar:      userInfo.Avatar,
+// 			Role:        ref.Role,
+// 			IsBlocked:   ref.IsBlocked,
+// 			JoinedAt:    ref.JoinedAt,
+// 			LastActive:  ref.LastActive,
+// 			IsMuted:     ref.IsMuted,
+// 			Permissions: ref.Permissions,
+// 		}
+// 	}
 
-	// Build participant embeds
-	result := make(map[string]models.ParticipantEmbed)
-	for userIDStr, ref := range participantRefs {
-		userInfo, exists := userInfoMap[userIDStr]
-		if !exists {
-			return nil, fmt.Errorf("user info not found for user ID: %s", userIDStr)
-		}
-
-		result[userIDStr] = models.ParticipantEmbed{
-			UserID:      ref.UserID,
-			Username:    userInfo.Username,
-			DisplayName: userInfo.DisplayName,
-			Avatar:      userInfo.Avatar,
-			Role:        ref.Role,
-			IsBlocked:   ref.IsBlocked,
-			JoinedAt:    ref.JoinedAt,
-			LastActive:  ref.LastActive,
-			IsMuted:     ref.IsMuted,
-			Permissions: ref.Permissions,
-		}
-	}
-
-	return result, nil
-}
+// 	return result, nil
+// }
 
 // ============ PRIVATE HELPER FUNCTIONS ============
 

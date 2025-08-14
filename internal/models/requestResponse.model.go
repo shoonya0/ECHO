@@ -56,14 +56,16 @@ type ContactRequest struct {
 	ContactInfo ContactInfoEmbed `json:"contactInfo,omitempty" bson:"contactInfo,omitempty"`
 }
 
-type GetContactInfo struct {
-	ID          bson.ObjectID `json:"_id" bson:"_id"`
-	ChatID      bson.ObjectID `json:"chatId" bson:"chatId"`
-	Status      string        `json:"status" bson:"status"`
-	Username    string        `json:"username" bson:"username"`
-	DisplayName string        `json:"displayName" bson:"displayName"`
-	Avatar      string        `json:"avatar" bson:"avatar"`
-	IsFavorite  bool          `json:"isFavorite" bson:"isFavorite"`
+type ContactInfo struct {
+	ID           bson.ObjectID `json:"_id" bson:"_id"`
+	ChatID       bson.ObjectID `json:"chatId" bson:"chatId"`
+	ChatName     string        `json:"chatname" bson:"chatname"`
+	ChatAvatar   string        `json:"chatavatar" bson:"chatavatar"`
+	OnlineStatus string        `json:"onlineStatus" bson:"onlineStatus"`
+	Username     string        `json:"username" bson:"username"`
+	DisplayName  string        `json:"displayName" bson:"displayName"`
+	Avatar       string        `json:"avatar" bson:"avatar"`
+	IsFavorite   bool          `json:"isFavorite" bson:"isFavorite"`
 }
 
 // ============ CHAT MODEL ============

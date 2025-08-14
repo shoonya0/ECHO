@@ -25,8 +25,8 @@ func RegisterChatRoutes(r *gin.Engine) {
 	chatRoutes := chatApi.Group("chats")
 	{
 		// Chat creation
-		chatRoutes.POST("/direct", controller.CreateDirectChatHTTP) // Create direct chat
-		chatRoutes.POST("/group", controller.CreateGroupChatHTTP)   // Create group chat
+		// chatRoutes.POST("/direct", controller.CreateDirectChatHTTP) // Create direct chat
+		chatRoutes.POST("/group", controller.CreateGroupChatHTTP) // Create group chat
 
 		// Chat operations
 		chatRoutes.GET("/messages", controller.GetChatMessagesHTTP) // Get chat messages with pagination

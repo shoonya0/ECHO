@@ -38,22 +38,14 @@ func NewUserWithDefaults(id bson.ObjectID, email, passwordHash string) models.Us
 
 		// Initialize ContactInfo with empty arrays
 		ContactInfo: models.ContactInfoEmbed{
-			Relationships: make(map[string]models.ContactRelationship),
-			BlockedChats:  make([]bson.ObjectID, 0),
-			PendingOut:    make([]bson.ObjectID, 0),
-			PendingIn:     make([]bson.ObjectID, 0),
-			Favorites:     make([]bson.ObjectID, 0),
-			ActiveChats:   make([]bson.ObjectID, 0),
-			Stats: models.ContactStatsEmbed{
-				TotalContacts:   0,
-				BlockedCount:    0,
-				PendingOutCount: 0,
-				PendingInCount:  0,
-				FavoriteCount:   0,
-			},
-			RecentInteractions: make([]models.RecentInteractionEmbed, 0),
-			CreatedAt:          now,
-			UpdatedAt:          now,
+			BlockedChats: make(map[bson.ObjectID]bson.ObjectID),
+			PendingOut:   make(map[bson.ObjectID]bson.ObjectID),
+			PendingIn:    make(map[bson.ObjectID]bson.ObjectID),
+			Favorites:    make(map[bson.ObjectID]bson.ObjectID),
+			Contacts:     make(map[bson.ObjectID]bson.ObjectID),
+			UnreadCount:  make(map[bson.ObjectID]int),
+			CreatedAt:    now,
+			UpdatedAt:    now,
 		},
 
 		// Initialize AccountStatus with defaults
@@ -76,8 +68,8 @@ func NewUserWithDefaults(id bson.ObjectID, email, passwordHash string) models.Us
 				MessagePreview: true,
 			},
 			Privacy: models.PrivacySettingsEmbed{
-				ShowOnlineStatus: true,
-				ShowLastSeen:     true,
+				ShowOnlineStatus: "everyone",
+				ShowLastSeen:     false,
 				AllowContactBy:   "everyone",
 			},
 			MessagePreferences: models.MessagePrefsEmbed{
@@ -86,13 +78,59 @@ func NewUserWithDefaults(id bson.ObjectID, email, passwordHash string) models.Us
 				ShowEmojiSuggestions: true,
 			},
 		},
+	}
+}
 
-		// Initialize Cache with empty arrays
-		Cache: models.UserCacheEmbed{
-			ActiveChats:     make([]bson.ObjectID, 0),
-			RecentContacts:  make([]bson.ObjectID, 0),
-			UnreadCount:     0,
-			LastCacheUpdate: now,
+func NewChatWithDefaults(id bson.ObjectID, chatType string) models.Chat {
+	now := time.Now()
+
+	return models.Chat{
+		ChatID:        bson.NewObjectIDFromTimestamp(now),
+		ChatType:      chatType,
+		Name:          "",
+		Description:   "",
+		Avatar:        "",
+		Participants:  make(map[bson.ObjectID]models.ParticipantEmbed),
+		OwnerID:       id,
+		AdminIDs:      []bson.ObjectID{},
+		LastMessageID: bson.ObjectID{},
+		Stats: models.ChatStatsEmbed{
+			ParticipantCount: 0,
+			MessageCount:     0,
+			UnreadCount:      make(map[bson.ObjectID]int),
+			ImageCount:       0,
+			FileCount:        0,
 		},
+		Settings: models.ChatSettingsEmbed{
+			IsPrivate:        true,
+			AllowInvites:     true,
+			AllowFileSharing: true,
+			MessageRetention: 0,
+			MaxParticipants:  0,
+		},
+		ReadReceipts:  make(map[bson.ObjectID]time.Time),
+		TypingUsers:   make(map[bson.ObjectID]time.Time),
+		ActiveClients: make(map[string]*models.Client),
+		LastActivity:  now,
+		CreatedAt:     now,
+		UpdatedAt:     now,
+	}
+}
+
+func NewParticipantWithDefaults(requestStatus string, onlineStatus string, requestedBy bson.ObjectID, permissions []string, userInfo models.ContactUserInfo) models.ParticipantEmbed {
+	return models.ParticipantEmbed{
+		RequestStatus: requestStatus,
+		OnlineStatus:  onlineStatus,
+		RequestedBy:   requestedBy,
+		Permissions:   permissions,
+		IsBlocked:     false,
+		UserInfo:      userInfo,
+		LastSeen:      time.Now(),
+		IsMuted:       false,
+		Role:          "member",
+		CreatedAt:     time.Now(),
+		UpdatedAt:     time.Now(),
+		JoinedAt:      time.Now(),
+		LeftAt:        time.Now(),
 	}
 }

@@ -1,6 +1,7 @@
 package controller
 
 import (
+	"encoding/json"
 	"fmt"
 	"gin/internal/models"
 	"gin/internal/services"
@@ -192,6 +193,7 @@ func handleClientWrite(client *models.Client) {
 	}
 }
 
+// needs to understand properly how to handle the read and write routines
 // handleClientRead handles reading messages from the WebSocket connection
 func handleClientRead(client *models.Client) {
 	defer func() {
@@ -210,7 +212,6 @@ func handleClientRead(client *models.Client) {
 
 	for {
 		// Read message from client
-		var request models.MessageRequest
 		_, message, err := client.Connection.ReadMessage()
 		if err != nil {
 			if websocket.IsUnexpectedCloseError(err, websocket.CloseGoingAway, websocket.CloseAbnormalClosure) {
@@ -239,6 +240,27 @@ func handleClientRead(client *models.Client) {
 				continue // Don't close, try to read next message
 			}
 			break
+		}
+
+		// unmarshal the message into a MessageRequest
+		var request models.MessageRequest
+		if err := json.Unmarshal(message, &request); err != nil {
+			log.Printf("Failed to unmarshal message from client %s: %v", client.ID, err)
+			errorMsg := models.WebSocketMessage{
+				Type: models.WSMessageTypeError,
+				Data: models.ErrorMessage{
+					Code:    "PARSE_ERROR",
+					Message: "Failed to parse message: " + err.Error(),
+				},
+				Timestamp: time.Now(),
+			}
+			select {
+			case client.Send <- errorMsg:
+			default:
+				log.Printf("Cannot send error message to client %s, closing connection", client.ID)
+				break
+			}
+			continue
 		}
 
 		// Update client activity
@@ -686,7 +708,7 @@ func handleUpdateChat(client *models.Client, request models.MessageRequest) {
 // autoJoinUserChats automatically joins the user to their active chats (sequential)
 func autoJoinUserChats(client *models.Client) error {
 	// Get user's chats
-	userChats, err := services.GetUserChats(client.UserID, []string{"chatId", "status", "username", "displayName", "avatar", "isFavorite"})
+	userChats, err := services.GetUserChats(client.UserID)
 	if err != nil {
 		log.Printf("Failed to get user chats for auto-join: %v", err)
 		return err
@@ -697,14 +719,10 @@ func autoJoinUserChats(client *models.Client) error {
 	}
 
 	// Join each chat sequentially
-	for _, chat := range userChats {
-		chatID := chat.ChatID.Hex()
-
+	for _, chatID := range userChats {
 		// Check if user is still a participant and not blocked
-		if chat.Status == string(objects.StatusAccepted) {
-			services.JoinChatRoom(client, chatID)
-			log.Printf("Auto-joined client %s to chat %s (%s)", client.ID, chatID, chat.Status)
-		}
+		services.JoinChatRoom(client, chatID.Hex())
+		log.Printf("Auto-joined client %s to chat %s ", client.ID, chatID.Hex())
 	}
 
 	log.Printf("Auto-join completed for client %s (%d chats)", client.ID, len(userChats))
@@ -714,13 +732,13 @@ func autoJoinUserChats(client *models.Client) error {
 // validateMessagePermissions checks if a user can send messages in a chat
 func validateMessagePermissions(userID bson.ObjectID, chatID bson.ObjectID, request models.MessageRequest) (bool, error) {
 	// Get chat details
-	chat, err := services.GetChat(models.GetContactInfo{ChatID: chatID})
+	chat, err := services.GetChat(models.ContactInfo{ChatID: chatID})
 	if err != nil {
 		return false, fmt.Errorf("failed to get chat: %w", err)
 	}
 
 	// Check if user is a participant
-	participant, isParticipant := chat.Participants[userID.Hex()]
+	participant, isParticipant := chat.Participants[userID]
 	if !isParticipant {
 		return false, nil
 	}
@@ -731,12 +749,12 @@ func validateMessagePermissions(userID bson.ObjectID, chatID bson.ObjectID, requ
 	}
 
 	// Check chat-specific permissions
-	switch chat.Type {
-	case "direct":
+	switch chat.ChatType {
+	case string(objects.ChatTypeDirect):
 		// In direct chats, both participants can send messages
 		return true, nil
 
-	case "group":
+	case string(objects.ChatTypeGroup):
 		// Check if user has message permission (default: all members can send)
 		permissions := participant.Permissions
 		if len(permissions) > 0 {
@@ -753,7 +771,7 @@ func validateMessagePermissions(userID bson.ObjectID, chatID bson.ObjectID, requ
 		// Default: members can send messages
 		return true, nil
 
-	case "channel":
+	case string(objects.ChatTypeChannel):
 		// Only admins and owners can send messages in channels by default
 		return participant.Role == "admin" || participant.Role == "owner", nil
 
