@@ -48,6 +48,8 @@ type ChatType string
 // permission type
 type ChatPermissionType string
 
+type ChatRole string
+
 const (
 	// collection names
 	DBName      Database   = "Echo"
@@ -107,6 +109,11 @@ const (
 	// chat permission type
 	ChatPermissionRead  ChatPermissionType = "read"
 	ChatPermissionWrite ChatPermissionType = "write"
+
+	// chat role
+	ChatRoleOwner  ChatRole = "owner"
+	ChatRoleAdmin  ChatRole = "admin"
+	ChatRoleMember ChatRole = "member"
 )
 
 // api paths

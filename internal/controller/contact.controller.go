@@ -8,29 +8,10 @@ import (
 	"strconv"
 
 	"github.com/gin-gonic/gin"
+	"go.mongodb.org/mongo-driver/v2/bson"
 )
 
-// func getStatus(ctx *gin.Context) objects.ContactStatus {
-// 	status := ctx.Query("status")
-// 	switch status {
-// 	case "pending":
-// 		return objects.StatusPending
-// 	case "accepted":
-// 		return objects.StatusAccepted
-// 	case "blocked":
-// 		return objects.StatusBlocked
-// 	case "favorite":
-// 		return objects.StatusFavorite
-// 	case "contact":
-// 		return objects.StatusContact
-// 	default:
-// 		return objects.StatusContact
-// 	}
-// }
-
-// // ============ CONTACTS & FRIENDS MANAGEMENT ============
-// // Contact List Management
-
+// ============ CONTACTS & FRIENDS MANAGEMENT ============
 func GetUsersContacts(ctx *gin.Context) {
 	userID, ok := ctx.Get("userId")
 	if !ok {
@@ -43,7 +24,13 @@ func GetUsersContacts(ctx *gin.Context) {
 		limit = 10
 	}
 
-	userData, err := services.GetContacts(userID.(string), objects.StatusAccepted, limit)
+	objectID, err := bson.ObjectIDFromHex(userID.(string))
+	if err != nil {
+		utils.ErrorResponse(ctx, http.StatusBadRequest, "invalid user id format", err.Error())
+		return
+	}
+
+	userData, err := services.GetContacts(objectID, objects.StatusAccepted, limit)
 	if err != nil {
 		utils.ErrorResponse(ctx, http.StatusInternalServerError, "failed to get users contacts", err.Error())
 		return
@@ -57,11 +44,19 @@ func GetContactRequests(ctx *gin.Context) {
 		utils.ErrorResponse(ctx, http.StatusUnauthorized, "user id not found", nil)
 		return
 	}
+
 	limit, err := strconv.Atoi(ctx.Query("limit"))
 	if err != nil {
 		limit = 10
 	}
-	userData, err := services.GetContacts(userID.(string), objects.StatusPending, limit)
+
+	objectID, err := bson.ObjectIDFromHex(userID.(string))
+	if err != nil {
+		utils.ErrorResponse(ctx, http.StatusBadRequest, "invalid user id format", err.Error())
+		return
+	}
+
+	userData, err := services.GetContacts(objectID, objects.StatusPending, limit)
 	if err != nil {
 		utils.ErrorResponse(ctx, http.StatusInternalServerError, "failed to get contact requests", err.Error())
 		return
@@ -75,15 +70,24 @@ func GetSentContactRequests(ctx *gin.Context) {
 		utils.ErrorResponse(ctx, http.StatusUnauthorized, "user id not found", nil)
 		return
 	}
+
 	limit, err := strconv.Atoi(ctx.Query("limit"))
 	if err != nil {
 		limit = 10
 	}
-	userData, err := services.GetContacts(userID.(string), objects.StatusPending, limit)
+
+	objectID, err := bson.ObjectIDFromHex(userID.(string))
+	if err != nil {
+		utils.ErrorResponse(ctx, http.StatusBadRequest, "invalid user id format", err.Error())
+		return
+	}
+
+	userData, err := services.GetContacts(objectID, objects.StatusPending, limit)
 	if err != nil {
 		utils.ErrorResponse(ctx, http.StatusInternalServerError, "Failed to get sent contact requests", err.Error())
 		return
 	}
+
 	utils.PaginatedResponse(ctx, "Sent contact requests fetched successfully", userData, limit, len(userData))
 }
 
@@ -93,15 +97,24 @@ func GetBlockedUsers(ctx *gin.Context) {
 		utils.ErrorResponse(ctx, http.StatusUnauthorized, "user id not found", nil)
 		return
 	}
+
 	limit, err := strconv.Atoi(ctx.Query("limit"))
 	if err != nil {
 		limit = 10
 	}
-	userData, err := services.GetContacts(userID.(string), objects.StatusBlocked, limit)
+
+	objectID, err := bson.ObjectIDFromHex(userID.(string))
+	if err != nil {
+		utils.ErrorResponse(ctx, http.StatusBadRequest, "invalid user id format", err.Error())
+		return
+	}
+
+	userData, err := services.GetContacts(objectID, objects.StatusBlocked, limit)
 	if err != nil {
 		utils.ErrorResponse(ctx, http.StatusInternalServerError, "Failed to get blocked users", err.Error())
 		return
 	}
+
 	utils.PaginatedResponse(ctx, "Blocked users fetched successfully", userData, limit, len(userData))
 }
 
@@ -111,32 +124,56 @@ func GetFavoriteContacts(ctx *gin.Context) {
 		utils.ErrorResponse(ctx, http.StatusUnauthorized, "user id not found", nil)
 		return
 	}
+
 	limit, err := strconv.Atoi(ctx.Query("limit"))
 	if err != nil {
 		limit = 10
 	}
-	userData, err := services.GetContacts(userID.(string), objects.StatusFavorite, limit)
+
+	objectID, err := bson.ObjectIDFromHex(userID.(string))
+	if err != nil {
+		utils.ErrorResponse(ctx, http.StatusBadRequest, "invalid user id format", err.Error())
+		return
+	}
+
+	userData, err := services.GetContacts(objectID, objects.StatusFavorite, limit)
 	if err != nil {
 		utils.ErrorResponse(ctx, http.StatusInternalServerError, "Failed to get favorite contacts", err.Error())
 		return
 	}
+
 	utils.PaginatedResponse(ctx, "Favorite contacts fetched successfully", userData, limit, len(userData))
 }
 
-// Contact Actions
+// ============= Contact Actions =============
 func SendContactRequest(ctx *gin.Context) {
 	userID, ok := ctx.Get("userId")
 	if !ok {
 		utils.ErrorResponse(ctx, http.StatusUnauthorized, "user id not found", nil)
 		return
 	}
+
+	objectID, err := bson.ObjectIDFromHex(userID.(string))
+	if err != nil {
+		utils.ErrorResponse(ctx, http.StatusBadRequest, "invalid user id format", err.Error())
+		return
+	}
+
 	targetUserID := ctx.Param("targetUserId")
-	userData, err := services.SendContactRequest(userID.(string), targetUserID)
+
+	targetObjectID, err := bson.ObjectIDFromHex(targetUserID)
+	if err != nil {
+		utils.ErrorResponse(ctx, http.StatusBadRequest, "invalid target user id format", err.Error())
+		return
+	}
+
+	err = services.SendContactRequest(objectID, targetObjectID)
 	if err != nil {
 		utils.ErrorResponse(ctx, http.StatusInternalServerError, "Failed to send contact request", err.Error())
 		return
 	}
-	utils.SuccessResponse(ctx, "Contact request sent successfully", userData)
+
+	utils.SuccessResponse(ctx, "Contact request sent successfully", nil)
 }
 
 // Accept or decline a request ({ action: "accept"|"decline" }).
@@ -147,7 +184,13 @@ func AcceptOrDeclineContactRequest(ctx *gin.Context) {
 		return
 	}
 
-	targetUserID := ctx.Param("requestId")
+	userObjectID, err := bson.ObjectIDFromHex(userID.(string))
+	if err != nil {
+		utils.ErrorResponse(ctx, http.StatusBadRequest, "invalid user id format", err.Error())
+		return
+	}
+
+	targetRequestID := ctx.Param("requestId")
 
 	action := ctx.Query("action")
 
@@ -155,77 +198,134 @@ func AcceptOrDeclineContactRequest(ctx *gin.Context) {
 		utils.ErrorResponse(ctx, http.StatusBadRequest, "Invalid action please provide your action as (accepted or declined)", nil)
 		return
 	}
-	userData, err := services.AcceptOrDeclineContactRequest(userID.(string), targetUserID, action)
+
+	targetRequestObjectID, err := bson.ObjectIDFromHex(targetRequestID)
+	if err != nil {
+		utils.ErrorResponse(ctx, http.StatusBadRequest, "invalid target user id format", err.Error())
+		return
+	}
+
+	err = services.AcceptOrDeclineContactRequest(userObjectID, targetRequestObjectID, action)
 	if err != nil {
 		utils.ErrorResponse(ctx, http.StatusInternalServerError, "Failed to "+action+" contact request", err.Error())
 		return
 	}
-	utils.SuccessResponse(ctx, "Contact request "+action+" successfully", userData)
+
+	utils.SuccessResponse(ctx, "Contact request "+action+" successfully", nil)
 }
 
-// Remove a contact.
 func RemoveContact(ctx *gin.Context) {
 	userID, ok := ctx.Get("userId")
 	if !ok {
 		utils.ErrorResponse(ctx, http.StatusUnauthorized, "user id not found", nil)
 		return
 	}
+
+	userObjectID, err := bson.ObjectIDFromHex(userID.(string))
+	if err != nil {
+		utils.ErrorResponse(ctx, http.StatusBadRequest, "invalid user id format", err.Error())
+		return
+	}
+
 	targetUserID := ctx.Param("contactId")
-	userData, err := services.RemoveContact(userID.(string), targetUserID)
+	targetObjectID, err := bson.ObjectIDFromHex(targetUserID)
+	if err != nil {
+		utils.ErrorResponse(ctx, http.StatusBadRequest, "invalid target user id format", err.Error())
+		return
+	}
+
+	err = services.RemoveContact(userObjectID, targetObjectID)
 	if err != nil {
 		utils.ErrorResponse(ctx, http.StatusInternalServerError, "Failed to remove contact", err.Error())
 		return
 	}
-	utils.SuccessResponse(ctx, "Contact removed successfully", userData)
+
+	utils.SuccessResponse(ctx, "Contact removed successfully", nil)
 }
 
-// Block a user.
-func BlockUser(ctx *gin.Context) {
+func BlockUnblockUser(ctx *gin.Context) {
 	userID, ok := ctx.Get("userId")
 	if !ok {
 		utils.ErrorResponse(ctx, http.StatusUnauthorized, "user id not found", nil)
 		return
 	}
 	targetUserID := ctx.Param("userId")
-	userData, err := services.BlockUser(userID.(string), targetUserID)
+
+	userObjectID, err := bson.ObjectIDFromHex(userID.(string))
+	if err != nil {
+		utils.ErrorResponse(ctx, http.StatusBadRequest, "invalid user id format", err.Error())
+		return
+	}
+
+	targetObjectID, err := bson.ObjectIDFromHex(targetUserID)
+	if err != nil {
+		utils.ErrorResponse(ctx, http.StatusBadRequest, "invalid target user id format", err.Error())
+		return
+	}
+
+	err = services.BlockUnblockUser(userObjectID, targetObjectID, "block")
 	if err != nil {
 		utils.ErrorResponse(ctx, http.StatusInternalServerError, "Failed to block user", err.Error())
 		return
 	}
-	utils.SuccessResponse(ctx, "User blocked successfully", userData)
+
+	utils.SuccessResponse(ctx, "User blocked successfully", nil)
 }
 
-// Add a user to your favorites.
 func AddToFavorites(ctx *gin.Context) {
 	userID, ok := ctx.Get("userId")
 	if !ok {
 		utils.ErrorResponse(ctx, http.StatusUnauthorized, "user id not found", nil)
 		return
 	}
+
+	userObjectID, err := bson.ObjectIDFromHex(userID.(string))
+	if err != nil {
+		utils.ErrorResponse(ctx, http.StatusBadRequest, "invalid user id format", err.Error())
+		return
+	}
+
 	targetUserID := ctx.Param("userId")
-	userData, err := services.AddToFavorites(userID.(string), targetUserID)
+	targetObjectID, err := bson.ObjectIDFromHex(targetUserID)
+	if err != nil {
+		utils.ErrorResponse(ctx, http.StatusBadRequest, "invalid target user id format", err.Error())
+		return
+	}
+
+	err = services.AddToFavorites(userObjectID, targetObjectID)
 	if err != nil {
 		utils.ErrorResponse(ctx, http.StatusInternalServerError, "Failed to add user to favorites", err.Error())
 		return
 	}
-	utils.SuccessResponse(ctx, "User added to favorites successfully", userData)
+
+	utils.SuccessResponse(ctx, "User added to favorites successfully", nil)
 }
 
-// // // Remove a user from your favorites.
-// // func RemoveFromFavorites(c *gin.Context) {
-// // 	userData, err := services.RemoveFromFavorites(c)
-// // 	if err != nil {
-// // 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-// // 		return
-// // 	}
-// // 	c.JSON(http.StatusOK, userData)
-// // }
+func RemoveFromFavorites(ctx *gin.Context) {
+	userID, ok := ctx.Get("userId")
+	if !ok {
+		utils.ErrorResponse(ctx, http.StatusUnauthorized, "user id not found", nil)
+		return
+	}
 
-// // func GetFavoriteContacts(c *gin.Context) {
-// // 	userData, err := services.GetFavoriteContacts(c)
-// // 	if err != nil {
-// // 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-// // 		return
-// // 	}
-// // 	c.JSON(http.StatusOK, userData)
-// // }
+	userObjectID, err := bson.ObjectIDFromHex(userID.(string))
+	if err != nil {
+		utils.ErrorResponse(ctx, http.StatusBadRequest, "invalid user id format", err.Error())
+		return
+	}
+
+	targetUserID := ctx.Param("userId")
+	targetObjectID, err := bson.ObjectIDFromHex(targetUserID)
+	if err != nil {
+		utils.ErrorResponse(ctx, http.StatusBadRequest, "invalid target user id format", err.Error())
+		return
+	}
+
+	err = services.RemoveFromFavorites(userObjectID, targetObjectID)
+	if err != nil {
+		utils.ErrorResponse(ctx, http.StatusInternalServerError, "Failed to remove user from favorites", err.Error())
+		return
+	}
+
+	utils.SuccessResponse(ctx, "User removed from favorites successfully", nil)
+}

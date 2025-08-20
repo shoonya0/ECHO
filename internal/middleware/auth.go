@@ -14,19 +14,49 @@ import (
 	"go.mongodb.org/mongo-driver/v2/bson"
 )
 
-type JwtClaims struct {
-	jwt.RegisteredClaims
-	UserID string `json:"user_id"`
-	Email  string `json:"email"`
-	Exp    int64  `json:"exp"`
+func validateClaims(claims utils.JwtClaims) error {
+
+	if claims.RegisteredClaims.ExpiresAt.Before(time.Now()) {
+		return fmt.Errorf("token is expired")
+	}
+
+	if claims.RegisteredClaims.NotBefore.After(time.Now()) {
+		return fmt.Errorf("token is not valid yet")
+	}
+
+	if claims.RegisteredClaims.Subject == "" {
+		return fmt.Errorf("missing user_id in token claims")
+	} else if claims.Username == "" {
+		return fmt.Errorf("missing username in token claims")
+	} else if claims.Email == "" {
+		return fmt.Errorf("missing email in token claims")
+	} else if claims.Profile.DisplayName == "" {
+		return fmt.Errorf("missing display name in token claims")
+	} else if !claims.AccountStatus.IsActive {
+		return fmt.Errorf("account is not active")
+	}
+
+	return nil
 }
 
-func verifyToken(tokenString string) (JwtClaims, error) {
-	claims := JwtClaims{}
+func verifyToken(tokenString string) (utils.JwtClaims, error) {
+	claims := utils.JwtClaims{
+		RegisteredClaims: jwt.RegisteredClaims{
+			Subject:   "",
+			Issuer:    "",
+			Audience:  jwt.ClaimStrings{},
+			ExpiresAt: jwt.NewNumericDate(time.Now()),
+			NotBefore: jwt.NewNumericDate(time.Now()),
+			IssuedAt:  jwt.NewNumericDate(time.Now()),
+			ID:        "",
+		},
+		Email:         "",
+		Username:      "",
+		Profile:       models.UserProfileEmbed{},
+		AccountStatus: models.AccountStatusEmbed{},
+	}
 
-	// Parse and validate the token
 	token, err := jwt.ParseWithClaims(tokenString, &claims, func(token *jwt.Token) (interface{}, error) {
-		// Verify the signing method
 		if token.Method.Alg() != jwt.SigningMethodHS256.Alg() {
 			return nil, fmt.Errorf("unexpected signing method: %v", token.Header["alg"])
 		}
@@ -34,21 +64,15 @@ func verifyToken(tokenString string) (JwtClaims, error) {
 	})
 
 	if err != nil {
-		return JwtClaims{}, fmt.Errorf("token parsing failed: %w", err)
+		return utils.JwtClaims{}, fmt.Errorf("token parsing failed: %w", err)
 	}
 
-	// Check if token is valid
 	if !token.Valid {
-		return JwtClaims{}, fmt.Errorf("invalid token")
+		return utils.JwtClaims{}, fmt.Errorf("invalid token")
 	}
 
-	// Validate required claims
-	if claims.UserID == "" {
-		return JwtClaims{}, fmt.Errorf("missing user_id in token claims")
-	}
-
-	if claims.Email == "" {
-		return JwtClaims{}, fmt.Errorf("missing email in token claims")
+	if err := validateClaims(claims); err != nil {
+		return utils.JwtClaims{}, err
 	}
 
 	return claims, nil
@@ -57,7 +81,6 @@ func verifyToken(tokenString string) (JwtClaims, error) {
 func AuthMiddleware(ctx *gin.Context) {
 	authHeader := ctx.GetHeader("Authorization")
 
-	// Check if Authorization header exists and has proper format
 	if authHeader == "" {
 		ctx.JSON(http.StatusUnauthorized, gin.H{
 			"error": "authorization header is required",
@@ -76,7 +99,6 @@ func AuthMiddleware(ctx *gin.Context) {
 		return
 	}
 
-	// Extract token from header
 	token := strings.TrimPrefix(authHeader, "Bearer ")
 	if token == "" {
 		ctx.JSON(http.StatusUnauthorized, gin.H{
@@ -87,7 +109,6 @@ func AuthMiddleware(ctx *gin.Context) {
 		return
 	}
 
-	// Verify the token
 	claims, err := verifyToken(token)
 	if err != nil {
 		ctx.JSON(http.StatusUnauthorized, gin.H{
@@ -99,26 +120,22 @@ func AuthMiddleware(ctx *gin.Context) {
 		return
 	}
 
-	// Set user information in context only after successful verification
-	ctx.Set("userId", claims.UserID)
-	ctx.Set("email", claims.Email)
-	ctx.Set("exp", claims.Exp)
+	ctx.Set("userId", claims.RegisteredClaims.Subject)
 
-	objectID, err := bson.ObjectIDFromHex(claims.UserID)
+	objectID, err := bson.ObjectIDFromHex(claims.RegisteredClaims.Subject)
 	if err != nil {
 		utils.ErrorResponse(ctx, http.StatusUnauthorized, "invalid user id format", err.Error())
 		ctx.Abort()
 		return
 	}
 
-	ctx.Set("user", models.User{
-		ID:        objectID,
-		Username:  claims.Email,
-		Email:     claims.Email,
-		CreatedAt: time.Now(),
-		UpdatedAt: time.Now(),
+	ctx.Set("user", models.LoginUserResponse{
+		ID:            objectID,
+		Email:         claims.Email,
+		Username:      claims.Username,
+		Profile:       claims.Profile,
+		AccountStatus: claims.AccountStatus,
 	})
 
-	// Continue to next handler
 	ctx.Next()
 }

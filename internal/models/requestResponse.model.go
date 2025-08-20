@@ -6,6 +6,16 @@ import (
 	"go.mongodb.org/mongo-driver/v2/bson"
 )
 
+// ============ LOGIN USER MODEL ============
+type LoginUserResponse struct {
+	ID            bson.ObjectID      `json:"_id" bson:"_id"`
+	Email         string             `json:"email" bson:"email"`
+	PasswordHash  string             `json:"-" bson:"passwordHash"`
+	Username      string             `json:"username" bson:"username"`
+	Profile       UserProfileEmbed   `json:"profile" bson:"profile"`
+	AccountStatus AccountStatusEmbed `json:"accountStatus" bson:"accountStatus"`
+}
+
 // ============ GET PROFILE MODEL (is in use)============
 type GetProfileResponse struct {
 	ID            bson.ObjectID      `json:"_id" bson:"_id"`
@@ -25,28 +35,15 @@ type GetUserProfileResponse struct {
 }
 
 // ============ UPDATE REQUEST MODELS (is in use) ============
-
-// UpdateUserRequest handles partial updates for user profile
 type UpdateUserRequest struct {
-	// Basic info - using pointers to distinguish between zero values and unset values
-	Username string `json:"username,omitempty"`
-	Email    string `json:"email,omitempty"`
-	Phone    string `json:"phone,omitempty"`
-
-	// Profile fields
-	Profile UserProfileEmbed `json:"profile,omitempty"`
-
-	// Presence fields
-	Presence PresenceEmbed `json:"presence,omitempty"`
-
-	// Account status
-	AccountStatus AccountStatusEmbed `json:"accountStatus,omitempty"`
-
-	// Settings
-	Settings UserSettingsEmbed `json:"settings,omitempty"`
-
-	// Timestamps
-	UpdatedAt time.Time `json:"updatedAt,omitempty"`
+	Username      string             `json:"username,omitempty" bson:"username,omitempty"`
+	Email         string             `json:"email,omitempty" bson:"email,omitempty"`
+	Phone         string             `json:"phone,omitempty" bson:"phone,omitempty"`
+	Profile       UserProfileEmbed   `json:"profile" bson:"profile"`
+	Presence      PresenceEmbed      `json:"presence" bson:"presence"`
+	AccountStatus AccountStatusEmbed `json:"accountStatus" bson:"accountStatus"`
+	Settings      UserSettingsEmbed  `json:"settings" bson:"settings"`
+	UpdatedAt     time.Time          `json:"updatedAt" bson:"updatedAt"`
 }
 
 // ============ CONTACT MODEL (is in use) ============
@@ -57,15 +54,11 @@ type ContactRequest struct {
 }
 
 type ContactInfo struct {
-	ID           bson.ObjectID `json:"_id" bson:"_id"`
-	ChatID       bson.ObjectID `json:"chatId" bson:"chatId"`
-	ChatName     string        `json:"chatname" bson:"chatname"`
-	ChatAvatar   string        `json:"chatavatar" bson:"chatavatar"`
-	OnlineStatus string        `json:"onlineStatus" bson:"onlineStatus"`
-	Username     string        `json:"username" bson:"username"`
-	DisplayName  string        `json:"displayName" bson:"displayName"`
-	Avatar       string        `json:"avatar" bson:"avatar"`
-	IsFavorite   bool          `json:"isFavorite" bson:"isFavorite"`
+	ID         bson.ObjectID    `json:"_id,omitempty" bson:"_id,omitempty"`
+	Profile    UserProfileEmbed `json:"profile,omitempty" bson:"profile,omitempty"`
+	Username   string           `json:"username,omitempty" bson:"username,omitempty"`
+	Presence   PresenceEmbed    `json:"presence,omitempty" bson:"presence,omitempty"`
+	IsFavorite bool             `json:"isFavorite,omitempty" bson:"isFavorite,omitempty"`
 }
 
 // ============ CHAT MODEL ============
@@ -76,11 +69,4 @@ type GetChatResponse struct {
 	Description string        `json:"description" bson:"description"`
 	Avatar      string        `json:"avatar" bson:"avatar"`
 	Messages    []Message     `json:"messages" bson:"messages"`
-}
-
-// ============ BATCH MESSAGE MODEL ============
-// get message by chatId in batch
-type BatchMessageByChatID struct {
-	ChatID   bson.ObjectID `json:"chatId" bson:"chatId"`
-	Messages []Message     `json:"messages" bson:"messages"`
 }

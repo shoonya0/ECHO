@@ -8,27 +8,21 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-// RegisterChatRoutes registers all chat-related routes
 func RegisterChatRoutes(r *gin.Engine) {
 	// ============ WEBSOCKET ROUTES (NO AUTH MIDDLEWARE) ============
 	wsApi := r.Group(objects.ApiBasePath + "ws")
 	{
-		// Real-time chat WebSocket connection (handles auth internally)
 		wsApi.GET("/chat", controller.HandleWebSocketChat) // Main WebSocket endpoint for real-time chat
 	}
 
-	// Apply authentication middleware to HTTP chat routes
 	chatApi := r.Group(objects.ApiBasePath)
 	chatApi.Use(middleware.AuthMiddleware)
 
 	// ============ CHAT MANAGEMENT ROUTES ============
 	chatRoutes := chatApi.Group("chats")
 	{
-		// Chat creation
-		// chatRoutes.POST("/direct", controller.CreateDirectChatHTTP) // Create direct chat
-		chatRoutes.POST("/group", controller.CreateGroupChatHTTP) // Create group chat
-
-		// Chat operations
+		chatRoutes.POST("/direct", controller.CreateDirectChatHTTP) // Create direct chat
+		chatRoutes.POST("/group", controller.CreateGroupChatHTTP)   // Create group chat
 		chatRoutes.GET("/messages", controller.GetChatMessagesHTTP) // Get chat messages with pagination
 
 		// Monitoring (for admin/debugging)

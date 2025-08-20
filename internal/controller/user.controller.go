@@ -13,8 +13,6 @@ import (
 )
 
 // ============ PROFILE MANAGEMENT ============
-
-// Get the authenticated user’s profile.
 func GetProfile(ctx *gin.Context) {
 	userID, ok := ctx.Get("userId")
 	if !ok {
@@ -47,54 +45,34 @@ func GetProfile(ctx *gin.Context) {
 	utils.SuccessResponse(ctx, "User profile fetched successfully", userData)
 }
 
-// Update profile fields (display name, avatar URL, status message ,etc...).
 func UpdateProfile(ctx *gin.Context) {
-	// Parse the partial update request
 	var updateReq models.UpdateUserRequest
 	if err := ctx.ShouldBindJSON(&updateReq); err != nil {
-		ctx.JSON(http.StatusBadRequest, gin.H{
-			"error":   "Invalid request format",
-			"details": err.Error(),
-		})
+		utils.ErrorResponse(ctx, http.StatusBadRequest, "invalid request format", err.Error())
 		return
 	}
 
-	// Get user ID from context (set by auth middleware)
 	userID, ok := ctx.Get("userId")
 	if !ok {
-		ctx.JSON(http.StatusUnauthorized, gin.H{"error": "user id not found"})
+		utils.ErrorResponse(ctx, http.StatusUnauthorized, "user id not found", nil)
 		return
 	}
 
-	// Convert string ID to ObjectID
 	objectID, err := bson.ObjectIDFromHex(userID.(string))
 	if err != nil {
-		ctx.JSON(http.StatusBadRequest, gin.H{"error": "invalid user id format"})
+		utils.ErrorResponse(ctx, http.StatusBadRequest, "invalid user id format", err.Error())
 		return
 	}
 
-	// Build update document from request
-	updateDoc := services.BuildPartialUpdateDocument(updateReq)
+	updateDoc := services.BuildPartialDocument(updateReq)
 
-	// Update user profile with only provided fields
 	err = services.UpdateProfile(objectID, updateDoc)
 	if err != nil {
-		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		utils.ErrorResponse(ctx, http.StatusInternalServerError, "failed to update profile", err.Error())
 		return
 	}
 
-	// Get updated user data
-	updatedUser, err := services.GetUserProfile(objectID)
-	if err != nil {
-		ctx.JSON(http.StatusInternalServerError, gin.H{"error": "failed to fetch updated profile"})
-		return
-	}
-
-	// Return updated user data
-	ctx.JSON(http.StatusOK, gin.H{
-		"message": "Profile updated successfully",
-		"user":    updatedUser,
-	})
+	utils.SuccessResponse(ctx, "Profile updated successfully", nil)
 }
 
 func DeleteProfile(ctx *gin.Context) {
@@ -120,7 +98,7 @@ func GetUserProfile(ctx *gin.Context) {
 		utils.ErrorResponse(ctx, http.StatusBadRequest, "user id is required", nil)
 		return
 	}
-	// Convert string ID to ObjectID
+
 	objectID, err := bson.ObjectIDFromHex(userID)
 	if err != nil {
 		utils.ErrorResponse(ctx, http.StatusBadRequest, "invalid user id format", nil)
@@ -136,28 +114,13 @@ func GetUserProfile(ctx *gin.Context) {
 }
 
 func GetUserSuggestions(ctx *gin.Context) {
-	// userData, err := services.GetUserSuggestions(ctx)
-	// if err != nil {
-	// 	ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-	// 	return
-	// }
-	ctx.JSON(http.StatusOK, gin.H{"message": "User suggestions"})
+	utils.SuccessResponse(ctx, "User suggestions", nil)
 }
 
 func GetNearbyUsers(ctx *gin.Context) {
-	// userData, err := services.GetNearbyUsers(ctx)
-	// if err != nil {
-	// 	ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-	// 	return
-	// }
-	ctx.JSON(http.StatusOK, gin.H{"message": "Nearby users"})
+	utils.SuccessResponse(ctx, "Nearby users", nil)
 }
 
 func GetPopularUsers(ctx *gin.Context) {
-	// userData, err := services.GetPopularUsers(ctx)
-	// if err != nil {
-	// 	ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-	// 	return
-	// }
-	ctx.JSON(http.StatusOK, gin.H{"message": "Popular users"})
+	utils.SuccessResponse(ctx, "Popular users", nil)
 }

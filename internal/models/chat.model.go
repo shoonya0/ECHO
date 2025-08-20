@@ -9,11 +9,12 @@ import (
 // ============ UNIFIED CHAT MODEL WITH REAL-TIME CAPABILITIES ============
 // Consolidated model for both persistence and real-time operations
 type Chat struct {
-	ChatID      bson.ObjectID `json:"_id,omitempty" bson:"_id,omitempty"`
-	ChatType    string        `json:"chatType" bson:"chatType"` // "direct", "group", "channel"
-	Name        string        `json:"name" bson:"name"`
-	Description string        `json:"description,omitempty" bson:"description,omitempty"`
-	Avatar      string        `json:"avatar,omitempty" bson:"avatar,omitempty"`
+	ChatID   bson.ObjectID `json:"_id,omitempty" bson:"_id,omitempty"`
+	ChatType string        `json:"chatType" bson:"chatType"` // "direct", "group", "channel"
+	Name     string        `json:"name" bson:"name"`
+	// kirtan-krishan
+	Description string `json:"description,omitempty" bson:"description,omitempty"`
+	Avatar      string `json:"avatar,omitempty" bson:"avatar,omitempty"`
 
 	// Participant references only (no embedded user data)
 	Participants map[bson.ObjectID]ParticipantEmbed `json:"participants" bson:"participants"` // userID -> participant reference
@@ -86,15 +87,4 @@ type ChatSettingsEmbed struct {
 	AllowFileSharing bool `json:"allowFileSharing" bson:"allowFileSharing"`
 	MessageRetention int  `json:"messageRetention" bson:"messageRetention"` // days, 0 = forever
 	MaxParticipants  int  `json:"maxParticipants" bson:"maxParticipants"`
-}
-
-// no used till now
-type LastMessageEmbed struct {
-	MessageID   bson.ObjectID `json:"messageId" bson:"messageId"`
-	Content     string        `json:"content" bson:"content"`
-	SenderID    bson.ObjectID `json:"senderId" bson:"senderId"`
-	SenderName  string        `json:"senderName" bson:"senderName"`
-	MessageType string        `json:"messageType" bson:"messageType"`
-	CreatedAt   time.Time     `json:"createdAt" bson:"createdAt"`
-	IsDeleted   bool          `json:"isDeleted" bson:"isDeleted"`
 }

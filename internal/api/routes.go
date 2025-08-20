@@ -10,17 +10,10 @@ import (
 	"github.com/gin-gonic/gin"
 	"go.mongodb.org/mongo-driver/mongo"
 	"go.mongodb.org/mongo-driver/v2/bson"
+	"go.mongodb.org/mongo-driver/v2/mongo/options"
 	"golang.org/x/crypto/bcrypt"
 )
 
-// type User struct {
-// 	ID           primitive.ObjectID `bson:"_id,omitempty" json:"id"`
-// 	Email        string             `bson:"email" json:"email"`
-// 	PasswordHash string             `bson:"passwordHash,omitempty"`
-// 	CreatedAt    time.Time          `bson:"createdAt" json:"createdAt"`
-// }
-
-// request bodies
 type SignupRequest struct {
 	ID       bson.ObjectID `json:"_id" bson:"_id"`
 	Email    string        `json:"email" binding:"required,email"`
@@ -32,7 +25,6 @@ type LoginRequest struct {
 	Password string `json:"password" binding:"required"`
 }
 
-// Signup creates a new user
 func Signup() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		var req SignupRequest
@@ -41,7 +33,6 @@ func Signup() gin.HandlerFunc {
 			return
 		}
 
-		// check if email already exists
 		count, err := objects.DB.Collection(string(objects.UserColl)).CountDocuments(c.Request.Context(), bson.M{"email": req.Email})
 		if err != nil {
 			utils.ErrorResponse(c, http.StatusInternalServerError, "failed to check email", err)
@@ -52,14 +43,12 @@ func Signup() gin.HandlerFunc {
 			return
 		}
 
-		// hash password
 		hash, err := bcrypt.GenerateFromPassword([]byte(req.Password), bcrypt.DefaultCost)
 		if err != nil {
 			utils.ErrorResponse(c, http.StatusInternalServerError, "could not hash password", err)
 			return
 		}
 
-		// Create user with all embedded structures properly initialized
 		user := utils.NewUserWithDefaults(req.ID, req.Email, string(hash))
 
 		if _, err := objects.DB.Collection(string(objects.UserColl)).InsertOne(c.Request.Context(), user); err != nil {
@@ -71,7 +60,6 @@ func Signup() gin.HandlerFunc {
 	}
 }
 
-// Login verifies credentials and returns a JWT
 func Login() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		var req LoginRequest
@@ -85,11 +73,16 @@ func Login() gin.HandlerFunc {
 			return
 		}
 
-		// find user by email
-		var user models.User
-		err := objects.DB.Collection(string(objects.UserColl)).FindOne(c.Request.Context(),
-			bson.M{"email": req.Email},
-		).Decode(&user)
+		userProjection := bson.M{
+			"_id":           1,
+			"email":         1,
+			"hash":          1,
+			"profile":       1,
+			"accountStatus": 1,
+		}
+
+		var user models.LoginUserResponse
+		err := objects.DB.Collection(string(objects.UserColl)).FindOne(c.Request.Context(), bson.M{"email": req.Email}, options.FindOne().SetProjection(userProjection)).Decode(&user)
 		if err == mongo.ErrNoDocuments {
 			utils.ErrorResponse(c, http.StatusUnauthorized, "invalid credentials", err)
 			return
@@ -98,7 +91,6 @@ func Login() gin.HandlerFunc {
 			return
 		}
 
-		// compare password
 		if err := bcrypt.CompareHashAndPassword(
 			[]byte(user.PasswordHash), []byte(req.Password),
 		); err != nil {
@@ -106,8 +98,7 @@ func Login() gin.HandlerFunc {
 			return
 		}
 
-		// generate JWT token
-		token, err := utils.GetJWTToken(user.ID.Hex(), user.Email, time.Now().Add(24*time.Hour).Unix())
+		token, err := utils.GetJWTToken(user.ID.Hex(), user.Email, user.Username, user.Profile, user.AccountStatus, time.Now().Add(7*24*time.Hour).Unix())
 		if err != nil {
 			utils.ErrorResponse(c, http.StatusInternalServerError, "could not generate token", err)
 			return
@@ -121,25 +112,15 @@ func Login() gin.HandlerFunc {
 	}
 }
 
-// Register all routes here
 func RegisterAPIRoutes(r *gin.Engine) {
-
-	// Public routes (no authentication required)
 	r.POST(objects.ApiBasePath+"login", Login())
 	r.POST(objects.ApiBasePath+"signup", Signup())
 
-	// Register authentication routes
-	// RegisterAuthRoutes(r)
-
-	// Register chat routes
-	RegisterChatRoutes(r)
-
-	// Register WebSocket routes
-	// RegisterWebSocketRoutes(r)
-
-	// Register user management routes (with authentication)
 	RegisterUserRoutes(r)
 
-	// // Register admin routes
-	// RegisterAdminRoutes(r)
+	RegisterChatRoutes(r)
 }
+
+// in contacts , delete the CHat ID
+// only create the chat when any user send a message to the other user
+// if any things is deleted don't marked it's deleted , just remove the chat from the user's contacts

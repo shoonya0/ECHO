@@ -9,6 +9,7 @@ import (
 
 	"go.mongodb.org/mongo-driver/v2/bson"
 	"go.mongodb.org/mongo-driver/v2/mongo"
+	"go.mongodb.org/mongo-driver/v2/mongo/options"
 )
 
 // ============ USER SERVICE FUNCTIONS ============
@@ -184,7 +185,6 @@ func UpdateUserLastActivity(userID bson.ObjectID) error {
 	return err
 }
 
-// UpdateProfile updates a user's profile information
 func UpdateProfile(userID bson.ObjectID, profileUpdate map[string]interface{}) error {
 	filter := bson.M{"_id": userID}
 	update := bson.M{"$set": profileUpdate}
@@ -196,23 +196,16 @@ func UpdateProfile(userID bson.ObjectID, profileUpdate map[string]interface{}) e
 	return nil
 }
 
-// GetUserProfile retrieves a user's complete profile
-func GetUserProfile(userID bson.ObjectID) (*models.User, error) {
+func GetUserProfile(userID bson.ObjectID) (*models.GetUserProfileResponse, error) {
 	filter := bson.M{"_id": userID}
 	projection := bson.M{
 		"_id":           1,
-		"username":      1,
-		"email":         1,
-		"phone":         1,
 		"profile":       1,
-		"presence":      1,
 		"accountStatus": 1,
-		"settings":      1,
-		"createdAt":     1,
-		"updatedAt":     1,
 	}
 
-	user, err := FindByID[models.User](context.Background(), objects.DB.Collection(string(objects.UserColl)), filter, projection)
+	var user models.GetUserProfileResponse
+	err := objects.DB.Collection(string(objects.UserColl)).FindOne(context.Background(), filter, options.FindOne().SetProjection(projection)).Decode(&user)
 	if err != nil {
 		if err == mongo.ErrNoDocuments {
 			return nil, fmt.Errorf("user not found")
@@ -220,7 +213,7 @@ func GetUserProfile(userID bson.ObjectID) (*models.User, error) {
 		return nil, fmt.Errorf("failed to get user profile: %w", err)
 	}
 
-	return user, nil
+	return &user, nil
 }
 
 func DeleteProfile(userID string) error {

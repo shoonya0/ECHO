@@ -38,12 +38,11 @@ func NewUserWithDefaults(id bson.ObjectID, email, passwordHash string) models.Us
 
 		// Initialize ContactInfo with empty arrays
 		ContactInfo: models.ContactInfoEmbed{
-			BlockedChats: make(map[bson.ObjectID]bson.ObjectID),
-			PendingOut:   make(map[bson.ObjectID]bson.ObjectID),
-			PendingIn:    make(map[bson.ObjectID]bson.ObjectID),
-			Favorites:    make(map[bson.ObjectID]bson.ObjectID),
-			Contacts:     make(map[bson.ObjectID]bson.ObjectID),
-			UnreadCount:  make(map[bson.ObjectID]int),
+			BlockedChats: make([]bson.ObjectID, 0),
+			PendingOut:   make([]bson.ObjectID, 0),
+			PendingIn:    make([]bson.ObjectID, 0),
+			Favorites:    make([]bson.ObjectID, 0),
+			Contacts:     make([]bson.ObjectID, 0),
 			CreatedAt:    now,
 			UpdatedAt:    now,
 		},

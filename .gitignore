@@ -5,3 +5,4 @@ config/envConfig/test.env
 .cursor
 build
 test
+tmp

@@ -4,11 +4,13 @@ import (
 	"context"
 	"fmt"
 	"gin/internal/models"
+	"gin/internal/utils"
 	"gin/objects"
 	"time"
 
 	"go.mongodb.org/mongo-driver/v2/bson"
 	"go.mongodb.org/mongo-driver/v2/mongo"
+	"go.mongodb.org/mongo-driver/v2/mongo/options"
 )
 
 // ============ ENHANCED CHAT SERVICE WITH REAL-TIME SUPPORT ============
@@ -33,8 +35,8 @@ func GetUserChats(userID bson.ObjectID) (map[bson.ObjectID]bson.ObjectID, error)
 	chatInfo := make(map[bson.ObjectID]bson.ObjectID)
 
 	// now we will retrive the chat info which we want to get from the infoToGetFromChat
-	for chatUserID, chatID := range user.ContactInfo.Contacts {
-		chatInfo[chatUserID] = chatID
+	for _, chatID := range user.ContactInfo.Contacts {
+		chatInfo[chatID] = chatID
 	}
 
 	return chatInfo, nil
@@ -98,22 +100,41 @@ func GetChatWithMessages(chatID bson.ObjectID, limit int, offset int) (models.Ch
 	return chat, messages, nil
 }
 
-// CreateDirectChat creates a new direct chat between two users
-func CreateDirectChat(userID1, userID2 bson.ObjectID) (*models.Chat, error) {
+// ============ CHAT MANAGEMENT ============
+func CreateDirectChat(user models.LoginUserResponse, targetUserID bson.ObjectID) (*models.Chat, error) {
 	ctx := context.Background()
 
-	// Check if direct chat already exists
 	filter := bson.M{
 		"chatType": "direct",
 		"$and": []bson.M{
-			{"participants." + userID1.Hex(): bson.M{"$exists": true}},
-			{"participants." + userID2.Hex(): bson.M{"$exists": true}},
+			{"participants." + user.ID.Hex(): bson.M{"$exists": true}},
+			{"participants." + targetUserID.Hex(): bson.M{"$exists": true}},
 		},
 	}
 
-	existingChat, err := FindByFilter[models.Chat](ctx, objects.DB.Collection(string(objects.ChatColl)), filter, nil)
-	if err == nil {
-		return &existingChat, nil
+	chatProjection := bson.M{
+		"_id":          1,
+		"chatType":     1,
+		"participants": 1,
+	}
+
+	existingChat := models.Chat{}
+
+	err := objects.DB.Collection(string(objects.ChatColl)).FindOne(ctx, filter, options.FindOne().SetProjection(chatProjection)).Decode(&existingChat)
+	if err != nil {
+		if err == mongo.ErrNoDocuments {
+			chat := utils.NewChatWithDefaults(user.ID, "direct")
+			chat.Participants[user.ID] = models.ParticipantEmbed{
+				Role: string(objects.ChatRoleMember),
+				UserInfo: models.ContactUserInfo{
+					UserID:      user.ID,
+					DisplayName: user.Profile.DisplayName,
+					Username:    user.Username,
+					Avatar:      user.Profile.Avatar,
+				},
+			}
+		}
+		return nil, fmt.Errorf("failed to fetch existing chat: %w", err)
 	}
 
 	return &existingChat, nil

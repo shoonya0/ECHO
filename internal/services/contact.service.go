@@ -4,24 +4,17 @@ import (
 	"context"
 	"fmt"
 	"gin/internal/models"
-	"gin/internal/utils"
 	"gin/objects"
 	"time"
 
 	"go.mongodb.org/mongo-driver/v2/bson"
 	"go.mongodb.org/mongo-driver/v2/mongo"
+	"go.mongodb.org/mongo-driver/v2/mongo/options"
 )
 
 // ============ CONTACTS & FRIENDS MANAGEMENT ============
-
-// // this return array of users id with their name and avatar
-func GetContacts(userID string, contactStatus objects.ContactStatus, limit int) ([]models.ContactInfo, error) {
+func GetContacts(userID bson.ObjectID, contactStatus objects.ContactStatus, limit int) ([]models.ContactInfo, error) {
 	contactRequests := []models.ContactInfo{}
-
-	objectID, err := bson.ObjectIDFromHex(userID)
-	if err != nil {
-		return []models.ContactInfo{}, err
-	}
 
 	contactProjection := bson.M{
 		"_id":       1,
@@ -47,113 +40,85 @@ func GetContacts(userID string, contactStatus objects.ContactStatus, limit int) 
 		contactProjection["contactInfo.blockedChats"] = 1
 	}
 
-	// first we have to get the information from the contact collection
-	contact, err := FindByID[models.ContactRequest](context.Background(), objects.DB.Collection(string(objects.UserColl)), bson.M{"_id": objectID}, contactProjection)
+	contact := models.ContactRequest{}
+	err := objects.DB.Collection(string(objects.UserColl)).FindOne(context.Background(), bson.M{"_id": userID}, options.FindOne().SetProjection(contactProjection)).Decode(&contact)
 	if err != nil {
 		return []models.ContactInfo{}, err
 	}
 
 	contactIds := contact.ContactInfo
-
-	addToMap := func(contacts []bson.ObjectID, map2 map[bson.ObjectID]bson.ObjectID) []bson.ObjectID {
-		for _, v := range map2 {
-			contacts = append(contacts, v)
-		}
-		return contacts
-	}
-
 	contacts := make([]bson.ObjectID, 0)
+
 	switch contactStatus {
 	case objects.StatusAccepted:
-		contacts = addToMap(contacts, contactIds.Contacts)
+		contacts = append(contacts, contactIds.Contacts...)
 	case objects.StatusPending:
-		contacts = addToMap(contacts, contactIds.PendingIn)
-		contacts = addToMap(contacts, contactIds.PendingOut)
+		contacts = append(contacts, contactIds.PendingIn...)
+		contacts = append(contacts, contactIds.PendingOut...)
 	case objects.StatusFavorite:
-		contacts = addToMap(contacts, contactIds.Favorites)
+		contacts = append(contacts, contactIds.Favorites...)
 	case objects.StatusBlocked:
-		contacts = addToMap(contacts, contactIds.BlockedChats)
+		contacts = append(contacts, contactIds.BlockedChats...)
 	case objects.StatusContact:
-		contacts = addToMap(contacts, contactIds.BlockedChats)
-		contacts = addToMap(contacts, contactIds.PendingOut)
-		contacts = addToMap(contacts, contactIds.PendingIn)
-		contacts = addToMap(contacts, contactIds.Favorites)
-		contacts = addToMap(contacts, contactIds.Contacts)
+		contacts = append(contacts, contactIds.BlockedChats...)
+		contacts = append(contacts, contactIds.PendingOut...)
+		contacts = append(contacts, contactIds.PendingIn...)
+		contacts = append(contacts, contactIds.Favorites...)
+		contacts = append(contacts, contactIds.Contacts...)
 	}
 
-	chatProjection := bson.M{
-		"_id":          1,
-		"participants": 1,
-		"chatType":     1,
-		"name":         1,
-		"avatar":       1,
+	usersProjection := bson.M{
+		"_id":                   1,
+		"profile":               1,
+		"username":              1,
+		"presence.status":       1,
+		"presence.isOnline":     1,
+		"presence.lastActivity": 1,
+		"presence.lastSeen":     1,
 	}
 
-	chats, err := FindAll[models.Chat](context.Background(), objects.DB.Collection(string(objects.ChatColl)), bson.M{"_id": bson.M{"$in": contacts}}, chatProjection, bson.M{}, int64(limit), 0)
+	cursor, err := objects.DB.Collection(string(objects.UserColl)).Find(context.Background(), bson.M{"_id": bson.M{"$in": contacts}}, options.Find().SetProjection(usersProjection))
 	if err != nil {
 		return []models.ContactInfo{}, err
 	}
 
-	for _, chat := range chats {
-		if chat.ChatType == string(objects.ChatTypeDirect) {
-			for _, participant := range chat.Participants {
-				contactInfo := models.ContactInfo{}
-				if participant.UserInfo.UserID != objectID {
-					contactInfo = models.ContactInfo{
-						ID:           participant.UserInfo.UserID,
-						ChatID:       chat.ChatID,
-						OnlineStatus: participant.OnlineStatus,
-						Username:     participant.UserInfo.Username,
-						DisplayName:  participant.UserInfo.DisplayName,
-						Avatar:       participant.UserInfo.Avatar,
-						IsFavorite:   false,
-					}
-				}
-				contactRequests = append(contactRequests, contactInfo)
-			}
-		} else {
-			contactRequests = append(contactRequests, models.ContactInfo{
-				ID:           chat.OwnerID,
-				ChatID:       chat.ChatID,
-				OnlineStatus: "",
-				Username:     chat.Name,
-				DisplayName:  chat.Name,
-				Avatar:       chat.Avatar,
-				IsFavorite:   false,
-			})
+	for cursor.Next(context.Background()) {
+		var user models.ContactInfo
+		if err := cursor.Decode(&user); err != nil {
+			return []models.ContactInfo{}, err
 		}
+
+		if user.Presence.Status != string(objects.UserStatusOnline) {
+			user.Presence.IsOnline = false
+			if user.Presence.Status != string(objects.UserStatusOffline) {
+				user.Presence.LastActivity = time.Time{}
+				user.Presence.LastSeen = time.Time{}
+			}
+		}
+
+		if contains(contactIds.Favorites, user.ID) {
+			user.IsFavorite = true
+		} else {
+			user.IsFavorite = false
+		}
+
+		contactRequests = append(contactRequests, user)
 	}
 
 	return contactRequests, nil
 }
 
-// Contact Actions
-func SendContactRequest(userID, targetUserID string) (models.ContactInfo, error) {
-	// Convert string IDs to ObjectIDs
-	userObjectID, err := bson.ObjectIDFromHex(userID)
-	if err != nil {
-		return models.ContactInfo{}, fmt.Errorf("failed to convert user id to object id: %w", err)
-	}
-
-	targetObjectID, err := bson.ObjectIDFromHex(targetUserID)
-	if err != nil {
-		return models.ContactInfo{}, fmt.Errorf("failed to convert target user id to object id: %w", err)
-	}
-
-	// Start session for atomic transaction
+// ============= Contact Actions =============
+func SendContactRequest(userID bson.ObjectID, targetUserID bson.ObjectID) error {
 	sess, err := objects.DBClient.StartSession()
 	if err != nil {
-		return models.ContactInfo{}, fmt.Errorf("failed to start session: %w", err)
+		return fmt.Errorf("failed to start session: %w", err)
 	}
 	defer sess.EndSession(context.Background())
 
-	var userRelationship models.ContactInfo
-
-	// Execute all operations in a single transaction
 	_, err = sess.WithTransaction(context.Background(), func(sessCtx context.Context) (interface{}, error) {
-		// First, check if both users exist and validate the request
-		userFilter := bson.M{"_id": userObjectID}
-		targetFilter := bson.M{"_id": targetObjectID}
+		userFilter := bson.M{"_id": userID}
+		targetFilter := bson.M{"_id": targetUserID}
 
 		Projection := bson.M{
 			"_id":                      1,
@@ -162,172 +127,107 @@ func SendContactRequest(userID, targetUserID string) (models.ContactInfo, error)
 			"contactInfo.pendingIn":    1,
 			"contactInfo.favorites":    1,
 			"contactInfo.contacts":     1,
-			"profile.displayName":      1,
-			"profile.avatar":           1,
-			"username":                 1,
 		}
 
-		// Check if users exist and validate contact request
 		user, err := FindByID[models.User](sessCtx, objects.DB.Collection(string(objects.UserColl)), userFilter, Projection)
 		if err != nil {
 			if err == mongo.ErrNoDocuments {
-				return nil, fmt.Errorf("requesting user not found")
+				return models.GetUserProfileResponse{}, fmt.Errorf("requesting user not found")
 			}
-			return nil, fmt.Errorf("failed to fetch requesting user: %w", err)
+			return models.GetUserProfileResponse{}, fmt.Errorf("failed to fetch requesting user: %w", err)
 		}
 
 		targetUser, err := FindByID[models.User](sessCtx, objects.DB.Collection(string(objects.UserColl)), targetFilter, Projection)
 		if err != nil {
 			if err == mongo.ErrNoDocuments {
-				return nil, fmt.Errorf("target user not found")
+				return models.GetUserProfileResponse{}, fmt.Errorf("target user not found")
 			}
-			return nil, fmt.Errorf("failed to fetch target user: %w", err)
+			return models.GetUserProfileResponse{}, fmt.Errorf("failed to fetch target user: %w", err)
 		}
 
-		checkContactRequest := func(user *models.User, targetObjectID bson.ObjectID) error {
-			if _, ok := user.ContactInfo.PendingOut[targetObjectID]; ok {
+		checkContactRequest := func(user *models.User, targetUserID bson.ObjectID) error {
+			if contains(user.ContactInfo.PendingOut, targetUserID) {
 				return fmt.Errorf("contact request already sent")
 			}
 
-			if _, ok := user.ContactInfo.PendingIn[targetObjectID]; ok {
+			if contains(user.ContactInfo.PendingIn, targetUserID) {
 				return fmt.Errorf("contact request already sent - accept it instead")
 			}
 
-			if _, ok := user.ContactInfo.Favorites[targetObjectID]; ok {
+			if contains(user.ContactInfo.Favorites, targetUserID) {
 				return fmt.Errorf("user is already in your favorites")
 			}
 
-			if _, ok := user.ContactInfo.Contacts[targetObjectID]; ok {
+			if contains(user.ContactInfo.Contacts, targetUserID) {
 				return fmt.Errorf("user is already in your contacts")
 			}
 
-			if _, ok := user.ContactInfo.BlockedChats[targetObjectID]; ok {
+			if contains(user.ContactInfo.BlockedChats, targetUserID) {
 				return fmt.Errorf("user is blocked")
 			}
 
 			return nil
 		}
 
-		if err := checkContactRequest(user, targetObjectID); err != nil {
-			return nil, err
+		if err := checkContactRequest(user, targetUserID); err != nil {
+			return models.GetUserProfileResponse{}, err
 		}
 
-		if err := checkContactRequest(targetUser, userObjectID); err != nil {
-			return nil, err
+		if err := checkContactRequest(targetUser, userID); err != nil {
+			return models.GetUserProfileResponse{}, err
 		}
 
-		// first we create an new chat for two users with default config
-		chat := utils.NewChatWithDefaults(userObjectID, string(objects.ChatTypeDirect))
-		// now add data to the chat
-		participant := utils.NewParticipantWithDefaults(
-			string(objects.StatusPending),
-			string(objects.UserStatusOnline),
-			userObjectID,
-			[]string{string(objects.ChatPermissionRead), string(objects.ChatPermissionWrite)},
-			models.ContactUserInfo{
-				DisplayName: user.Profile.DisplayName,
-				Username:    user.Username,
-				UserID:      userObjectID,
-				Avatar:      user.Profile.Avatar,
-			},
-		)
-		chat.Participants[userObjectID] = participant
-
-		participant = utils.NewParticipantWithDefaults(
-			string(objects.StatusPending),
-			string(objects.UserStatusOffline),
-			targetObjectID,
-			[]string{string(objects.ChatPermissionRead), string(objects.ChatPermissionWrite)},
-			models.ContactUserInfo{
-				DisplayName: targetUser.Profile.DisplayName,
-				Username:    targetUser.Username,
-				UserID:      targetObjectID,
-				Avatar:      targetUser.Profile.Avatar,
-			},
-		)
-		chat.Participants[targetObjectID] = participant
-
-		// now we have to save the chat to the database
-		_, err = InsertOne(sessCtx, objects.DB.Collection(string(objects.ChatColl)), chat)
-		if err != nil {
-			return nil, fmt.Errorf("failed to save chat: %w", err)
-		}
-
-		// Create relationship data
 		now := time.Now()
 
-		// Update requesting user's contact info
 		userUpdateProjection := bson.M{
+			"$push": bson.M{
+				"contactInfo.pendingOut": targetUserID,
+			},
 			"$set": bson.M{
-				"contactInfo.pendingOut": bson.M{targetObjectID.Hex(): chat.ChatID},
-				"contactInfo.updatedAt":  now,
+				"contactInfo.updatedAt": now,
 			},
 		}
 
 		_, err = UpdateOne(sessCtx, objects.DB.Collection(string(objects.UserColl)), userFilter, userUpdateProjection)
 		if err != nil {
-			return nil, fmt.Errorf("failed to update requesting user contact info: %w", err)
+			return models.GetUserProfileResponse{}, fmt.Errorf("failed to update requesting user contact info: %w", err)
 		}
 
-		// Update target user's contact info
 		targetUpdateProjection := bson.M{
+			"$push": bson.M{
+				"contactInfo.pendingIn": userID,
+			},
 			"$set": bson.M{
-				"contactInfo.pendingIn": bson.M{userObjectID.Hex(): chat.ChatID},
 				"contactInfo.updatedAt": now,
 			},
 		}
 
 		_, err = UpdateOne(sessCtx, objects.DB.Collection(string(objects.UserColl)), targetFilter, targetUpdateProjection)
 		if err != nil {
-			return nil, fmt.Errorf("failed to update target user contact info: %w", err)
-		}
-
-		userRelationship = models.ContactInfo{
-			ID:           userObjectID,
-			ChatID:       chat.ChatID,
-			ChatName:     chat.Name,
-			ChatAvatar:   chat.Avatar,
-			OnlineStatus: chat.Participants[targetObjectID].OnlineStatus,
-			Username:     chat.Participants[targetObjectID].UserInfo.Username,
-			DisplayName:  chat.Participants[targetObjectID].UserInfo.DisplayName,
-			Avatar:       chat.Participants[targetObjectID].UserInfo.Avatar,
-			IsFavorite:   false,
+			return models.GetUserProfileResponse{}, fmt.Errorf("failed to update target user contact info: %w", err)
 		}
 
 		return nil, nil
 	})
 
 	if err != nil {
-		return models.ContactInfo{}, fmt.Errorf("transaction failed: %w", err)
+		return fmt.Errorf("transaction failed: %w", err)
 	}
 
-	return userRelationship, nil
+	return nil
 }
 
-func AcceptOrDeclineContactRequest(userID, targetUserID, action string) (models.ContactInfo, error) {
-	// get the contact request from the database
-	userObjectID, err := bson.ObjectIDFromHex(userID)
-	if err != nil {
-		return models.ContactInfo{}, fmt.Errorf("failed to convert user id to object id: %w", err)
-	}
-
-	targetObjectID, err := bson.ObjectIDFromHex(targetUserID)
-	if err != nil {
-		return models.ContactInfo{}, fmt.Errorf("failed to convert target user id to object id: %w", err)
-	}
-
+func AcceptOrDeclineContactRequest(userID, targetRequestID bson.ObjectID, action string) error {
 	sess, err := objects.DBClient.StartSession()
 	if err != nil {
-		return models.ContactInfo{}, fmt.Errorf("failed to start session: %w", err)
+		return fmt.Errorf("failed to start session: %w", err)
 	}
 	defer sess.EndSession(context.Background())
 
-	var userRelationship models.ContactInfo
-
 	_, err = sess.WithTransaction(context.Background(), func(sessCtx context.Context) (interface{}, error) {
 		// first we have to get the contact request from the database
-		userFilter := bson.M{"_id": userObjectID, "contactInfo.pendingIn." + targetObjectID.Hex(): bson.M{"$exists": true}}
-		targetFilter := bson.M{"_id": targetObjectID, "contactInfo.pendingOut." + userObjectID.Hex(): bson.M{"$exists": true}}
+		userFilter := bson.M{"_id": userID, "contactInfo.pendingIn." + targetRequestID.Hex(): bson.M{"$exists": true}}
+		targetFilter := bson.M{"_id": targetRequestID, "contactInfo.pendingOut." + userID.Hex(): bson.M{"$exists": true}}
 
 		contactProjection := bson.M{
 			"_id":                    1,
@@ -353,83 +253,117 @@ func AcceptOrDeclineContactRequest(userID, targetUserID, action string) (models.
 			return nil, fmt.Errorf("failed to fetch target contact: %w", err)
 		}
 
-		if userContact.ContactInfo.Contacts[targetObjectID] != (bson.ObjectID{}) {
+		if contains(userContact.ContactInfo.Contacts, targetRequestID) {
 			return nil, fmt.Errorf("user is already in contacts")
 		}
 
-		// if (userContact.ContactInfo.PendingIn[targetObjectID] != bson.ObjectID{}) {
-		// 	return nil, fmt.Errorf("contact request already sent by user %s please try again", userContact.ContactInfo.PendingIn[targetObjectID].Hex())
-		// }
+		if contains(userContact.ContactInfo.PendingIn, targetRequestID) {
+			return nil, fmt.Errorf("contact request already sent by user %s please try again", targetRequestID.Hex())
+		}
 
-		// if (targetContact.ContactInfo.PendingOut[userObjectID] != bson.ObjectID{}) {
-		// 	return nil, fmt.Errorf("contact request already sent by user %s please try again", targetContact.ContactInfo.PendingOut[userObjectID].Hex())
-		// }
+		if contains(targetContact.ContactInfo.PendingOut, userID) {
+			return nil, fmt.Errorf("contact request already sent by user %s please try again", userID.Hex())
+		}
 
 		now := time.Now()
 
-		chatProjection := bson.M{
-			"_id":          1,
-			"chatType":     1,
-			"name":         1,
-			"participants": 1,
-			"avatar":       1,
-			"ownerId":      1,
-		}
-
-		// get the chat from the database
-		chat, err := FindByID[models.Chat](sessCtx, objects.DB.Collection(string(objects.ChatColl)), bson.M{"_id": userContact.ContactInfo.PendingIn[targetObjectID]}, chatProjection)
-		if err != nil {
-			return nil, fmt.Errorf("failed to fetch chat: %w", err)
-		}
+		userUpdate, targetUpdate := bson.M{}, bson.M{}
 
 		switch objects.ContactStatus(action) {
 		case objects.StatusAccepted:
-			// update the stats
-			// in future if the in contacts we store [chatID] -> [chatID] mapping means it's an group
-
-			if userContact.ContactInfo.Contacts == nil {
-				userContact.ContactInfo.Contacts = make(map[bson.ObjectID]bson.ObjectID)
+			userUpdate = bson.M{
+				"$pull": bson.M{
+					"contactInfo.pendingIn": targetRequestID,
+				},
+				"$push": bson.M{
+					"contactInfo.contacts": targetRequestID,
+				},
+				"$set": bson.M{
+					"contactInfo.updatedAt": now,
+				},
 			}
 
-			userContact.ContactInfo.Contacts[targetObjectID] = userContact.ContactInfo.PendingIn[targetObjectID]
-			userContact.ContactInfo.PendingIn[targetObjectID] = bson.ObjectID{}
-
-			if targetContact.ContactInfo.Contacts == nil {
-				targetContact.ContactInfo.Contacts = make(map[bson.ObjectID]bson.ObjectID)
-			}
-
-			targetContact.ContactInfo.Contacts[userObjectID] = targetContact.ContactInfo.PendingOut[userObjectID]
-			targetContact.ContactInfo.PendingOut[userObjectID] = bson.ObjectID{}
-
-			userRelationship = models.ContactInfo{
-				ID:           targetObjectID,
-				ChatID:       chat.ChatID,
-				ChatName:     chat.Name,
-				ChatAvatar:   chat.Avatar,
-				OnlineStatus: chat.Participants[targetObjectID].OnlineStatus,
-				Username:     chat.Participants[targetObjectID].UserInfo.Username,
-				DisplayName:  chat.Participants[targetObjectID].UserInfo.DisplayName,
-				Avatar:       chat.Participants[targetObjectID].UserInfo.Avatar,
-				IsFavorite:   false,
-			}
-
-			if (userContact.ContactInfo.Favorites[targetObjectID] != bson.ObjectID{}) {
-				userRelationship.IsFavorite = true
+			targetUpdate = bson.M{
+				"$pull": bson.M{
+					"contactInfo.pendingOut": userID,
+				},
+				"$push": bson.M{
+					"contactInfo.contacts": userID,
+				},
+				"$set": bson.M{
+					"contactInfo.updatedAt": now,
+				},
 			}
 
 		case objects.StatusDeclined:
-			// update the relationship status
-			userContact.ContactInfo.PendingIn[targetObjectID] = bson.ObjectID{}
-			targetContact.ContactInfo.PendingOut[userObjectID] = bson.ObjectID{}
+			userUpdate = bson.M{
+				"$pull": bson.M{
+					"contactInfo.pendingIn": targetRequestID,
+				},
+			}
+
+			targetUpdate = bson.M{
+				"$pull": bson.M{
+					"contactInfo.pendingOut": userID,
+				},
+			}
 		}
 
+		_, err = UpdateOne(sessCtx, objects.DB.Collection(string(objects.UserColl)), userFilter, userUpdate)
+		if err != nil {
+			return nil, fmt.Errorf("failed to update user contact: %w", err)
+		}
+
+		_, err = UpdateOne(sessCtx, objects.DB.Collection(string(objects.UserColl)), targetFilter, targetUpdate)
+		if err != nil {
+			return nil, fmt.Errorf("failed to update target contact: %w", err)
+		}
+
+		return nil, nil
+	})
+
+	if err != nil {
+		return fmt.Errorf("transaction failed: %w", err)
+	}
+
+	return nil
+}
+
+func RemoveContact(userID, targetUserID bson.ObjectID) error {
+	sess, err := objects.DBClient.StartSession()
+	if err != nil {
+		return fmt.Errorf("failed to start session: %w", err)
+	}
+	defer sess.EndSession(context.Background())
+
+	_, err = sess.WithTransaction(context.Background(), func(sessCtx context.Context) (interface{}, error) {
+		userFilter := bson.M{"_id": userID, "contactInfo.contacts." + targetUserID.Hex(): bson.M{"$exists": true}}
+
+		userContact, err := FindByID[models.ContactRequest](sessCtx, objects.DB.Collection(string(objects.UserColl)), userFilter, bson.M{
+			"_id":                  1,
+			"contactInfo.contacts": bson.M{targetUserID.Hex(): 1},
+		})
+		if err != nil {
+			return nil, fmt.Errorf("failed to fetch user contact: %w", err)
+		}
+
+		targetId := findIndex(userContact.ContactInfo.Contacts, targetUserID)
+
+		if targetId == -1 {
+			return nil, fmt.Errorf("target is not present in user contacts")
+		}
+
+		now := time.Now()
+
+		// update user collection
 		userUpdate := bson.M{
-			"$unset": bson.M{
-				"contactInfo.pendingIn." + targetObjectID.Hex(): "",
-				"contactInfo.pendingOut." + userObjectID.Hex():  "",
+			// to remove the target user from the user contact which is an array of object ids
+			"$pull": bson.M{
+				"contactInfo.blockedChats": targetUserID,
+				"contactInfo.favorites":    targetUserID,
+				"contactInfo.contacts":     targetUserID,
 			},
 			"$set": bson.M{
-				"contactInfo.contacts":  bson.M{targetObjectID.Hex(): userContact.ContactInfo.Contacts[targetObjectID]},
 				"contactInfo.updatedAt": now,
 			},
 		}
@@ -439,14 +373,15 @@ func AcceptOrDeclineContactRequest(userID, targetUserID, action string) (models.
 			return nil, fmt.Errorf("failed to update user contact: %w", err)
 		}
 
-		// update the target contact
+		targetFilter := bson.M{"_id": targetUserID, "contactInfo.contacts." + userID.Hex(): bson.M{"$exists": true}}
+
 		targetUpdate := bson.M{
-			"$unset": bson.M{
-				"contactInfo.pendingIn." + targetObjectID.Hex(): "",
-				"contactInfo.pendingOut." + userObjectID.Hex():  "",
+			"$pull": bson.M{
+				"contactInfo.blockedChats": userID,
+				"contactInfo.favorites":    userID,
+				"contactInfo.contacts":     userID,
 			},
 			"$set": bson.M{
-				"contactInfo.contacts":  bson.M{userObjectID.Hex(): targetContact.ContactInfo.Contacts[userObjectID]},
 				"contactInfo.updatedAt": now,
 			},
 		}
@@ -459,203 +394,139 @@ func AcceptOrDeclineContactRequest(userID, targetUserID, action string) (models.
 		return nil, nil
 	})
 
-	if err != nil {
-		return models.ContactInfo{}, fmt.Errorf("transaction failed: %w", err)
-	}
-
-	return userRelationship, nil
+	return err
 }
 
-func RemoveContact(userID, targetUserID string) (bool, error) {
-	userObjectID, err := bson.ObjectIDFromHex(userID)
-	if err != nil {
-		return false, fmt.Errorf("failed to convert user id to object id: %w", err)
-	}
+func BlockUnblockUser(userID, targetUserID bson.ObjectID, action string) error {
+	userFilter := bson.M{"_id": userID, "contactInfo.contacts." + targetUserID.Hex(): bson.M{"$exists": true}}
 
-	targetObjectID, err := bson.ObjectIDFromHex(targetUserID)
-	if err != nil {
-		return false, fmt.Errorf("failed to convert target user id to object id: %w", err)
-	}
-
-	sess, err := objects.DBClient.StartSession()
-	if err != nil {
-		return false, fmt.Errorf("failed to start session: %w", err)
-	}
-	defer sess.EndSession(context.Background())
-
-	iscontactRemove := false
-
-	// the sess will return the userContact and the error
-	_, err = sess.WithTransaction(context.Background(), func(sessCtx context.Context) (interface{}, error) {
-		// search in contact collection for the contactId
-		userFilter := bson.M{"_id": userObjectID, "contactInfo.contacts." + targetObjectID.Hex(): bson.M{"$exists": true}}
-
-		userContact, err := FindByID[models.ContactRequest](sessCtx, objects.DB.Collection(string(objects.UserColl)), userFilter, bson.M{
-			"_id":                  1,
-			"contactInfo.contacts": bson.M{targetObjectID.Hex(): 1},
-		})
-		if err != nil {
-			return iscontactRemove, fmt.Errorf("failed to fetch user contact: %w", err)
-		}
-
-		chatId := userContact.ContactInfo.Contacts[targetObjectID]
-		if (chatId == bson.ObjectID{}) {
-			return iscontactRemove, fmt.Errorf("target is not present in user contacts")
-		}
-
-		now := time.Now()
-
-		// update chat collection
-		chatFilter := bson.M{"_id": chatId}
-		chatUpdateProjection := bson.M{
-			"$set": bson.M{
-				"participants." + userObjectID.Hex(): bson.M{},
-			},
-		}
-		_, err = UpdateOne(sessCtx, objects.DB.Collection(string(objects.ChatColl)), chatFilter, chatUpdateProjection)
-		if err != nil {
-			return iscontactRemove, fmt.Errorf("failed to update user chat: %w", err)
-		}
-
-		// update user collection
-		userUpdate := bson.M{
-			"$set": bson.M{
-				"contactInfo.blockedChats": bson.M{targetObjectID.Hex(): bson.ObjectID{}},
-				"contactInfo.favorites":    bson.M{targetObjectID.Hex(): bson.ObjectID{}},
-				"contactInfo.contacts":     bson.M{targetObjectID.Hex(): bson.ObjectID{}},
-				"updatedAt":                now,
-			},
-		}
-		_, err = UpdateOne(sessCtx, objects.DB.Collection(string(objects.UserColl)), userFilter, userUpdate)
-		if err != nil {
-			return iscontactRemove, fmt.Errorf("failed to update user contact: %w", err)
-		}
-		iscontactRemove = true
-		return iscontactRemove, nil
+	userContact, err := FindByID[models.ContactRequest](context.Background(), objects.DB.Collection(string(objects.UserColl)), userFilter, bson.M{
+		"_id":                      1,
+		"contactInfo.blockedChats": bson.M{targetUserID.Hex(): 1},
+		"contactInfo.contacts":     bson.M{targetUserID.Hex(): 1},
 	})
-
-	return iscontactRemove, err
-}
-
-func BlockUser(userID, targetUserID string) (bool, error) {
-	userObjectID, err := bson.ObjectIDFromHex(userID)
 	if err != nil {
-		return false, fmt.Errorf("failed to convert user id to object id: %w", err)
-	}
-
-	targetObjectID, err := bson.ObjectIDFromHex(targetUserID)
-	if err != nil {
-		return false, fmt.Errorf("failed to convert target user id to object id: %w", err)
-	}
-
-	isContactBlocked := false
-
-	sess, err := objects.DBClient.StartSession()
-	if err != nil {
-		return isContactBlocked, fmt.Errorf("failed to start session: %w", err)
-	}
-	defer sess.EndSession(context.Background())
-
-	_, err = sess.WithTransaction(context.Background(), func(sessCtx context.Context) (interface{}, error) {
-		// search in contact collection for the contactId
-		userFilter := bson.M{"_id": userObjectID, "contactInfo.contacts." + targetObjectID.Hex(): bson.M{"$exists": true}}
-
-		userContact, err := FindByID[models.ContactRequest](sessCtx, objects.DB.Collection(string(objects.UserColl)), userFilter, bson.M{
-			"_id":                      1,
-			"contactInfo.blockedChats": bson.M{targetObjectID.Hex(): 1},
-			"contactInfo.contacts":     bson.M{targetObjectID.Hex(): 1},
-		})
-		if err != nil {
-			if err == mongo.ErrNoDocuments {
-				return nil, fmt.Errorf("user not found")
-			}
-			return nil, fmt.Errorf("failed to fetch user contact: %w", err)
+		if err == mongo.ErrNoDocuments {
+			return fmt.Errorf("user not found")
 		}
+		return fmt.Errorf("failed to fetch user contact: %w", err)
+	}
 
-		chatId := userContact.ContactInfo.Contacts[targetObjectID]
+	now := time.Now()
+	userUpdate := bson.M{}
 
-		chatFilter := bson.M{"_id": chatId}
-
-		// we have to check if this works or not
-		chatUpdateProjection := bson.M{
+	switch objects.ContactStatus(action) {
+	case objects.StatusBlocked:
+		if contains(userContact.ContactInfo.BlockedChats, targetUserID) {
+			return fmt.Errorf("user is already blocked")
+		}
+		userUpdate = bson.M{
+			"$push": bson.M{
+				"contactInfo.blockedChats": targetUserID,
+			},
 			"$set": bson.M{
-				"participants." + targetObjectID.Hex(): bson.M{
-					"isBlocked": true,
-				},
+				"contactInfo.updatedAt": now,
 			},
 		}
-
-		_, err = UpdateOne(sessCtx, objects.DB.Collection(string(objects.ChatColl)), chatFilter, chatUpdateProjection)
-		if err != nil {
-			return nil, fmt.Errorf("failed to update chat contact: %w", err)
+	case objects.StatusAccepted:
+		if !contains(userContact.ContactInfo.BlockedChats, targetUserID) {
+			return fmt.Errorf("user is already unblocked")
 		}
-
-		now := time.Now()
-
-		userUpdateProjection := bson.M{}
-		userUpdateProjection["contactInfo.updatedAt"] = now
-
-		_, err = UpdateOne(context.Background(), objects.DB.Collection(string(objects.UserColl)), userFilter, userUpdateProjection)
-		if err != nil {
-			return nil, fmt.Errorf("failed to update user contact: %w", err)
+		userUpdate = bson.M{
+			"$pull": bson.M{
+				"contactInfo.blockedChats": targetUserID,
+			},
+			"$set": bson.M{
+				"contactInfo.updatedAt": now,
+			},
 		}
-		return nil, err
-	})
-	isContactBlocked = true
+	}
 
-	return isContactBlocked, err
+	_, err = UpdateOne(context.Background(), objects.DB.Collection(string(objects.UserColl)), userFilter, userUpdate)
+	if err != nil {
+		return fmt.Errorf("failed to update user contact: %w", err)
+	}
+
+	return err
 }
 
-func AddToFavorites(userID, targetUserID string) (bool, error) {
-	userObjectID, err := bson.ObjectIDFromHex(userID)
+func AddToFavorites(userID, targetUserID bson.ObjectID) error {
+	userFilter := bson.M{"_id": userID, "contactInfo.contacts." + targetUserID.Hex(): bson.M{"$exists": true}}
+
+	userContact, err := FindByID[models.ContactRequest](context.Background(), objects.DB.Collection(string(objects.UserColl)), userFilter, bson.M{
+		"_id":                      1,
+		"contactInfo.favorites":    1,
+		"contactInfo.blockedChats": 1,
+		"contactInfo.contacts":     1,
+	})
 	if err != nil {
-		return false, fmt.Errorf("failed to convert user id to object id: %w", err)
+		if err == mongo.ErrNoDocuments {
+			return fmt.Errorf("user not found")
+		}
+		return fmt.Errorf("failed to fetch user contact: %w", err)
 	}
 
-	targetObjectID, err := bson.ObjectIDFromHex(targetUserID)
-	if err != nil {
-		return false, fmt.Errorf("failed to convert target user id to object id: %w", err)
+	if contains(userContact.ContactInfo.BlockedChats, targetUserID) {
+		return fmt.Errorf("user is blocked")
 	}
 
-	isContactFavorite := false
+	if contains(userContact.ContactInfo.Favorites, targetUserID) {
+		return fmt.Errorf("user is already in favorites contacts")
+	}
 
-	// search in contact collection for the contactId
-	userFilter := bson.M{"_id": userObjectID, "contactInfo.contacts." + targetObjectID.Hex(): bson.M{"$exists": true}}
+	now := time.Now()
+
+	updateProjection := bson.M{
+		"$push": bson.M{
+			"contactInfo.favorites": targetUserID,
+		},
+		"$set": bson.M{
+			"contactInfo.updatedAt": now,
+		},
+	}
+
+	_, err = UpdateOne(context.Background(), objects.DB.Collection(string(objects.UserColl)), userFilter, updateProjection)
+	if err != nil {
+		return fmt.Errorf("failed to update user contact: %w", err)
+	}
+
+	return nil
+}
+
+func RemoveFromFavorites(userID, targetUserID bson.ObjectID) error {
+	userFilter := bson.M{"_id": userID, "contactInfo.favorites." + targetUserID.Hex(): bson.M{"$exists": true}}
 
 	userContact, err := FindByID[models.ContactRequest](context.Background(), objects.DB.Collection(string(objects.UserColl)), userFilter, bson.M{
 		"_id":                   1,
 		"contactInfo.favorites": 1,
 		"contactInfo.contacts":  1,
 	})
+
 	if err != nil {
 		if err == mongo.ErrNoDocuments {
-			return isContactFavorite, fmt.Errorf("user not found")
+			return fmt.Errorf("user not found")
 		}
-		return isContactFavorite, fmt.Errorf("failed to fetch user contact: %w", err)
+		return fmt.Errorf("failed to fetch user contact: %w", err)
 	}
 
-	if (userContact.ContactInfo.Favorites[targetObjectID] != bson.ObjectID{}) {
-		return isContactFavorite, fmt.Errorf("user is already in favorites contacts")
+	if !contains(userContact.ContactInfo.Favorites, targetUserID) {
+		return fmt.Errorf("user is already not in favorites contacts")
 	}
 
 	now := time.Now()
 
-	chatId := userContact.ContactInfo.Contacts[targetObjectID]
-
-	userUpdateProjection := bson.M{
+	updateProjection := bson.M{
+		"$pull": bson.M{
+			"contactInfo.favorites": targetUserID,
+		},
 		"$set": bson.M{
-			"contactInfo.blockedChats": bson.M{targetObjectID.Hex(): bson.ObjectID{}},
-			"contactInfo.favorites":    bson.M{targetObjectID.Hex(): userContact.ContactInfo.Favorites[chatId]},
-			"updatedAt":                now,
+			"contactInfo.updatedAt": now,
 		},
 	}
 
-	_, err = UpdateOne(context.Background(), objects.DB.Collection(string(objects.UserColl)), userFilter, userUpdateProjection)
+	_, err = UpdateOne(context.Background(), objects.DB.Collection(string(objects.UserColl)), userFilter, updateProjection)
 	if err != nil {
-		return isContactFavorite, fmt.Errorf("failed to update user contact: %w", err)
+		return fmt.Errorf("failed to update user contact: %w", err)
 	}
-
-	isContactFavorite = true
-
-	return isContactFavorite, err
+	return nil
 }

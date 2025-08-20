@@ -33,6 +33,9 @@ type User struct {
 	// Settings - embedded to avoid separate collection
 	Settings UserSettingsEmbed `json:"settings" bson:"settings"`
 
+	// Chats used for quick access (chatID -> unread count)
+	Chats map[bson.ObjectID]int `json:"chats" bson:"chats"`
+
 	// Timestamps
 	CreatedAt time.Time `json:"createdAt" bson:"createdAt"`
 	UpdatedAt time.Time `json:"updatedAt" bson:"updatedAt"`
@@ -55,7 +58,7 @@ type PresenceEmbed struct {
 }
 
 type AccountStatusEmbed struct {
-	IsActive   bool `json:"isActive" bson:"isActive"`
+	IsActive   bool `json:"isActive" bson:"isActive"` // if user account is active or not
 	IsVerified bool `json:"isVerified" bson:"isVerified"`
 	IsBanned   bool `json:"isBanned" bson:"isBanned"`
 }
@@ -88,145 +91,3 @@ type MessagePrefsEmbed struct {
 	AutoDownloadFiles    bool `json:"autoDownloadFiles" bson:"autoDownloadFiles"`
 	ShowEmojiSuggestions bool `json:"showEmojiSuggestions" bson:"showEmojiSuggestions"`
 }
-
-// ============ BATCH OPERATIONS MODELS ============
-// Models designed for efficient batch operations means that we can send multiple messages at once by batching them into a single request
-
-type BatchMessageOperation struct {
-	Operation string               `json:"operation" bson:"operation"` // "insert", "update", "delete"
-	Messages  []Message            `json:"messages" bson:"messages"`
-	Updates   []MessageUpdateBatch `json:"updates,omitempty" bson:"updates,omitempty"`
-	ChatIDs   []bson.ObjectID      `json:"chatIds" bson:"chatIds"`
-	UserID    bson.ObjectID        `json:"userId" bson:"userId"`
-	Timestamp time.Time            `json:"timestamp" bson:"timestamp"`
-}
-
-type MessageUpdateBatch struct {
-	MessageID bson.ObjectID          `json:"messageId" bson:"messageId"`
-	Updates   map[string]interface{} `json:"updates" bson:"updates"`
-}
-
-type BatchPresenceUpdate struct {
-	UserUpdates []UserPresenceUpdate `json:"userUpdates" bson:"userUpdates"`
-	Timestamp   time.Time            `json:"timestamp" bson:"timestamp"`
-}
-
-type UserPresenceUpdate struct {
-	UserID   bson.ObjectID `json:"userId" bson:"userId"`
-	Status   string        `json:"status" bson:"status"`
-	IsOnline bool          `json:"isOnline" bson:"isOnline"`
-	LastSeen time.Time     `json:"lastSeen" bson:"lastSeen"`
-}
-
-// ============ AGGREGATED VIEWS FOR PERFORMANCE ============
-// Pre-computed views to avoid complex queries
-type UserChatList struct {
-	UserID bson.ObjectID  `json:"userId" bson:"userId"`
-	Chats  []ChatListItem `json:"chats" bson:"chats"`
-
-	// Aggregated data
-	TotalUnread  int       `json:"totalUnread" bson:"totalUnread"`
-	LastActivity time.Time `json:"lastActivity" bson:"lastActivity"`
-	LastUpdated  time.Time `json:"lastUpdated" bson:"lastUpdated"`
-}
-
-type ChatListItem struct {
-	ChatID       bson.ObjectID    `json:"chatId" bson:"chatId"`
-	Type         string           `json:"type" bson:"type"`
-	Name         string           `json:"name" bson:"name"`
-	Avatar       string           `json:"avatar" bson:"avatar"`
-	LastMessage  LastMessageEmbed `json:"lastMessage" bson:"lastMessage"`
-	UnreadCount  int              `json:"unreadCount" bson:"unreadCount"`
-	IsMuted      bool             `json:"isMuted" bson:"isMuted"`
-	IsPinned     bool             `json:"isPinned" bson:"isPinned"`
-	LastActivity time.Time        `json:"lastActivity" bson:"lastActivity"`
-
-	// For direct chats - embedded other user info
-	OtherUser *ContactUserInfo `json:"otherUser,omitempty" bson:"otherUser,omitempty"`
-}
-
-type SearchIndex struct {
-	ID       bson.ObjectID `json:"_id,omitempty" bson:"_id,omitempty"`
-	Type     string        `json:"type" bson:"type"` // "message", "user", "chat"
-	EntityID bson.ObjectID `json:"entityId" bson:"entityId"`
-
-	// Search fields
-	Content  string   `json:"content" bson:"content"`
-	Tags     []string `json:"tags" bson:"tags"`
-	Keywords []string `json:"keywords" bson:"keywords"`
-
-	// Context for results
-	ChatID    *bson.ObjectID `json:"chatId,omitempty" bson:"chatId,omitempty"`
-	UserID    *bson.ObjectID `json:"userId,omitempty" bson:"userId,omitempty"`
-	MessageAt *time.Time     `json:"messageAt,omitempty" bson:"messageAt,omitempty"`
-
-	// Relevance scoring
-	Popularity float64   `json:"popularity" bson:"popularity"`
-	Recency    float64   `json:"recency" bson:"recency"`
-	UpdatedAt  time.Time `json:"updatedAt" bson:"updatedAt"`
-}
-
-// ============ API RESPONSE MODELS ============
-// Optimized for single-query responses
-type ChatDetailResponse struct {
-	Chat         Chat                `json:"chat"`
-	Messages     []Message           `json:"messages"`
-	Participants []ParticipantDetail `json:"participants"`
-	CanLoadMore  bool                `json:"canLoadMore"`
-
-	// User-specific data
-	UserRole     string    `json:"userRole"`
-	LastReadAt   time.Time `json:"lastReadAt"`
-	MuteSettings string    `json:"muteSettings"`
-	PinStatus    bool      `json:"pinStatus"`
-}
-
-type ParticipantDetail struct {
-	ParticipantEmbed
-	// Extended info when needed
-	IsContact      bool     `json:"isContact"`
-	IsBlocked      bool     `json:"isBlocked"`
-	MutualContacts []string `json:"mutualContacts,omitempty"`
-}
-
-// ============ OPTIMIZATION INDEXES ============
-// Suggested MongoDB indexes for optimal performance
-
-/*
-Recommended Indexes:
-
-OptimizedUser:
-- { "username": 1 } (unique)
-- { "email": 1 } (unique)
-- { "presence.status": 1, "presence.isOnline": 1 }
-- { "contactInfo.contacts": 1 }
-- { "cache.activeChats": 1 }
-
-OptimizedChat:
-- { "participants.userId": 1 }
-- { "lastMessage.createdAt": -1 }
-- { "type": 1, "settings.isPrivate": 1 }
-
-OptimizedMessage:
-- { "chatId": 1, "createdAt": -1 }
-- { "senderId": 1, "createdAt": -1 }
-- { "searchContent": "text", "searchTags": 1 }
-- { "thread.parentId": 1 }
-
-OptimizedContact:
-- { "userId": 1 } (unique)
-- { "activeContacts": 1 }
-- { "recentInteractions.lastMessageAt": -1 }
-
-SearchIndex:
-- { "content": "text", "tags": 1, "keywords": 1 }
-- { "type": 1, "popularity": -1, "recency": -1 }
-
-BatchNotification:
-- { "userId": 1, "createdAt": -1 }
-- { "notifications.isRead": 1 }
-
-UserChatList:
-- { "userId": 1 } (unique)
-- { "lastActivity": -1 }
-*/
