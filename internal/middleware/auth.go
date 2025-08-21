@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"gin/internal/models"
 	"gin/internal/utils"
+	"gin/logger"
 	"gin/objects"
 	"net/http"
 	"strings"
@@ -79,9 +80,18 @@ func verifyToken(tokenString string) (utils.JwtClaims, error) {
 }
 
 func AuthMiddleware(ctx *gin.Context) {
+	// Create a new request context with transaction ID
+	reqCtx := logger.WithTransactionID(ctx.Request.Context())
+	log := logger.WithContext(reqCtx)
+
+	// Update request context
+	ctx.Request = ctx.Request.WithContext(reqCtx)
+
 	authHeader := ctx.GetHeader("Authorization")
+	log.WithField("path", ctx.Request.URL.Path).Debug("Processing authentication")
 
 	if authHeader == "" {
+		log.Warn("Missing authorization header")
 		ctx.JSON(http.StatusUnauthorized, gin.H{
 			"error": "authorization header is required",
 			"code":  "MISSING_AUTH_HEADER",
@@ -91,6 +101,7 @@ func AuthMiddleware(ctx *gin.Context) {
 	}
 
 	if !strings.HasPrefix(authHeader, "Bearer ") {
+		log.Warn("Invalid authorization format")
 		ctx.JSON(http.StatusUnauthorized, gin.H{
 			"error": "authorization header must be in 'Bearer <token>' format",
 			"code":  "INVALID_AUTH_FORMAT",
@@ -101,6 +112,7 @@ func AuthMiddleware(ctx *gin.Context) {
 
 	token := strings.TrimPrefix(authHeader, "Bearer ")
 	if token == "" {
+		log.Warn("Empty token provided")
 		ctx.JSON(http.StatusUnauthorized, gin.H{
 			"error": "token cannot be empty",
 			"code":  "EMPTY_TOKEN",
@@ -111,6 +123,7 @@ func AuthMiddleware(ctx *gin.Context) {
 
 	claims, err := verifyToken(token)
 	if err != nil {
+		log.WithError(err).Warn("Token verification failed")
 		ctx.JSON(http.StatusUnauthorized, gin.H{
 			"code":    "TOKEN_VERIFICATION_FAILED",
 			"details": err.Error(),
@@ -120,22 +133,35 @@ func AuthMiddleware(ctx *gin.Context) {
 		return
 	}
 
+	// Add user ID to context for logging
+	reqCtx = logger.WithUserID(reqCtx, claims.RegisteredClaims.Subject)
+	ctx.Request = ctx.Request.WithContext(reqCtx)
+	log = logger.WithContext(reqCtx)
+
 	ctx.Set("userId", claims.RegisteredClaims.Subject)
 
 	objectID, err := bson.ObjectIDFromHex(claims.RegisteredClaims.Subject)
 	if err != nil {
+		log.WithError(err).Error("Invalid user ID format")
 		utils.ErrorResponse(ctx, http.StatusUnauthorized, "invalid user id format", err.Error())
 		ctx.Abort()
 		return
 	}
 
-	ctx.Set("user", models.LoginUserResponse{
+	user := models.LoginUserResponse{
 		ID:            objectID,
 		Email:         claims.Email,
 		Username:      claims.Username,
 		Profile:       claims.Profile,
 		AccountStatus: claims.AccountStatus,
-	})
+	}
+
+	ctx.Set("user", user)
+	log.WithFields(map[string]interface{}{
+		"user_id":  user.ID.Hex(),
+		"username": user.Username,
+		"email":    user.Email,
+	}).Info("User authenticated successfully")
 
 	ctx.Next()
 }

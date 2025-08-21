@@ -62,11 +62,8 @@ type ContactInfo struct {
 }
 
 // ============ CHAT MODEL ============
-type GetChatResponse struct {
-	ID          bson.ObjectID `json:"_id" bson:"_id"`
-	Type        string        `json:"type" bson:"type"`
-	Name        string        `json:"name" bson:"name"`
-	Description string        `json:"description" bson:"description"`
-	Avatar      string        `json:"avatar" bson:"avatar"`
-	Messages    []Message     `json:"messages" bson:"messages"`
+type ChatInfo struct {
+	ChatID       bson.ObjectID                      `json:"_id,omitempty" bson:"_id,omitempty"`
+	ChatType     string                             `json:"chatType" bson:"chatType"`         // "direct", "group", "channel"
+	Participants map[bson.ObjectID]ParticipantEmbed `json:"participants" bson:"participants"` // userID -> participant reference
 }

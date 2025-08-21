@@ -43,7 +43,7 @@ func GetUserChats(userID bson.ObjectID) (map[bson.ObjectID]bson.ObjectID, error)
 }
 
 // GetChat retrieves chat information with basic details
-func GetChat(chatInfo models.ContactInfo) (models.Chat, error) {
+func GetChat(ctx context.Context, chatInfo models.ChatInfo) (models.Chat, error) {
 	chatFilter := bson.M{"_id": chatInfo.ChatID}
 	chatProjection := bson.M{
 		"_id":           1,
@@ -56,7 +56,7 @@ func GetChat(chatInfo models.ContactInfo) (models.Chat, error) {
 		"updatedAt":     1,
 	}
 
-	chat, err := FindByID[models.Chat](context.Background(), objects.DB.Collection(string(objects.ChatColl)), chatFilter, chatProjection)
+	chat, err := FindByID[models.Chat](ctx, objects.DB.Collection(string(objects.ChatColl)), chatFilter, chatProjection)
 	if err != nil {
 		return models.Chat{}, fmt.Errorf("failed to get chat: %w", err)
 	}
@@ -65,11 +65,10 @@ func GetChat(chatInfo models.ContactInfo) (models.Chat, error) {
 }
 
 // GetChatWithMessages retrieves chat with recent messages
-func GetChatWithMessages(chatID bson.ObjectID, limit int, offset int) (models.Chat, []models.Message, error) {
-	ctx := context.Background()
+func GetChatWithMessages(ctx context.Context, chatID bson.ObjectID, limit int, offset int) (models.Chat, []models.Message, error) {
 
 	// Get chat details
-	chat, err := GetChat(models.ContactInfo{ChatID: chatID})
+	chat, err := GetChat(ctx, models.ChatInfo{ChatID: chatID})
 	if err != nil {
 		return models.Chat{}, nil, fmt.Errorf("failed to get chat: %w", err)
 	}
@@ -101,8 +100,7 @@ func GetChatWithMessages(chatID bson.ObjectID, limit int, offset int) (models.Ch
 }
 
 // ============ CHAT MANAGEMENT ============
-func CreateDirectChat(user models.LoginUserResponse, targetUserID bson.ObjectID) (*models.Chat, error) {
-	ctx := context.Background()
+func CreateDirectChat(ctx context.Context, user models.LoginUserResponse, targetUserID bson.ObjectID) (*models.Chat, error) {
 
 	filter := bson.M{
 		"chatType": "direct",
@@ -123,6 +121,12 @@ func CreateDirectChat(user models.LoginUserResponse, targetUserID bson.ObjectID)
 	err := objects.DB.Collection(string(objects.ChatColl)).FindOne(ctx, filter, options.FindOne().SetProjection(chatProjection)).Decode(&existingChat)
 	if err != nil {
 		if err == mongo.ErrNoDocuments {
+
+			targetUser, err := GetUserByID(ctx, targetUserID)
+			if err != nil {
+				return nil, fmt.Errorf("failed to get target user: %w", err)
+			}
+
 			chat := utils.NewChatWithDefaults(user.ID, "direct")
 			chat.Participants[user.ID] = models.ParticipantEmbed{
 				Role: string(objects.ChatRoleMember),
@@ -133,6 +137,15 @@ func CreateDirectChat(user models.LoginUserResponse, targetUserID bson.ObjectID)
 					Avatar:      user.Profile.Avatar,
 				},
 			}
+			chat.Participants[targetUserID] = models.ParticipantEmbed{
+				Role: string(objects.ChatRoleMember),
+				UserInfo: models.ContactUserInfo{
+					UserID:      targetUserID,
+					DisplayName: targetUser.Profile.DisplayName,
+					Username:    targetUser.Username,
+					Avatar:      targetUser.Profile.Avatar,
+				},
+			}
 		}
 		return nil, fmt.Errorf("failed to fetch existing chat: %w", err)
 	}
@@ -141,12 +154,11 @@ func CreateDirectChat(user models.LoginUserResponse, targetUserID bson.ObjectID)
 }
 
 // CreateGroupChat creates a new group chat
-func CreateGroupChat(creatorID bson.ObjectID, name, description string, participantIDs []bson.ObjectID) (*models.Chat, error) {
-	ctx := context.Background()
+func CreateGroupChat(ctx context.Context, creatorID bson.ObjectID, name, description string, participantIDs []bson.ObjectID) (*models.Chat, error) {
 	now := time.Now()
 
 	// Get creator details
-	_, err := GetUserByID(creatorID)
+	creator, err := GetUserByID(ctx, creatorID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get creator: %w", err)
 	}
@@ -158,9 +170,9 @@ func CreateGroupChat(creatorID bson.ObjectID, name, description string, particip
 		Role: "owner",
 		UserInfo: models.ContactUserInfo{
 			UserID:      creatorID,
-			DisplayName: "Owner",
-			Username:    "owner",
-			Avatar:      "https://example.com/avatar.png",
+			DisplayName: creator.Profile.DisplayName,
+			Username:    creator.Username,
+			Avatar:      creator.Profile.Avatar,
 		},
 		JoinedAt: now,
 	}
@@ -172,7 +184,7 @@ func CreateGroupChat(creatorID bson.ObjectID, name, description string, particip
 		}
 
 		// Just verify user exists, but don't embed user data
-		_, err := GetUserByID(userID)
+		_, err := GetUserByID(ctx, userID)
 		if err != nil {
 			continue // Skip invalid users
 		}
@@ -224,12 +236,11 @@ func CreateGroupChat(creatorID bson.ObjectID, name, description string, particip
 }
 
 // SendMessage creates and persists a new message, then broadcasts it
-func SendMessage(chatID, senderID bson.ObjectID, content, messageType string, attachments []models.AttachmentEmbed, mentions []string) (*models.Message, error) {
-	ctx := context.Background()
+func SendMessage(ctx context.Context, chatID, senderID bson.ObjectID, content, messageType string, attachments []models.AttachmentEmbed, mentions []string) (*models.Message, error) {
 	now := time.Now()
 
 	// Get sender details
-	sender, err := GetUserByID(senderID)
+	sender, err := GetUserByID(ctx, senderID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get sender: %w", err)
 	}
@@ -266,7 +277,7 @@ func SendMessage(chatID, senderID bson.ObjectID, content, messageType string, at
 		for _, mention := range mentions {
 			if userID, err := bson.ObjectIDFromHex(mention); err == nil {
 				mentionUserIDs = append(mentionUserIDs, userID)
-				if user, err := GetUserByID(userID); err == nil {
+				if user, err := GetUserByID(ctx, userID); err == nil {
 					mentionUserNames = append(mentionUserNames, user.Username)
 				}
 			}
@@ -296,9 +307,9 @@ func SendMessage(chatID, senderID bson.ObjectID, content, messageType string, at
 }
 
 // UpdateTypingStatus updates typing indicator for a user in a chat
-func UpdateTypingStatus(chatID, userID bson.ObjectID, isTyping bool) error {
+func UpdateTypingStatus(ctx context.Context, chatID, userID bson.ObjectID, isTyping bool) error {
 	// Get user details
-	user, err := GetUserByID(userID)
+	user, err := GetUserByID(ctx, userID)
 	if err != nil {
 		return fmt.Errorf("failed to get user: %w", err)
 	}

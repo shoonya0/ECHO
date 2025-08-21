@@ -2,6 +2,7 @@ package objects
 
 import (
 	"github.com/redis/go-redis/v9"
+	"github.com/sirupsen/logrus"
 	"go.mongodb.org/mongo-driver/v2/mongo"
 )
 
@@ -134,4 +135,17 @@ var (
 	DBClient          *mongo.Client
 	DB                *mongo.Database
 	RedisClient       *redis.Client
+	FileLog           *logrus.Logger
+)
+
+// ContextKey is a type for context keys
+type ContextKey string
+
+const (
+	// TransactionIDKey is the context key for transaction ID
+	TransactionIDKey ContextKey = "transaction_id"
+	// UserIDKey is the context key for user ID
+	UserIDKey ContextKey = "user_id"
+	// RequestIDKey is the context key for request ID
+	RequestIDKey ContextKey = "request_id"
 )

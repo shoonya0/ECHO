@@ -40,7 +40,8 @@ func CreateDirectChatHTTP(ctx *gin.Context) {
 		return
 	}
 
-	chat, err := services.CreateDirectChat(user, targetUserID)
+	reqCtx := ctx.Request.Context()
+	chat, err := services.CreateDirectChat(reqCtx, user, targetUserID)
 	if err != nil {
 		log.Printf("Failed to create direct chat: %v", err)
 		utils.ErrorResponse(ctx, http.StatusInternalServerError, "Failed to create chat", nil)
@@ -91,7 +92,8 @@ func CreateGroupChatHTTP(ctx *gin.Context) {
 	}
 
 	// Create group chat
-	chat, err := services.CreateGroupChat(user.ID, request.Name, request.Description, participantIDs)
+	reqCtx := ctx.Request.Context()
+	chat, err := services.CreateGroupChat(reqCtx, user.ID, request.Name, request.Description, participantIDs)
 	if err != nil {
 		log.Printf("Failed to create group chat: %v", err)
 		utils.ErrorResponse(ctx, http.StatusInternalServerError, "Failed to create group chat", nil)
@@ -140,7 +142,8 @@ func GetChatMessagesHTTP(ctx *gin.Context) {
 	}
 
 	// Get chat with messages
-	chat, messages, err := services.GetChatWithMessages(chatID, limit, offset)
+	reqCtx := ctx.Request.Context()
+	chat, messages, err := services.GetChatWithMessages(reqCtx, chatID, limit, offset)
 	if err != nil {
 		log.Printf("Failed to get chat messages: %v", err)
 		utils.ErrorResponse(ctx, http.StatusInternalServerError, "Failed to get chat messages", nil)
@@ -169,13 +172,14 @@ func GetHubStatsHTTP(ctx *gin.Context) {
 
 // GetGroupMessages retrieves group messages via HTTP endpoint
 func GetGroupMessages(ctx *gin.Context) {
-	chatInfo := models.ContactInfo{}
+	chatInfo := models.ChatInfo{}
 	if err := ctx.ShouldBindJSON(&chatInfo); err != nil {
 		utils.ErrorResponse(ctx, http.StatusBadRequest, "invalid chat info", nil)
 		return
 	}
 
-	chat, err := services.GetChat(chatInfo)
+	reqCtx := ctx.Request.Context()
+	chat, err := services.GetChat(reqCtx, chatInfo)
 	if err != nil {
 		utils.ErrorResponse(ctx, http.StatusInternalServerError, "failed to get chat", nil)
 		return

@@ -6,3 +6,4 @@ config/envConfig/test.env
 build
 test
 tmp
+logs

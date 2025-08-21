@@ -8,11 +8,14 @@ import (
 	"gin/internal/db"
 	"gin/internal/middleware"
 	"gin/internal/services"
+	"gin/logger"
 	"gin/objects"
-	"log"
 
 	"github.com/gin-gonic/gin"
+	"github.com/sirupsen/logrus"
 )
+
+var Level logrus.Level
 
 var (
 	port string
@@ -22,30 +25,41 @@ var (
 func init() {
 	flag.StringVar(&port, "port", ":8080", "The port to listen on.")
 	flag.BoolVar(&ver, "version", true, "Print server version.")
+	Level = logrus.InfoLevel
 }
 
 func main() {
-	r := gin.New()
+	if err := logger.InitLogger("logs/server.log", Level); err != nil {
+		panic(err)
+	}
 
+	// Create a new context with transaction ID for the main process
+	ctx := logger.WithTransactionID(context.Background())
+	log := logger.WithContext(ctx)
+
+	log.Info("Initializing Echo Chat Server")
+
+	r := gin.New()
 	r.Use(gin.Recovery())
-	r.Use(gin.Logger())
+	r.Use(middleware.LoggerMiddleware()) // We'll create this custom middleware
 
 	var (
 		configPath = flag.String("config", "", "Path to the configuration file.")
 	)
 
 	config.New(*configPath)
-
 	flag.Parse()
 
-	ctx := context.Background()
-	db.ConnectDB(ctx)
+	// Connect to databases
+	if err := db.ConnectDB(ctx); err != nil {
+		log.WithError(err).Fatal("Failed to connect to database")
+	}
+	log.Info("Successfully connected to database")
 
-	err := db.ConnectRedis(ctx)
-	if err != nil {
-		log.Printf("Failed to connect to Redis: %v", err)
-		log.Println("Continuing without Redis - presence features will be disabled")
+	if err := db.ConnectRedis(ctx); err != nil {
+		log.WithError(err).Warn("Failed to connect to Redis - presence features will be disabled")
 	} else {
+		log.Info("Successfully connected to Redis")
 	}
 
 	r.Use(middleware.CORSMiddleware())
@@ -58,13 +72,18 @@ func main() {
 
 	// Initialize user lookup service with caching
 	services.InitUserLookupService()
+	log.Info("User lookup service initialized")
 
 	// Start WebSocket hub in a separate goroutine
 	go func() {
-		log.Println("Starting WebSocket Hub for real-time chat...")
+		hubCtx := logger.WithTransactionID(ctx)
+		hubLog := logger.WithContext(hubCtx)
+		hubLog.Info("Starting WebSocket Hub for real-time chat")
 		services.RunHub()
 	}()
 
-	log.Printf("Starting Echo Chat Server on port %s with WebSocket support", objects.MainConfiguration.Port)
-	r.Run(":" + objects.MainConfiguration.Port)
+	log.WithField("port", objects.MainConfiguration.Port).Info("Starting Echo Chat Server with WebSocket support")
+	if err := r.Run(":" + objects.MainConfiguration.Port); err != nil {
+		log.WithError(err).Fatal("Server failed to start")
+	}
 }

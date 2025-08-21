@@ -66,7 +66,8 @@ func UpdateProfile(ctx *gin.Context) {
 
 	updateDoc := services.BuildPartialDocument(updateReq)
 
-	err = services.UpdateProfile(objectID, updateDoc)
+	reqCtx := ctx.Request.Context()
+	err = services.UpdateProfile(reqCtx, objectID, updateDoc)
 	if err != nil {
 		utils.ErrorResponse(ctx, http.StatusInternalServerError, "failed to update profile", err.Error())
 		return
@@ -82,7 +83,8 @@ func DeleteProfile(ctx *gin.Context) {
 		return
 	}
 
-	err := services.DeleteProfile(userID.(string))
+	reqCtx := ctx.Request.Context()
+	err := services.DeleteProfile(reqCtx, userID.(string))
 	if err != nil {
 		utils.ErrorResponse(ctx, http.StatusInternalServerError, "failed to delete profile", err.Error())
 		return
@@ -105,7 +107,8 @@ func GetUserProfile(ctx *gin.Context) {
 		return
 	}
 
-	userData, err := services.GetUserProfile(objectID)
+	reqCtx := ctx.Request.Context()
+	userData, err := services.GetUserProfile(reqCtx, objectID)
 	if err != nil {
 		utils.ErrorResponse(ctx, http.StatusInternalServerError, "failed to get user profile", err.Error())
 		return

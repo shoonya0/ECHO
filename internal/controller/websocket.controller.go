@@ -1,6 +1,7 @@
 package controller
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"gin/internal/models"
@@ -29,7 +30,7 @@ type JwtClaims struct {
 }
 
 // authenticateWebSocketToken verifies JWT token for WebSocket connections
-func authenticateWebSocketToken(tokenString string) (models.User, error) {
+func authenticateWebSocketToken(ctx *gin.Context, tokenString string) (models.User, error) {
 	if !strings.HasPrefix(tokenString, "Bearer ") {
 		return models.User{}, fmt.Errorf("authorization header must be in 'Bearer <token>' format")
 	}
@@ -74,8 +75,8 @@ func authenticateWebSocketToken(tokenString string) (models.User, error) {
 		return models.User{}, fmt.Errorf("invalid user ID format: %w", err)
 	}
 
-	// Get user details from database
-	user, err := services.GetUserByID(objectID)
+	reqCtx := ctx.Request.Context()
+	user, err := services.GetUserByID(reqCtx, objectID)
 	if err != nil {
 		return models.User{}, fmt.Errorf("%w", err)
 	}
@@ -112,7 +113,7 @@ func HandleWebSocketChat(ctx *gin.Context) {
 	}
 
 	// Verify the token using our auth logic
-	user, err := authenticateWebSocketToken(token)
+	user, err := authenticateWebSocketToken(ctx, token)
 	if err != nil {
 		log.Printf("WebSocket authentication failed: %v", err)
 		utils.ErrorResponse(ctx, http.StatusUnauthorized, "Authentication failed", err.Error())
@@ -148,7 +149,8 @@ func HandleWebSocketChat(ctx *gin.Context) {
 	}()
 
 	// // Handle reading in the main routine (blocking)
-	handleClientRead(client)
+	reqCtx := ctx.Request.Context()
+	handleClientRead(reqCtx, client)
 }
 
 // handleClientWrite handles writing messages to the WebSocket connection
@@ -193,7 +195,7 @@ func handleClientWrite(client *models.Client) {
 
 // needs to understand properly how to handle the read and write routines
 // handleClientRead handles reading messages from the WebSocket connection
-func handleClientRead(client *models.Client) {
+func handleClientRead(ctx context.Context, client *models.Client) {
 	defer func() {
 		services.UnregisterClient(client)
 		client.Connection.Close()
@@ -272,15 +274,15 @@ func handleClientRead(client *models.Client) {
 			client.ID, request.Type, request.ChatID, contentPreview+" "+string(message))
 
 		// Process the request
-		handleClientRequest(client, request)
+		handleClientRequest(ctx, client, request)
 	}
 }
 
 // handleClientRequest processes different types of client requests
-func handleClientRequest(client *models.Client, request models.MessageRequest) {
+func handleClientRequest(ctx context.Context, client *models.Client, request models.MessageRequest) {
 	switch request.Type {
 	case models.WSRequestTypeSendMessage:
-		handleSendMessage(client, request)
+		handleSendMessage(ctx, client, request)
 
 	case models.WSRequestTypeJoinChat:
 		handleJoinChat(client, request)
@@ -289,7 +291,7 @@ func handleClientRequest(client *models.Client, request models.MessageRequest) {
 		handleLeaveChat(client, request)
 
 	case models.WSRequestTypeSetTyping:
-		handleSetTyping(client, request)
+		handleSetTyping(ctx, client, request)
 
 	case models.WSRequestTypeMarkRead:
 		handleMarkRead(client, request)
@@ -323,7 +325,7 @@ func handleClientRequest(client *models.Client, request models.MessageRequest) {
 // ============ REQUEST HANDLERS ============
 
 // handleSendMessage processes message sending requests with comprehensive validation
-func handleSendMessage(client *models.Client, request models.MessageRequest) {
+func handleSendMessage(ctx context.Context, client *models.Client, request models.MessageRequest) {
 	// Validate request
 	if request.ChatID == "" || request.Content == "" {
 		sendErrorResponse(client, request.RequestID, "INVALID_REQUEST", "ChatID and content are required")
@@ -338,7 +340,7 @@ func handleSendMessage(client *models.Client, request models.MessageRequest) {
 	}
 
 	// Check if user has permission to send messages in this chat
-	canSend, err := validateMessagePermissions(client.UserID, chatID, request)
+	canSend, err := validateMessagePermissions(ctx, client.UserID, chatID, request)
 	if err != nil {
 		log.Printf("Failed to validate message permissions: %v", err)
 		sendErrorResponse(client, request.RequestID, "PERMISSION_CHECK_FAILED", "Failed to validate permissions")
@@ -364,6 +366,7 @@ func handleSendMessage(client *models.Client, request models.MessageRequest) {
 
 	// Send message through service layer
 	message, err := services.SendMessage(
+		ctx,
 		chatID,
 		client.UserID,
 		request.Content,
@@ -448,7 +451,7 @@ func handleLeaveChat(client *models.Client, request models.MessageRequest) {
 }
 
 // handleSetTyping processes typing indicator requests
-func handleSetTyping(client *models.Client, request models.MessageRequest) {
+func handleSetTyping(ctx context.Context, client *models.Client, request models.MessageRequest) {
 	if request.ChatID == "" {
 		sendErrorResponse(client, request.RequestID, "INVALID_REQUEST", "ChatID is required")
 		return
@@ -470,7 +473,7 @@ func handleSetTyping(client *models.Client, request models.MessageRequest) {
 	}
 
 	// Update typing status
-	err = services.UpdateTypingStatus(chatID, client.UserID, isTyping)
+	err = services.UpdateTypingStatus(ctx, chatID, client.UserID, isTyping)
 	if err != nil {
 		log.Printf("Failed to update typing status: %v", err)
 		sendErrorResponse(client, request.RequestID, "TYPING_FAILED", "Failed to update typing status")
@@ -725,9 +728,9 @@ func autoJoinUserChats(client *models.Client) error {
 }
 
 // validateMessagePermissions checks if a user can send messages in a chat
-func validateMessagePermissions(userID bson.ObjectID, chatID bson.ObjectID, request models.MessageRequest) (bool, error) {
+func validateMessagePermissions(ctx context.Context, userID bson.ObjectID, chatID bson.ObjectID, request models.MessageRequest) (bool, error) {
 	// Get chat details
-	chat, err := services.GetChat(models.ContactInfo{ChatID: chatID})
+	chat, err := services.GetChat(ctx, models.ChatInfo{ChatID: chatID})
 	if err != nil {
 		return false, fmt.Errorf("failed to get chat: %w", err)
 	}
