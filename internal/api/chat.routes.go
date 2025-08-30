@@ -8,6 +8,7 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
+// remaining :- when sending an message to an unknown user then we have to autojoin both the users insted of one.
 func RegisterChatRoutes(r *gin.Engine) {
 	// ============ WEBSOCKET ROUTES (NO AUTH MIDDLEWARE) ============
 	wsApi := r.Group(objects.ApiBasePath + "ws")
@@ -23,11 +24,16 @@ func RegisterChatRoutes(r *gin.Engine) {
 	{
 		chatRoutes.POST("/direct", controller.CreateDirectChatHTTP) // Create direct chat
 		chatRoutes.POST("/group", controller.CreateGroupChatHTTP)   // Create group chat
+		// add target users to group after group creation (this rout take array of user ids)
+		// chatRoutes.POST("/group/add-members", controller.AddGroupMembersHTTP)
 		chatRoutes.GET("/messages", controller.GetChatMessagesHTTP) // Get chat messages with pagination
 
 		// Monitoring (for admin/debugging)
 		chatRoutes.GET("/hub/stats", controller.GetHubStatsHTTP) // Get WebSocket hub statistics
 	}
+
+	// chatUrl for group chat := to add people in group chat via invite code
+	// chatRoutes.POST("/group/add-members/:InviteCode", controller.AddGroupMembersHTTP)
 
 	// ============ MESSAGING ROUTES ============
 	messageRoutes := chatApi.Group("messages")
@@ -47,32 +53,53 @@ func RegisterChatRoutes(r *gin.Engine) {
 	}
 
 	// 	// ============ GROUP MANAGEMENT ROUTES ============
-	// 	groupRoutes := chatApi.Group("groups")
-	// 	{
-	// 		// Group CRUD
-	// 		groupRoutes.POST("/", controller.CreateGroup)           // Create group
-	// 		groupRoutes.GET("/:groupID", controller.GetGroup)       // Get group details
-	// 		groupRoutes.PUT("/:groupID", controller.UpdateGroup)    // Update group
-	// 		groupRoutes.DELETE("/:groupID", controller.DeleteGroup) // Delete group
-	// 		groupRoutes.GET("/", controller.GetUserGroups)          // Get user's groups
+	groupRoutes := chatApi.Group("groups")
+	{
+		// 		// Group CRUD
+		// 		groupRoutes.POST("/", controller.CreateGroup)           // Create group
+		// 		groupRoutes.GET("/:groupID", controller.GetGroup)       // Get group details
+		// 		groupRoutes.PUT("/:groupID", controller.UpdateGroup)    // Update group
+		// 		groupRoutes.DELETE("/:groupID", controller.DeleteGroup) // Delete group
+		// 		groupRoutes.GET("/", controller.GetUserGroups)          // Get user's groups
 
-	// 		// Member Management
-	// 		groupRoutes.POST("/:groupID/members", controller.AddGroupMember)               // Add member
-	// 		groupRoutes.DELETE("/:groupID/members/:userID", controller.RemoveGroupMember)  // Remove member
-	// 		groupRoutes.PUT("/:groupID/members/:userID/role", controller.UpdateMemberRole) // Update role
-	// 		groupRoutes.GET("/:groupID/members", controller.GetGroupMembers)               // Get members
-	// 		groupRoutes.POST("/:groupID/leave", controller.LeaveGroup)                     // Leave group
+		// 		// Member Management
+		// 		groupRoutes.POST("/:groupID/members", controller.AddGroupMember)               // Add member
+		// 		groupRoutes.DELETE("/:groupID/members/:userID", controller.RemoveGroupMember)  // Remove member
+		// 		groupRoutes.PUT("/:groupID/members/:userID/role", controller.UpdateMemberRole) // Update role
+		// 		groupRoutes.GET("/:groupID/members", controller.GetGroupMembers)               // Get members
+		// 		groupRoutes.POST("/:groupID/leave", controller.LeaveGroup)                     // Leave group
 
-	// 		// Group Settings
-	// 		groupRoutes.PUT("/:groupID/settings", controller.UpdateGroupSettings) // Update settings
-	// 		groupRoutes.GET("/:groupID/settings", controller.GetGroupSettings)    // Get settings
+		// 		// Group Settings
+		// 		groupRoutes.PUT("/:groupID/settings", controller.UpdateGroupSettings) // Update settings
+		// 		groupRoutes.GET("/:groupID/settings", controller.GetGroupSettings)    // Get settings
 
-	// 		// Invites
-	// 		groupRoutes.POST("/:groupID/invites", controller.CreateInvite)      // Create invite
-	// 		groupRoutes.GET("/:groupID/invites", controller.GetGroupInvites)    // Get group invites
-	// 		groupRoutes.DELETE("/invites/:inviteID", controller.DeleteInvite)   // Delete invite
-	// 		groupRoutes.POST("/join/:inviteCode", controller.JoinGroupByInvite) // Join via invite
-	// 	}
+		// ============ INVITE CODE ROUTES ============
+
+		// make an invite code for the group chat
+		groupRoutes.POST("/:groupID/invites", controller.CreateInvite) // Create invite
+
+		// list all invite code of any specific chatID
+		groupRoutes.GET("/:groupID/invites", controller.GetGroupInvites) // Get group invites
+
+		// delete an invite code
+		groupRoutes.DELETE("/invites/:inviteID/", controller.DeleteInvite) // Delete invite
+
+		// update the status of an invite code -> done internally
+		// groupRoutes.PUT("/invites/:inviteID/status", controller.UpdateInviteStatus) // Update invite status
+
+		// get the joined users by an invite code
+		groupRoutes.GET("/invites/:inviteID/joined", controller.GetJoinedUsersByInvite) // Get joined users by invite
+
+		// in user we make map of chatID and invite code
+		// send an invite code to an user
+		groupRoutes.POST("/invites/:inviteID/:userID/send", controller.SendInviteToUser) // Send invite to user
+
+		// join a group via an invite code
+		groupRoutes.POST("/join/:inviteCode", controller.JoinGroupByInvite) // Join via invite
+
+		// get all invite chat of an user
+		// groupRoutes.GET("/invites", controller.GetAllInvites) // Get all invites of an user
+	}
 
 	// 	// ============ CHANNEL ROUTES (for Discord-like functionality) ============
 	// 	// channelRoutes := chatApi.Group("channels")

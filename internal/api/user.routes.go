@@ -2,7 +2,6 @@ package routes
 
 import (
 	"gin/internal/controller"
-	"gin/internal/middleware"
 	"gin/objects"
 
 	"github.com/gin-gonic/gin"
@@ -12,7 +11,6 @@ import (
 func RegisterUserRoutes(r *gin.Engine) {
 	// Apply authentication middleware to all user routes
 	userApi := r.Group(objects.ApiBasePath)
-	userApi.Use(middleware.AuthMiddleware)
 
 	// ============ PROFILE MANAGEMENT ============
 	profileRoutes := userApi.Group("profile")

@@ -51,10 +51,19 @@ func verifyToken(tokenString string) (utils.JwtClaims, error) {
 			IssuedAt:  jwt.NewNumericDate(time.Now()),
 			ID:        "",
 		},
-		Email:         "",
-		Username:      "",
-		Profile:       models.UserProfileEmbed{},
-		AccountStatus: models.AccountStatusEmbed{},
+		Email:    "",
+		Username: "",
+		Profile: models.UserProfileEmbed{
+			DisplayName:   "",
+			Avatar:        "",
+			StatusMessage: "",
+			Bio:           "",
+		},
+		AccountStatus: models.AccountStatusEmbed{
+			IsActive:   false,
+			IsVerified: false,
+			IsBanned:   false,
+		},
 	}
 
 	token, err := jwt.ParseWithClaims(tokenString, &claims, func(token *jwt.Token) (interface{}, error) {
@@ -123,7 +132,7 @@ func AuthMiddleware(ctx *gin.Context) {
 
 	claims, err := verifyToken(token)
 	if err != nil {
-		log.WithError(err).Warn("Token verification failed")
+		log.WithError(err).Error("Token verification failed")
 		ctx.JSON(http.StatusUnauthorized, gin.H{
 			"code":    "TOKEN_VERIFICATION_FAILED",
 			"details": err.Error(),
@@ -159,8 +168,8 @@ func AuthMiddleware(ctx *gin.Context) {
 	ctx.Set("user", user)
 	log.WithFields(map[string]interface{}{
 		"user_id":  user.ID.Hex(),
-		"username": user.Username,
 		"email":    user.Email,
+		"username": user.Username,
 	}).Info("User authenticated successfully")
 
 	ctx.Next()

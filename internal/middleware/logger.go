@@ -15,6 +15,7 @@ func LoggerMiddleware() gin.HandlerFunc {
 
 		// Create request ID and add it to context
 		ctx := logger.WithRequestID(c.Request.Context())
+		// here it creates a new request with the new context
 		c.Request = c.Request.WithContext(ctx)
 
 		// Add user ID to context if available

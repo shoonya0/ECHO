@@ -1,26 +1,33 @@
 package utils
 
 import (
+	"crypto/aes"
+	"crypto/cipher"
+	"crypto/rand"
+	"encoding/hex"
+	"fmt"
 	"gin/internal/models"
+	"io"
 	"time"
 
 	"go.mongodb.org/mongo-driver/v2/bson"
 )
 
 // NewUserWithDefaults creates a new User with all embedded structures properly initialized
-func NewUserWithDefaults(id bson.ObjectID, email, passwordHash string) models.User {
+func NewUserWithDefaults(id bson.ObjectID, email, username, passwordHash string) models.User {
 	now := time.Now()
 
 	return models.User{
 		ID:           id,
 		Email:        email,
+		Username:     username,
 		PasswordHash: passwordHash,
 		CreatedAt:    now,
 		UpdatedAt:    now,
 
 		// Initialize Profile with defaults
 		Profile: models.UserProfileEmbed{
-			DisplayName:   email, // Use email as default display name
+			DisplayName:   username, // Use email as default display name
 			Avatar:        "",
 			StatusMessage: "",
 			Bio:           "",
@@ -77,6 +84,7 @@ func NewUserWithDefaults(id bson.ObjectID, email, passwordHash string) models.Us
 				ShowEmojiSuggestions: true,
 			},
 		},
+		Chats: make(map[bson.ObjectID]int),
 	}
 }
 
@@ -132,4 +140,80 @@ func NewParticipantWithDefaults(requestStatus string, onlineStatus string, reque
 		JoinedAt:      time.Now(),
 		LeftAt:        time.Now(),
 	}
+}
+
+const secretKey = "thisIsASecureAndLongKeyForAES256"
+
+// Encrypt a byte slice using AES-256 GCM.
+func Encrypt(data []byte) ([]byte, error) {
+	key := []byte(secretKey)
+	block, err := aes.NewCipher(key)
+	if err != nil {
+		return nil, err
+	}
+
+	gcm, err := cipher.NewGCM(block)
+	if err != nil {
+		return nil, err
+	}
+
+	nonce := make([]byte, gcm.NonceSize())
+	if _, err := io.ReadFull(rand.Reader, nonce); err != nil {
+		return nil, err
+	}
+
+	ciphertext := gcm.Seal(nonce, nonce, data, nil)
+	return ciphertext, nil
+}
+
+// Decrypt a byte slice using AES-256 GCM.
+func Decrypt(data []byte) (string, error) {
+	key := []byte(secretKey)
+	block, err := aes.NewCipher(key)
+	if err != nil {
+		return "", err
+	}
+
+	gcm, err := cipher.NewGCM(block)
+	if err != nil {
+		return "", err
+	}
+
+	nonceSize := gcm.NonceSize()
+	if len(data) < nonceSize {
+		return "", fmt.Errorf("ciphertext too short")
+	}
+
+	nonce, ciphertext := data[:nonceSize], data[nonceSize:]
+	plaintext, err := gcm.Open(nil, nonce, ciphertext, nil)
+	if err != nil {
+		return "", err
+	}
+
+	return string(plaintext), nil
+}
+
+func NewInviteCodeWithDefaults(user models.LoginUserResponse, chatID bson.ObjectID, expireTime time.Time) (models.InviteCodeEmbed, bool) {
+
+	dataString := fmt.Sprintf("%s_%s_%s_%s", chatID.Hex(), user.ID.Hex(), user.Profile.DisplayName, expireTime.Format(time.RFC3339))
+
+	encryptedData, err := Encrypt([]byte(dataString))
+	if err != nil {
+		return models.InviteCodeEmbed{}, false
+	}
+
+	inviteCode := hex.EncodeToString(encryptedData)
+
+	status := "active"
+	deleted := false
+
+	invite := models.InviteCodeEmbed{
+		InviteCode:  inviteCode,
+		UserIDs:     []bson.ObjectID{},
+		ExpiredDate: expireTime,
+		Status:      status,
+		Deleted:     deleted,
+	}
+
+	return invite, true
 }

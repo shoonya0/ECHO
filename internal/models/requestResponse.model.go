@@ -10,7 +10,7 @@ import (
 type LoginUserResponse struct {
 	ID            bson.ObjectID      `json:"_id" bson:"_id"`
 	Email         string             `json:"email" bson:"email"`
-	PasswordHash  string             `json:"-" bson:"passwordHash"`
+	PasswordHash  string             `json:"passwordHash" bson:"passwordHash"`
 	Username      string             `json:"username" bson:"username"`
 	Profile       UserProfileEmbed   `json:"profile" bson:"profile"`
 	AccountStatus AccountStatusEmbed `json:"accountStatus" bson:"accountStatus"`
@@ -59,6 +59,21 @@ type ContactInfo struct {
 	Username   string           `json:"username,omitempty" bson:"username,omitempty"`
 	Presence   PresenceEmbed    `json:"presence,omitempty" bson:"presence,omitempty"`
 	IsFavorite bool             `json:"isFavorite,omitempty" bson:"isFavorite,omitempty"`
+}
+
+type SingleContactInfo struct {
+	PendingIn    bson.ObjectID `json:"pendingIn" bson:"pendingIn"`
+	PendingOut   bson.ObjectID `json:"pendingOut" bson:"pendingOut"`
+	Favorites    bson.ObjectID `json:"favorites" bson:"favorites"`
+	Contacts     bson.ObjectID `json:"contacts" bson:"contacts"`
+	BlockedChats bson.ObjectID `json:"blockedChats" bson:"blockedChats"`
+	CreatedAt    time.Time     `json:"createdAt" bson:"createdAt"`
+	UpdatedAt    time.Time     `json:"updatedAt" bson:"updatedAt"`
+}
+
+type SingleContact struct {
+	ID          bson.ObjectID     `json:"_id,omitempty" bson:"_id,omitempty"`
+	ContactInfo SingleContactInfo `json:"contactInfo,omitempty" bson:"contactInfo,omitempty"`
 }
 
 // ============ CHAT MODEL ============

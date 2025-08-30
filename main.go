@@ -18,17 +18,22 @@ import (
 var Level logrus.Level
 
 var (
-	port string
-	ver  bool
+	port       string
+	ver        bool
+	configPath string
 )
 
 func init() {
 	flag.StringVar(&port, "port", ":8080", "The port to listen on.")
 	flag.BoolVar(&ver, "version", true, "Print server version.")
+	flag.StringVar(&configPath, "config", "", "Path to the configuration file.")
 	Level = logrus.InfoLevel
 }
 
 func main() {
+	config.New(configPath)
+	flag.Parse()
+
 	if err := logger.InitLogger("logs/server.log", Level); err != nil {
 		panic(err)
 	}
@@ -41,14 +46,6 @@ func main() {
 
 	r := gin.New()
 	r.Use(gin.Recovery())
-	r.Use(middleware.LoggerMiddleware()) // We'll create this custom middleware
-
-	var (
-		configPath = flag.String("config", "", "Path to the configuration file.")
-	)
-
-	config.New(*configPath)
-	flag.Parse()
 
 	// Connect to databases
 	if err := db.ConnectDB(ctx); err != nil {

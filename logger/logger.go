@@ -67,6 +67,13 @@ func InitLogger(filePath string, level logrus.Level) error {
 			funcName := s[len(s)-1]
 			return funcName, fmt.Sprintf("%s:%d", f.File, f.Line)
 		},
+		FieldMap: logrus.FieldMap{
+			logrus.FieldKeyLevel: "0_level",
+			logrus.FieldKeyFile:  "1_file",
+			logrus.FieldKeyFunc:  "2_func",
+			logrus.FieldKeyMsg:   "3_msg",
+			logrus.FieldKeyTime:  "4_time",
+		},
 	})
 
 	l.SetReportCaller(true)

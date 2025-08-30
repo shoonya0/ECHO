@@ -1,8 +1,10 @@
 package routes
 
 import (
+	"gin/internal/middleware"
 	"gin/internal/models"
 	"gin/internal/utils"
+	"gin/logger"
 	"gin/objects"
 	"net/http"
 	"time"
@@ -17,6 +19,7 @@ import (
 type SignupRequest struct {
 	ID       bson.ObjectID `json:"_id" bson:"_id"`
 	Email    string        `json:"email" binding:"required,email"`
+	Username string        `json:"username" binding:"required"`
 	Password string        `json:"password" binding:"required,min=8"`
 }
 
@@ -27,88 +30,107 @@ type LoginRequest struct {
 
 func Signup() gin.HandlerFunc {
 	return func(c *gin.Context) {
+		log := logger.WithContext(c.Request.Context())
+
 		var req SignupRequest
 		if err := c.ShouldBindJSON(&req); err != nil {
-			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+			log.WithError(err).Error("invalid request")
+			utils.ErrorResponse(c, http.StatusBadRequest, "invalid request", err.Error())
 			return
 		}
 
 		count, err := objects.DB.Collection(string(objects.UserColl)).CountDocuments(c.Request.Context(), bson.M{"email": req.Email})
 		if err != nil {
-			utils.ErrorResponse(c, http.StatusInternalServerError, "failed to check email", err)
+			log.WithError(err).Error("failed to check email")
+			utils.ErrorResponse(c, http.StatusInternalServerError, "failed to check email", err.Error())
 			return
 		}
 		if count > 0 {
+			log.WithError(err).Error("email already registered")
 			utils.ErrorResponse(c, http.StatusConflict, "email already registered", nil)
 			return
 		}
 
 		hash, err := bcrypt.GenerateFromPassword([]byte(req.Password), bcrypt.DefaultCost)
 		if err != nil {
-			utils.ErrorResponse(c, http.StatusInternalServerError, "could not hash password", err)
+			log.WithError(err).Error("could not hash password")
+			utils.ErrorResponse(c, http.StatusInternalServerError, "could not hash password", err.Error())
 			return
 		}
 
-		user := utils.NewUserWithDefaults(req.ID, req.Email, string(hash))
+		user := utils.NewUserWithDefaults(req.ID, req.Email, req.Username, string(hash))
 
 		if _, err := objects.DB.Collection(string(objects.UserColl)).InsertOne(c.Request.Context(), user); err != nil {
-			utils.ErrorResponse(c, http.StatusInternalServerError, "failed to create user", err)
+			log.WithError(err).Error("failed to create user")
+			utils.ErrorResponse(c, http.StatusInternalServerError, "failed to create user", err.Error())
 			return
 		}
 
+		log.WithField("user", user).Info("user created successfully")
 		utils.SuccessResponse(c, "User created successfully", user)
 	}
 }
 
 func Login() gin.HandlerFunc {
 	return func(c *gin.Context) {
+		log := logger.WithContext(c.Request.Context())
+
 		var req LoginRequest
 		if err := c.ShouldBindJSON(&req); err != nil {
-			utils.ErrorResponse(c, http.StatusBadRequest, "invalid request", err)
+			log.WithError(err).Error("invalid request")
+			utils.ErrorResponse(c, http.StatusBadRequest, "invalid request", err.Error())
 			return
 		}
 
 		if req.Email == "" || req.Password == "" {
+			log.Error("email and password are required")
 			utils.ErrorResponse(c, http.StatusBadRequest, "email and password are required", nil)
 			return
 		}
 
 		userProjection := bson.M{
-			"_id":           1,
-			"email":         1,
-			"hash":          1,
-			"profile":       1,
-			"accountStatus": 1,
+			"_id":                 1,
+			"email":               1,
+			"username":            1,
+			"passwordHash":        1,
+			"profile.displayName": 1,
+			"profile.avatar":      1,
+			"accountStatus":       1,
 		}
 
 		var user models.LoginUserResponse
+
 		err := objects.DB.Collection(string(objects.UserColl)).FindOne(c.Request.Context(), bson.M{"email": req.Email}, options.FindOne().SetProjection(userProjection)).Decode(&user)
 		if err == mongo.ErrNoDocuments {
-			utils.ErrorResponse(c, http.StatusUnauthorized, "invalid credentials", err)
+			log.Error("invalid credentials")
+			utils.ErrorResponse(c, http.StatusUnauthorized, "invalid credentials", err.Error())
 			return
 		} else if err != nil {
-			utils.ErrorResponse(c, http.StatusInternalServerError, "failed to find user", err)
+			log.WithError(err).Error("failed to find user")
+			utils.ErrorResponse(c, http.StatusInternalServerError, "failed to find user", err.Error())
 			return
 		}
 
 		if err := bcrypt.CompareHashAndPassword(
 			[]byte(user.PasswordHash), []byte(req.Password),
 		); err != nil {
-			utils.ErrorResponse(c, http.StatusUnauthorized, "invalid credentials", err)
+			log.WithError(err).Error("invalid credentials")
+			utils.ErrorResponse(c, http.StatusUnauthorized, "invalid credentials", err.Error())
 			return
 		}
 
 		token, err := utils.GetJWTToken(user.ID.Hex(), user.Email, user.Username, user.Profile, user.AccountStatus, time.Now().Add(7*24*time.Hour).Unix())
 		if err != nil {
-			utils.ErrorResponse(c, http.StatusInternalServerError, "could not generate token", err)
+			log.WithError(err).Error("could not generate token")
+			utils.ErrorResponse(c, http.StatusInternalServerError, "could not generate token", err.Error())
 			return
 		}
 
+		log.WithField("user", user.ID.Hex()).Info("login successful")
 		utils.SuccessResponse(c, "Login successful", gin.H{
 			"token": token,
 			"user":  user,
 		})
-
 	}
 }
 
@@ -116,11 +138,19 @@ func RegisterAPIRoutes(r *gin.Engine) {
 	r.POST(objects.ApiBasePath+"login", Login())
 	r.POST(objects.ApiBasePath+"signup", Signup())
 
-	RegisterUserRoutes(r)
+	r.Use(middleware.AuthMiddleware)
+	r.Use(middleware.LoggerMiddleware())
 
+	RegisterUserRoutes(r)
 	RegisterChatRoutes(r)
 }
 
-// in contacts , delete the CHat ID
 // only create the chat when any user send a message to the other user
 // if any things is deleted don't marked it's deleted , just remove the chat from the user's contacts
+
+// make an invite code for the group chat
+// create invite code for any chatID
+// list all invite code of any specific chatID
+// update status of invite code
+// no of person joined via invite code (stroe only userID)
+// when user join via invite code , then add the user to the chat

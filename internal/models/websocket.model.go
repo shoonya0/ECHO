@@ -176,9 +176,11 @@ type Hub struct {
 	Clients map[string]*Client `json:"-"`
 
 	// Chat to clients mapping (replaces ChatRooms)
+	// group chat
 	ChatClients map[string]map[string]*Client `json:"-"` // ChatID -> ClientID -> Client
 
 	// User to client mapping
+	// direct chat
 	UserClients map[string]map[string]*Client `json:"-"` // UserID -> ClientID -> Client
 
 	// User display info cache (TTL: 5 minutes)
@@ -213,6 +215,7 @@ type MessageRequest struct {
 	// here type represents the type of the message eg: send_message, join_chat, leave_chat, set_typing, set_presence, mark_read, edit_message, delete_message, add_reaction, remove_reaction, invite_user, remove_user, update_chat
 	Type        string                 `json:"type"`
 	ChatID      string                 `json:"chatId"`
+	SenderID    string                 `json:"senderId" bson:"senderId"`
 	Content     string                 `json:"content,omitempty"`
 	MessageType string                 `json:"messageType,omitempty"`
 	Attachments []AttachmentEmbed      `json:"attachments,omitempty"`

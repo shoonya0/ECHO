@@ -226,43 +226,23 @@ func AcceptOrDeclineContactRequest(userID, targetRequestID bson.ObjectID, action
 
 	_, err = sess.WithTransaction(context.Background(), func(sessCtx context.Context) (interface{}, error) {
 		// first we have to get the contact request from the database
-		userFilter := bson.M{"_id": userID, "contactInfo.pendingIn." + targetRequestID.Hex(): bson.M{"$exists": true}}
-		targetFilter := bson.M{"_id": targetRequestID, "contactInfo.pendingOut." + userID.Hex(): bson.M{"$exists": true}}
+		userFilter := bson.M{"_id": userID, "contactInfo.pendingIn": bson.M{"$in": []bson.ObjectID{targetRequestID}}}
+		targetFilter := bson.M{"_id": targetRequestID, "contactInfo.pendingOut": bson.M{"$in": []bson.ObjectID{userID}}}
 
-		contactProjection := bson.M{
-			"_id":                    1,
-			"contactInfo.pendingIn":  1,
-			"contactInfo.pendingOut": 1,
-			"contactInfo.favorites":  1,
-			"contactInfo.updatedAt":  1,
-		}
-
-		userContact, err := FindByID[models.User](sessCtx, objects.DB.Collection(string(objects.UserColl)), userFilter, contactProjection)
+		count, err := objects.DB.Collection(string(objects.UserColl)).CountDocuments(context.Background(), userFilter)
 		if err != nil {
-			if err == mongo.ErrNoDocuments {
-				return nil, fmt.Errorf("contact request not found")
-			}
 			return nil, fmt.Errorf("failed to fetch user contact: %w", err)
 		}
+		if count == 0 {
+			return nil, fmt.Errorf("contact request not found on user")
+		}
 
-		targetContact, err := FindByID[models.User](sessCtx, objects.DB.Collection(string(objects.UserColl)), targetFilter, contactProjection)
+		count, err = objects.DB.Collection(string(objects.UserColl)).CountDocuments(context.Background(), targetFilter)
 		if err != nil {
-			if err == mongo.ErrNoDocuments {
-				return nil, fmt.Errorf("contact request not found")
-			}
 			return nil, fmt.Errorf("failed to fetch target contact: %w", err)
 		}
-
-		if contains(userContact.ContactInfo.Contacts, targetRequestID) {
-			return nil, fmt.Errorf("user is already in contacts")
-		}
-
-		if contains(userContact.ContactInfo.PendingIn, targetRequestID) {
-			return nil, fmt.Errorf("contact request already sent by user %s please try again", targetRequestID.Hex())
-		}
-
-		if contains(targetContact.ContactInfo.PendingOut, userID) {
-			return nil, fmt.Errorf("contact request already sent by user %s please try again", userID.Hex())
+		if count == 0 {
+			return nil, fmt.Errorf("contact request not found on target")
 		}
 
 		now := time.Now()

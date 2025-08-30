@@ -32,6 +32,9 @@ type Chat struct {
 	// Settings
 	Settings ChatSettingsEmbed `json:"settings" bson:"settings"`
 
+	// ====== INVITE CODE ======
+	InviteCode []InviteCodeEmbed `json:"inviteCode" bson:"inviteCode"`
+
 	// Read receipts aggregated
 	ReadReceipts map[bson.ObjectID]time.Time `json:"readReceipts" bson:"readReceipts"` // userID -> last read timestamp
 
@@ -87,4 +90,14 @@ type ChatSettingsEmbed struct {
 	AllowFileSharing bool `json:"allowFileSharing" bson:"allowFileSharing"`
 	MessageRetention int  `json:"messageRetention" bson:"messageRetention"` // days, 0 = forever
 	MaxParticipants  int  `json:"maxParticipants" bson:"maxParticipants"`
+}
+
+type InviteCodeEmbed struct {
+	// invitecode ex: chatID_inviteCode(rand string)
+	InviteCode string `json:"inviteCode" bson:"inviteCode"`
+	// userIDs
+	UserIDs     []bson.ObjectID `json:"userIDs" bson:"userIDs"`
+	ExpiredDate time.Time       `json:"expiredDate" bson:"expiredDate"`
+	Status      string          `json:"status" bson:"status"`
+	Deleted     bool            `json:"deleted" bson:"deleted"`
 }

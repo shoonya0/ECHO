@@ -1,9 +1,12 @@
 package controller
 
 import (
+	"context"
+	"errors"
 	"gin/internal/models"
 	"gin/internal/services"
 	"gin/internal/utils"
+	"gin/logger"
 	"log"
 	"net/http"
 
@@ -185,4 +188,209 @@ func GetGroupMessages(ctx *gin.Context) {
 		return
 	}
 	utils.SuccessResponse(ctx, "Chat fetched successfully", chat)
+}
+
+// ================ Invites ================
+func CreateInvite(ctx *gin.Context) {
+	userInterface, exists := ctx.Get("user")
+	if !exists {
+		utils.ErrorResponse(ctx, http.StatusUnauthorized, "User not authenticated", nil)
+		return
+	}
+
+	reqCtx := context.WithValue(ctx.Request.Context(), "user", userInterface)
+	log := logger.WithContext(reqCtx)
+
+	user, ok := userInterface.(models.LoginUserResponse)
+	if !ok {
+		log.WithError(errors.New("invalid user data")).Error("invalid user data")
+		utils.ErrorResponse(ctx, http.StatusUnauthorized, "Invalid user data", nil)
+		return
+	}
+
+	chatIDStr := ctx.Param("groupID")
+	if chatIDStr == "" {
+		log.WithError(errors.New("chat ID is required")).Error("chat ID is required")
+		utils.ErrorResponse(ctx, http.StatusBadRequest, "Chat ID is required", nil)
+		return
+	}
+
+	chatID, err := bson.ObjectIDFromHex(chatIDStr)
+	if err != nil {
+		log.WithError(err).Error("invalid chat ID format")
+		utils.ErrorResponse(ctx, http.StatusBadRequest, "Invalid chat ID format", err.Error())
+		return
+	}
+
+	_, err = services.CreateInvite(reqCtx, user.ID, chatID)
+	if err != nil {
+		log.WithError(err).Error("failed to create invite")
+		utils.ErrorResponse(ctx, http.StatusInternalServerError, "failed to create invite", err.Error())
+		return
+	}
+
+	log.Info("invite created successfully")
+	utils.SuccessResponse(ctx, "Invite created successfully", nil)
+}
+
+func GetGroupInvites(ctx *gin.Context) {
+	userInterface, exists := ctx.Get("user")
+	if !exists {
+		utils.ErrorResponse(ctx, http.StatusUnauthorized, "User not authenticated", nil)
+		return
+	}
+
+	reqCtx := context.WithValue(ctx.Request.Context(), "user", userInterface)
+	log := logger.WithContext(reqCtx)
+
+	chatIDStr := ctx.Param("groupID")
+	if chatIDStr == "" {
+		log.WithError(errors.New("chat ID is required")).Error("chat ID is required")
+		utils.ErrorResponse(ctx, http.StatusBadRequest, "Chat ID is required", nil)
+		return
+	}
+
+	chatID, err := bson.ObjectIDFromHex(chatIDStr)
+	if err != nil {
+		log.WithError(err).Error("invalid chat ID format")
+		utils.ErrorResponse(ctx, http.StatusBadRequest, "Invalid chat ID format", err.Error())
+		return
+	}
+
+	user, ok := userInterface.(models.LoginUserResponse)
+	if !ok {
+		log.WithError(errors.New("invalid user data")).Error("invalid user data")
+		utils.ErrorResponse(ctx, http.StatusUnauthorized, "Invalid user data", nil)
+		return
+	}
+
+	invites, err := services.GetGroupInvites(reqCtx, user.ID, chatID)
+	if err != nil {
+		log.WithError(err).Error("failed to get group invites")
+		utils.ErrorResponse(ctx, http.StatusInternalServerError, "failed to get group invites", err.Error())
+		return
+	}
+
+	utils.SuccessResponse(ctx, "Invites fetched successfully", invites)
+}
+
+func DeleteInvite(ctx *gin.Context) {
+	userInterface, exists := ctx.Get("user")
+	if !exists {
+		utils.ErrorResponse(ctx, http.StatusUnauthorized, "User not authenticated", nil)
+		return
+	}
+
+	reqCtx := context.WithValue(ctx.Request.Context(), "user", userInterface)
+	log := logger.WithContext(reqCtx)
+
+	inviteIDStr := ctx.Param("inviteID")
+	if inviteIDStr == "" {
+		log.WithError(errors.New("invite ID is required")).Error("invite ID is required")
+		utils.ErrorResponse(ctx, http.StatusBadRequest, "Invite ID is required", nil)
+		return
+	}
+
+	user, ok := userInterface.(models.LoginUserResponse)
+	if !ok {
+		log.WithError(errors.New("invalid user data")).Error("invalid user data")
+		utils.ErrorResponse(ctx, http.StatusUnauthorized, "Invalid user data", nil)
+		return
+	}
+
+	err := services.DeleteInvite(reqCtx, user.ID, inviteIDStr)
+	if err != nil {
+		log.WithError(err).Error("failed to delete invite")
+		utils.ErrorResponse(ctx, http.StatusInternalServerError, "failed to delete invite", err.Error())
+		return
+	}
+
+	log.Info("invite deleted successfully")
+	utils.SuccessResponse(ctx, "Invite deleted successfully", nil)
+}
+
+func UpdateInviteStatus(ctx *gin.Context) {
+	// this is done internally
+	utils.SuccessResponse(ctx, "Invite status updated successfully", nil)
+}
+
+func GetJoinedUsersByInvite(ctx *gin.Context) {
+	userInterface, exists := ctx.Get("user")
+	if !exists {
+		utils.ErrorResponse(ctx, http.StatusUnauthorized, "User not authenticated", nil)
+		return
+	}
+
+	reqCtx := context.WithValue(ctx.Request.Context(), "user", userInterface)
+	log := logger.WithContext(reqCtx)
+
+	inviteIDStr := ctx.Param("inviteID")
+	if inviteIDStr == "" {
+		log.WithError(errors.New("invite ID is required")).Error("invite ID is required")
+		utils.ErrorResponse(ctx, http.StatusBadRequest, "Invite ID is required", nil)
+		return
+	}
+
+	user, ok := userInterface.(models.LoginUserResponse)
+	if !ok {
+		log.WithError(errors.New("invalid user data")).Error("invalid user data")
+		utils.ErrorResponse(ctx, http.StatusUnauthorized, "Invalid user data", nil)
+		return
+	}
+
+	joinedUsers, err := services.GetJoinedUsersByInvite(reqCtx, user.ID, inviteIDStr)
+	if err != nil {
+		log.WithError(err).Error("failed to get joined users by invite")
+		utils.ErrorResponse(ctx, http.StatusInternalServerError, "failed to get joined users by invite", err.Error())
+		return
+	}
+
+	utils.SuccessResponse(ctx, "Joined users fetched successfully", joinedUsers)
+}
+
+func SendInviteToUser(ctx *gin.Context) {
+	userInterface, exists := ctx.Get("user")
+	if !exists {
+		utils.ErrorResponse(ctx, http.StatusUnauthorized, "User not authenticated", nil)
+		return
+	}
+
+	reqCtx := context.WithValue(ctx.Request.Context(), "user", userInterface)
+	log := logger.WithContext(reqCtx)
+
+	inviteID := ctx.Param("inviteID")
+	userIDStr := ctx.Param("userID")
+
+	if inviteID == "" || userIDStr == "" {
+		log.WithError(errors.New("invite ID and user ID are required")).Error("invite ID and user ID are required")
+		utils.ErrorResponse(ctx, http.StatusBadRequest, "Invite ID and user ID are required", nil)
+		return
+	}
+
+	targetUserID, err := bson.ObjectIDFromHex(userIDStr)
+	if err != nil {
+		log.WithError(err).Error("invalid user ID format")
+		utils.ErrorResponse(ctx, http.StatusBadRequest, "Invalid user ID format", err.Error())
+		return
+	}
+
+	user, ok := userInterface.(models.LoginUserResponse)
+	if !ok {
+		log.WithError(errors.New("invalid user data")).Error("invalid user data")
+		utils.ErrorResponse(ctx, http.StatusUnauthorized, "Invalid user data", nil)
+		return
+	}
+
+	err = services.SendInviteToUser(reqCtx, user.ID, inviteID, targetUserID)
+	if err != nil {
+		log.WithError(err).Error("failed to send invite to user")
+		utils.ErrorResponse(ctx, http.StatusInternalServerError, "failed to send invite to user", err.Error())
+		return
+	}
+
+	utils.SuccessResponse(ctx, "Invite sent successfully", nil)
+}
+
+func JoinGroupByInvite(ctx *gin.Context) {
+	utils.SuccessResponse(ctx, "Joined group by invite successfully", nil)
 }

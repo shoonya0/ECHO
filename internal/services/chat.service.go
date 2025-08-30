@@ -2,10 +2,13 @@ package services
 
 import (
 	"context"
+	"encoding/hex"
 	"fmt"
 	"gin/internal/models"
 	"gin/internal/utils"
+	"gin/logger"
 	"gin/objects"
+	"strings"
 	"time"
 
 	"go.mongodb.org/mongo-driver/v2/bson"
@@ -16,30 +19,31 @@ import (
 // ============ ENHANCED CHAT SERVICE WITH REAL-TIME SUPPORT ============
 
 // GetUserChats retrieves all chats where the user is a participant
-func GetUserChats(userID bson.ObjectID) (map[bson.ObjectID]bson.ObjectID, error) {
-	ctx := context.Background()
+func GetUserChats(ctx context.Context, userID bson.ObjectID) ([]bson.ObjectID, error) {
+	log := logger.WithContext(ctx)
 
 	userFilter := bson.M{"_id": userID}
 	userProjection := bson.M{
-		"contactInfo.contacts": 1,
+		"chats": 1,
 	}
 
-	user, err := FindByID[models.ContactRequest](ctx, objects.DB.Collection(string(objects.UserColl)), userFilter, userProjection)
+	user, err := FindByID[models.User](ctx, objects.DB.Collection(string(objects.UserColl)), userFilter, userProjection)
 	if err != nil {
 		if err == mongo.ErrNoDocuments {
+			log.WithField("user_id", userID.Hex()).Error("User have no contacts")
 			return nil, fmt.Errorf("user have no contacts")
 		}
+		log.WithError(err).Error("Failed to get user")
 		return nil, fmt.Errorf("failed to get user: %w", err)
 	}
 
-	chatInfo := make(map[bson.ObjectID]bson.ObjectID)
+	chats := make([]bson.ObjectID, 0)
 
-	// now we will retrive the chat info which we want to get from the infoToGetFromChat
-	for _, chatID := range user.ContactInfo.Contacts {
-		chatInfo[chatID] = chatID
+	for chatID := range user.Chats {
+		chats = append(chats, chatID)
 	}
 
-	return chatInfo, nil
+	return chats, nil
 }
 
 // GetChat retrieves chat information with basic details
@@ -122,30 +126,75 @@ func CreateDirectChat(ctx context.Context, user models.LoginUserResponse, target
 	if err != nil {
 		if err == mongo.ErrNoDocuments {
 
-			targetUser, err := GetUserByID(ctx, targetUserID)
+			sess, err := objects.DB.Client().StartSession()
 			if err != nil {
-				return nil, fmt.Errorf("failed to get target user: %w", err)
+				return nil, fmt.Errorf("failed to start session: %w", err)
+			}
+			defer sess.EndSession(ctx)
+
+			chatInfo := models.Chat{}
+
+			_, err = sess.WithTransaction(ctx, func(sessCtx context.Context) (interface{}, error) {
+
+				targetUser, err := GetUserByID(ctx, targetUserID)
+				if err != nil {
+					return nil, fmt.Errorf("failed to get target user: %w", err)
+				}
+
+				chat := utils.NewChatWithDefaults(user.ID, "direct")
+				chat.Participants[user.ID] = models.ParticipantEmbed{
+					Role: string(objects.ChatRoleMember),
+					UserInfo: models.ContactUserInfo{
+						UserID:      user.ID,
+						DisplayName: user.Profile.DisplayName,
+						Username:    user.Username,
+						Avatar:      user.Profile.Avatar,
+					},
+				}
+				chat.Participants[targetUserID] = models.ParticipantEmbed{
+					Role: string(objects.ChatRoleMember),
+					UserInfo: models.ContactUserInfo{
+						UserID:      targetUserID,
+						DisplayName: targetUser.Profile.DisplayName,
+						Username:    targetUser.Username,
+						Avatar:      targetUser.Profile.Avatar,
+					},
+				}
+
+				// insert the chat into the database
+				_, err = objects.DB.Collection(string(objects.ChatColl)).InsertOne(ctx, chat)
+				if err != nil {
+					return nil, fmt.Errorf("failed to insert chat: %w", err)
+				}
+
+				// chats is the map[bson.ObjectID]int
+				projection := bson.M{
+					"$set": bson.M{
+						"chats." + chat.ChatID.Hex(): 0,
+					},
+				}
+
+				_, err = objects.DB.Collection(string(objects.UserColl)).UpdateOne(ctx, bson.M{"_id": user.ID}, projection)
+				if err != nil {
+					return nil, fmt.Errorf("failed to update user: %w", err)
+				}
+
+				// push chatId to the target user
+				_, err = objects.DB.Collection(string(objects.UserColl)).UpdateOne(ctx, bson.M{"_id": targetUserID}, projection)
+				if err != nil {
+					return nil, fmt.Errorf("failed to update target user: %w", err)
+				}
+
+				chatInfo = chat
+
+				return nil, nil
+			})
+
+			if err != nil {
+				return nil, fmt.Errorf("failed to create chat: %w", err)
 			}
 
-			chat := utils.NewChatWithDefaults(user.ID, "direct")
-			chat.Participants[user.ID] = models.ParticipantEmbed{
-				Role: string(objects.ChatRoleMember),
-				UserInfo: models.ContactUserInfo{
-					UserID:      user.ID,
-					DisplayName: user.Profile.DisplayName,
-					Username:    user.Username,
-					Avatar:      user.Profile.Avatar,
-				},
-			}
-			chat.Participants[targetUserID] = models.ParticipantEmbed{
-				Role: string(objects.ChatRoleMember),
-				UserInfo: models.ContactUserInfo{
-					UserID:      targetUserID,
-					DisplayName: targetUser.Profile.DisplayName,
-					Username:    targetUser.Username,
-					Avatar:      targetUser.Profile.Avatar,
-				},
-			}
+			return &chatInfo, nil
 		}
 		return nil, fmt.Errorf("failed to fetch existing chat: %w", err)
 	}
@@ -568,4 +617,222 @@ func cleanupEmptyReaction(messageID bson.ObjectID, emoji string) {
 	}
 
 	objects.DB.Collection(string(objects.MessageColl)).UpdateOne(ctx, filter, update)
+}
+
+// ================ Invites ================
+func CreateInvite(ctx context.Context, userID bson.ObjectID, chatID bson.ObjectID) (*models.InviteCodeEmbed, error) {
+	log := logger.WithContext(ctx)
+
+	filter := bson.M{
+		"_id":  chatID,
+		"type": "group",
+		"$and": []bson.M{
+			{"participants." + userID.Hex(): bson.M{"$exists": true}},
+		},
+	}
+
+	count, err := objects.DB.Collection(string(objects.ChatColl)).CountDocuments(ctx, filter)
+	if err != nil {
+		log.WithError(err).Error("failed to get chat")
+		return nil, fmt.Errorf("failed to get chat: %w", err)
+	}
+
+	if count == 0 {
+		log.WithField("chat_id", chatID.Hex()).Error("chat not found")
+		return nil, fmt.Errorf("chat not found")
+	}
+
+	user, ok := ctx.Value("user").(models.LoginUserResponse)
+	if !ok {
+		log.WithError(fmt.Errorf("user not found")).Error("failed to get user")
+		return nil, fmt.Errorf("user not found")
+	}
+
+	invite, ok := utils.NewInviteCodeWithDefaults(user, chatID, time.Now().Add(24*time.Hour))
+	if !ok {
+		log.WithError(fmt.Errorf("failed to create invite code")).Error("failed to create invite code")
+		return nil, fmt.Errorf("failed to create invite code")
+	}
+
+	update := bson.M{
+		"$push": bson.M{
+			"inviteCode": invite,
+		},
+	}
+
+	_, err = objects.DB.Collection(string(objects.ChatColl)).UpdateOne(ctx, filter, update)
+	if err != nil {
+		log.WithError(err).Error("failed to create invite code")
+		return nil, fmt.Errorf("failed to create invite code: %w", err)
+	}
+
+	return &invite, nil
+}
+
+func GetGroupInvites(ctx context.Context, userID bson.ObjectID, chatID bson.ObjectID) ([]models.InviteCodeEmbed, error) {
+	log := logger.WithContext(ctx)
+
+	filter := bson.M{
+		"_id": chatID,
+		"$and": []bson.M{
+			{"participants." + userID.Hex(): bson.M{"$exists": true}},
+		},
+	}
+
+	chat := models.Chat{}
+
+	err := objects.DB.Collection(string(objects.ChatColl)).FindOne(ctx, filter, options.FindOne().SetProjection(bson.M{"invites": 1})).Decode(&chat)
+	if err != nil {
+		log.WithError(err).Error("failed to get group invites")
+		return nil, fmt.Errorf("failed to get group invites: %w", err)
+	}
+
+	invites := chat.InviteCode
+
+	return invites, nil
+}
+
+func DeleteInvite(ctx context.Context, userID bson.ObjectID, inviteID string) error {
+	log := logger.WithContext(ctx)
+
+	inviteIDBytes, err := hex.DecodeString(inviteID)
+	if err != nil {
+		return fmt.Errorf("failed to decode invite ID: %w", err)
+	}
+
+	inviteInfo, err := utils.Decrypt(inviteIDBytes)
+	if err != nil {
+		return fmt.Errorf("failed to decrypt invite ID: %w", err)
+	}
+
+	// trime the inviteInfo to get the chatID
+	chatID := strings.Split(inviteInfo, "_")[0]
+
+	filter := bson.M{
+		"_id": chatID,
+		"$and": []bson.M{
+			{"participants." + userID.Hex(): bson.M{"$exists": true}},
+			{"inviteCode.inviteCode": inviteID},
+		},
+	}
+
+	// set delete status to true of an given inviteID
+	update := bson.M{
+		"$set": bson.M{
+			"inviteCode.$.deleted": true,
+		},
+	}
+
+	_, err = objects.DB.Collection(string(objects.ChatColl)).UpdateOne(ctx, filter, update)
+	if err != nil {
+		log.WithError(err).Error("failed to delete invite")
+		return fmt.Errorf("failed to delete invite: %w", err)
+	}
+
+	return nil
+}
+
+func UpdateInviteStatus(ctx context.Context, chatID bson.ObjectID, inviteID string, status string) error {
+	log := logger.WithContext(ctx)
+
+	filter := bson.M{
+		"_id": chatID,
+		"$and": []bson.M{
+			{"inviteCode.inviteCode": inviteID},
+		},
+	}
+
+	update := bson.M{
+		"$set": bson.M{
+			"inviteCode.$.status": status,
+		},
+	}
+
+	_, err := objects.DB.Collection(string(objects.ChatColl)).UpdateOne(ctx, filter, update)
+	if err != nil {
+		log.WithError(err).Error("failed to update invite status")
+		return fmt.Errorf("failed to update invite status: %w", err)
+	}
+
+	return nil
+}
+
+func GetJoinedUsersByInvite(ctx context.Context, userID bson.ObjectID, inviteID string) ([]bson.ObjectID, error) {
+	log := logger.WithContext(ctx)
+
+	inviteIDBytes, err := hex.DecodeString(inviteID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to decode invite ID: %w", err)
+	}
+
+	inviteInfo, err := utils.Decrypt(inviteIDBytes)
+	if err != nil {
+		return nil, fmt.Errorf("failed to decrypt invite ID: %w", err)
+	}
+
+	// trime the inviteInfo to get the chatID
+	chatID := strings.Split(inviteInfo, "_")[0]
+
+	filter := bson.M{
+		"_id": chatID,
+		"$and": []bson.M{
+			{"participants." + userID.Hex(): bson.M{"$exists": true}},
+			{"inviteCode.inviteCode": inviteID},
+		},
+	}
+
+	chat := models.Chat{}
+
+	err = objects.DB.Collection(string(objects.ChatColl)).FindOne(ctx, filter, options.FindOne().SetProjection(bson.M{"inviteCode": 1})).Decode(&chat)
+	if err != nil {
+		log.WithError(err).Error("failed to get joined users by invite")
+		return nil, fmt.Errorf("failed to get joined users by invite: %w", err)
+	}
+
+	invite := chat.InviteCode[0].UserIDs
+
+	return invite, nil
+}
+
+func SendInviteToUser(ctx context.Context, userID bson.ObjectID, inviteID string, targetUserID bson.ObjectID) error {
+	log := logger.WithContext(ctx)
+
+	inviteIDBytes, err := hex.DecodeString(inviteID)
+	if err != nil {
+		log.WithError(err).Error("failed to decode invite ID")
+		return fmt.Errorf("failed to decode invite ID: %w", err)
+	}
+
+	inviteInfo, err := utils.Decrypt(inviteIDBytes)
+	if err != nil {
+		log.WithError(err).Error("failed to decrypt invite ID")
+		return fmt.Errorf("failed to decrypt invite ID: %w", err)
+	}
+
+	inviteInfoSplit := strings.Split(inviteInfo, "_")
+
+	filter := bson.M{
+		"_id": inviteInfoSplit[0],
+		"$and": []bson.M{
+			{"participants." + targetUserID.Hex(): bson.M{"$exists": false}},
+			{"participants." + userID.Hex(): bson.M{"$exists": true}},
+			{"inviteCode.inviteCode": inviteID},
+		},
+	}
+
+	cntDoc, err := objects.DB.Collection(string(objects.ChatColl)).CountDocuments(ctx, filter)
+	if err != nil {
+		log.WithError(err).Error("failed to get joined users by invite")
+		return fmt.Errorf("failed to get joined users by invite: %w", err)
+	}
+
+	if cntDoc == 0 {
+		log.WithError(fmt.Errorf("user already in the chat")).Warn("user you do not have permission to send invite")
+		return fmt.Errorf("user you do not have permission to send invite or user already in the chat")
+	}
+
+	// invite := chat.InviteCode[0].UserIDs
+
+	return invite, nil
+
 }

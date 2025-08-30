@@ -3,14 +3,15 @@ package controller
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"gin/internal/models"
 	"gin/internal/services"
 	"gin/internal/utils"
+	"gin/logger"
 	"gin/objects"
 	"log"
 	"net/http"
-	"strings"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -27,61 +28,6 @@ type JwtClaims struct {
 	UserID string `json:"user_id"`
 	Email  string `json:"email"`
 	Exp    int64  `json:"exp"`
-}
-
-// authenticateWebSocketToken verifies JWT token for WebSocket connections
-func authenticateWebSocketToken(ctx *gin.Context, tokenString string) (models.User, error) {
-	if !strings.HasPrefix(tokenString, "Bearer ") {
-		return models.User{}, fmt.Errorf("authorization header must be in 'Bearer <token>' format")
-	}
-
-	// Extract token from header
-	token := strings.TrimPrefix(tokenString, "Bearer ")
-	if token == "" {
-		return models.User{}, fmt.Errorf("token cannot be empty")
-	}
-	claims := JwtClaims{}
-
-	// Parse and validate the token
-	parsedToken, err := jwt.ParseWithClaims(token, &claims, func(token *jwt.Token) (interface{}, error) {
-		// Verify the signing method
-		if token.Method.Alg() != jwt.SigningMethodHS256.Alg() {
-			return nil, fmt.Errorf("unexpected signing method: %v", token.Header["alg"])
-		}
-		return []byte(objects.MainConfiguration.JwtSecret), nil
-	})
-
-	if err != nil {
-		return models.User{}, fmt.Errorf("token parsing failed: %w", err)
-	}
-
-	// Check if token is valid
-	if !parsedToken.Valid {
-		return models.User{}, fmt.Errorf("invalid token")
-	}
-
-	// Validate required claims
-	if claims.UserID == "" {
-		return models.User{}, fmt.Errorf("missing user_id in token claims")
-	}
-
-	if claims.Email == "" {
-		return models.User{}, fmt.Errorf("missing email in token claims")
-	}
-
-	// Convert user ID to ObjectID
-	objectID, err := bson.ObjectIDFromHex(claims.UserID)
-	if err != nil {
-		return models.User{}, fmt.Errorf("invalid user ID format: %w", err)
-	}
-
-	reqCtx := ctx.Request.Context()
-	user, err := services.GetUserByID(reqCtx, objectID)
-	if err != nil {
-		return models.User{}, fmt.Errorf("%w", err)
-	}
-
-	return *user, nil
 }
 
 // Helper function to get username from client
@@ -105,6 +51,18 @@ var upgrader = websocket.Upgrader{
 
 // HandleWebSocketChat handles WebSocket connections for chat functionality
 func HandleWebSocketChat(ctx *gin.Context) {
+	user, exists := ctx.Get("user")
+	if !exists {
+		logger.WithContext(ctx).WithError(errors.New("user not found")).Error("User not authenticated")
+		utils.ErrorResponse(ctx, http.StatusUnauthorized, "User not authenticated", nil)
+		return
+	}
+
+	// create a new context with the user
+	reqCtx := context.WithValue(ctx.Request.Context(), "user", user)
+
+	log := logger.WithContext(reqCtx)
+
 	// For WebSocket connections, authenticate via query parameter
 	token := ctx.GetHeader("Authorization")
 	if token == "" {
@@ -113,33 +71,44 @@ func HandleWebSocketChat(ctx *gin.Context) {
 	}
 
 	// Verify the token using our auth logic
-	user, err := authenticateWebSocketToken(ctx, token)
-	if err != nil {
-		log.Printf("WebSocket authentication failed: %v", err)
-		utils.ErrorResponse(ctx, http.StatusUnauthorized, "Authentication failed", err.Error())
+	user, ok := ctx.Get("user")
+	if !ok {
+		log.WithError(fmt.Errorf("user not found")).Error("WebSocket authentication failed")
+		utils.ErrorResponse(ctx, http.StatusUnauthorized, "Authentication failed", "user not found")
+		return
+	}
+
+	userData, ok := user.(models.LoginUserResponse)
+	if !ok {
+		log.WithError(fmt.Errorf("user not found")).Error("WebSocket authentication failed")
+		utils.ErrorResponse(ctx, http.StatusUnauthorized, "Authentication failed", "user not found")
 		return
 	}
 
 	// Upgrade HTTP connection to WebSocket
 	conn, err := upgrader.Upgrade(ctx.Writer, ctx.Request, nil)
 	if err != nil {
-		log.Printf("Failed to upgrade WebSocket connection: %v", err)
+		log.WithError(err).Error("Failed to upgrade WebSocket connection")
 		utils.ErrorResponse(ctx, http.StatusBadRequest, "Failed to upgrade WebSocket connection", nil)
 		return
 	}
 
 	// Create new client (simplified - no username needed)
-	client := services.CreateClient(user.ID, conn)
+	client := services.CreateClient(reqCtx, userData.ID, conn)
 
-	log.Printf("New WebSocket connection established for user: %s (%s)", user.Username, user.ID.Hex())
+	log.WithFields(map[string]interface{}{
+		"user_id":   userData.ID.Hex(),
+		"username":  userData.Username,
+		"client_id": client.ID,
+	}).Info("New WebSocket connection established")
 
 	// Register client with hub
-	services.RegisterClient(client)
+	services.RegisterClient(reqCtx, client)
 
 	// Auto-join user to their active chats
-	err = autoJoinUserChats(client)
+	err = autoJoinUserChats(reqCtx, client)
 	if err != nil {
-		log.Printf("Failed to auto-join user to chats: %v", err)
+		log.WithField("client_id", client.ID).Error(err.Error())
 	}
 
 	// Start sequential handlers for reading and writing
@@ -149,7 +118,6 @@ func HandleWebSocketChat(ctx *gin.Context) {
 	}()
 
 	// // Handle reading in the main routine (blocking)
-	reqCtx := ctx.Request.Context()
 	handleClientRead(reqCtx, client)
 }
 
@@ -266,26 +234,28 @@ func handleClientRead(ctx context.Context, client *models.Client) {
 		// Update client activity
 		client.LastActivity = time.Now()
 
-		contentPreview := request.Content
-		if len(contentPreview) > 50 {
-			contentPreview = contentPreview[:50] + "..."
-		}
-		log.Printf("Received WebSocket request from client %s: Type=%s, ChatID=%s, Content=%s",
-			client.ID, request.Type, request.ChatID, contentPreview+" "+string(message))
+		// contentPreview := request.Content
+		// if len(contentPreview) > 50 {
+		// 	contentPreview = contentPreview[:50] + "..."
+		// }
+		// log.Printf("Received WebSocket request from client %s: Type=%s, ChatID=%s, Content=%s",
+		// 	client.ID, request.Type, request.ChatID, contentPreview+" "+string(message))
 
 		// Process the request
+
 		handleClientRequest(ctx, client, request)
 	}
 }
 
 // handleClientRequest processes different types of client requests
 func handleClientRequest(ctx context.Context, client *models.Client, request models.MessageRequest) {
+
 	switch request.Type {
 	case models.WSRequestTypeSendMessage:
 		handleSendMessage(ctx, client, request)
 
 	case models.WSRequestTypeJoinChat:
-		handleJoinChat(client, request)
+		handleJoinChat(ctx, client, request)
 
 	case models.WSRequestTypeLeaveChat:
 		handleLeaveChat(client, request)
@@ -425,16 +395,43 @@ func handleSendMessage(ctx context.Context, client *models.Client, request model
 }
 
 // handleJoinRoom processes room joining requests
-func handleJoinChat(client *models.Client, request models.MessageRequest) {
-	if request.ChatID == "" {
-		sendErrorResponse(client, request.RequestID, "INVALID_REQUEST", "ChatID is required")
+func handleJoinChat(ctx context.Context, client *models.Client, request models.MessageRequest) {
+	log := logger.WithContext(ctx)
+	userInterface := ctx.Value("user")
+	if userInterface == nil {
+		log.WithError(errors.New("user not Found")).Error("User not authenticated")
+		sendErrorResponse(client, request.RequestID, "USER_NOT_AUTHENTICATED", "User not authenticated")
 		return
 	}
 
-	// Join the chat room
-	services.JoinChatRoom(client, request.ChatID)
+	user, ok := userInterface.(models.LoginUserResponse)
+	if !ok {
+		log.WithError(errors.New("invalid user data")).Error("Invalid user data")
+		sendErrorResponse(client, request.RequestID, "INVALID_USER", "Invalid user data")
+		return
+	}
 
-	log.Printf("Client %s requested to join room %s", client.ID, request.ChatID)
+	targetUserID, err := bson.ObjectIDFromHex(request.SenderID)
+	if err != nil {
+		log.WithError(err).Error("Invalid sender user ID")
+		sendErrorResponse(client, request.RequestID, "INVALID_USER_ID", "Invalid sender user ID")
+		return
+	}
+
+	// create a new chat if it doesn't exist
+	chat, err := services.CreateDirectChat(ctx, user, targetUserID)
+	if err != nil {
+		log.WithError(err).Error("Failed to create chat")
+		sendErrorResponse(client, request.RequestID, "CHAT_CREATION_FAILED", "Failed to create chat")
+		return
+	}
+
+	chatID := chat.ChatID.Hex()
+
+	// Join the chat room
+	services.JoinChatRoom(ctx, client, chatID)
+
+	log.Printf("Client %s requested to join room %s", client.ID, chatID)
 }
 
 // handleLeaveRoom processes room leaving requests
@@ -704,26 +701,32 @@ func handleUpdateChat(client *models.Client, request models.MessageRequest) {
 // ============ UTILITY FUNCTIONS ============
 
 // autoJoinUserChats automatically joins the user to their active chats (sequential)
-func autoJoinUserChats(client *models.Client) error {
+func autoJoinUserChats(ctx context.Context, client *models.Client) error {
+	log := logger.WithContext(ctx)
 	// Get user's chats
-	userChats, err := services.GetUserChats(client.UserID)
+	userChats, err := services.GetUserChats(ctx, client.UserID)
 	if err != nil {
-		log.Printf("Failed to get user chats for auto-join: %v", err)
+		log.WithError(err).Error("Failed to get user chats for auto-join")
 		return err
 	}
 
 	if len(userChats) == 0 {
-		return fmt.Errorf("no chats found for auto-join for client %s", client.ID)
+		log.WithField("client_id", client.ID).Warn("No chats found for auto-join")
+		return nil
 	}
 
 	// Join each chat sequentially
 	for _, chatID := range userChats {
 		// Check if user is still a participant and not blocked
-		services.JoinChatRoom(client, chatID.Hex())
-		log.Printf("Auto-joined client %s to chat %s ", client.ID, chatID.Hex())
+		services.JoinChatRoom(ctx, client, chatID.Hex())
+		fmt.Printf("Auto-joined client %s to chat %s \n", client.ID, chatID.Hex())
 	}
 
-	log.Printf("Auto-join completed for client %s (%d chats)", client.ID, len(userChats))
+	log.WithFields(map[string]interface{}{
+		"user_id":    client.UserID.Hex(),
+		"client_id":  client.ID,
+		"chat_count": len(userChats),
+	}).Info("Auto-join completed")
 	return nil
 }
 

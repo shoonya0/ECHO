@@ -55,8 +55,7 @@ func RunHub() {
 // ============ CLIENT MANAGEMENT ============
 
 // registerClient registers a new client connection
-func registerClient(client *models.Client) {
-	ctx := logger.WithTransactionID(context.Background())
+func registerClient(ctx context.Context, client *models.Client) {
 	log := logger.WithContext(ctx)
 	log.WithFields(map[string]interface{}{
 		"client_id": client.ID,
@@ -184,8 +183,7 @@ func unregisterClient(client *models.Client) {
 // ============ CHAT MANAGEMENT ============
 
 // handleJoinChat adds a client to a chat
-func handleJoinChat(req models.JoinChatRequest) {
-	ctx := logger.WithTransactionID(context.Background())
+func handleJoinChat(ctx context.Context, req models.JoinChatRequest) {
 	log := logger.WithContext(ctx)
 	log.WithFields(map[string]interface{}{
 		"client_id": req.Client.ID,
@@ -570,7 +568,7 @@ func getChatInfoFromDB(chatID string) (*models.Chat, error) {
 
 	chat, err := GetChat(ctx, models.ChatInfo{ChatID: chatObjectID})
 	if err != nil {
-		log.WithError(err).Error("Failed to get chat from database")
+		log.WithError(err).Warn("Failed to get chat from database")
 		return nil, fmt.Errorf("failed to get chat: %w", err)
 	}
 
@@ -745,8 +743,7 @@ func notifyUserPresence(client *models.Client, status string) {
 // ============ PUBLIC API FUNCTIONS ============
 
 // CreateClient creates a new WebSocket client
-func CreateClient(userID bson.ObjectID, conn *websocket.Conn) *models.Client {
-	ctx := logger.WithTransactionID(context.Background())
+func CreateClient(ctx context.Context, userID bson.ObjectID, conn *websocket.Conn) *models.Client {
 	log := logger.WithContext(ctx)
 
 	clientID := uuid.New().String()
@@ -776,14 +773,13 @@ func CreateClient(userID bson.ObjectID, conn *websocket.Conn) *models.Client {
 }
 
 // RegisterClient registers a client with the hub (direct call)
-func RegisterClient(client *models.Client) {
-	ctx := logger.WithTransactionID(context.Background())
+func RegisterClient(ctx context.Context, client *models.Client) {
 	log := logger.WithContext(ctx)
 	log.WithFields(map[string]interface{}{
 		"client_id": client.ID,
 		"user_id":   client.UserID.Hex(),
 	}).Info("Registering client with hub")
-	registerClient(client)
+	registerClient(ctx, client)
 }
 
 // UnregisterClient unregisters a client from the hub (direct call)
@@ -809,8 +805,7 @@ func BroadcastToChat(chatID string, message models.WebSocketMessage) {
 }
 
 // JoinChatRoom adds a client to a chat (direct call)
-func JoinChatRoom(client *models.Client, chatID string) {
-	ctx := logger.WithTransactionID(context.Background())
+func JoinChatRoom(ctx context.Context, client *models.Client, chatID string) {
 	log := logger.WithContext(ctx)
 	log.WithFields(map[string]interface{}{
 		"client_id": client.ID,
@@ -822,7 +817,7 @@ func JoinChatRoom(client *models.Client, chatID string) {
 		Client: client,
 		ChatID: chatID,
 	}
-	handleJoinChat(joinReq)
+	handleJoinChat(ctx, joinReq)
 }
 
 // LeaveChatRoom removes a client from a chat (direct call)
