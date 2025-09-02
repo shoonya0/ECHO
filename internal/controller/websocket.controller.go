@@ -310,7 +310,7 @@ func handleSendMessage(ctx context.Context, client *models.Client, request model
 	}
 
 	// Check if user has permission to send messages in this chat
-	canSend, err := validateMessagePermissions(ctx, client.UserID, chatID, request)
+	canSend, err := validateMessagePermissions(ctx, client.UserID, chatID)
 	if err != nil {
 		log.Printf("Failed to validate message permissions: %v", err)
 		sendErrorResponse(client, request.RequestID, "PERMISSION_CHECK_FAILED", "Failed to validate permissions")
@@ -404,13 +404,6 @@ func handleJoinChat(ctx context.Context, client *models.Client, request models.M
 		return
 	}
 
-	user, ok := userInterface.(models.LoginUserResponse)
-	if !ok {
-		log.WithError(errors.New("invalid user data")).Error("Invalid user data")
-		sendErrorResponse(client, request.RequestID, "INVALID_USER", "Invalid user data")
-		return
-	}
-
 	targetUserID, err := bson.ObjectIDFromHex(request.SenderID)
 	if err != nil {
 		log.WithError(err).Error("Invalid sender user ID")
@@ -419,7 +412,7 @@ func handleJoinChat(ctx context.Context, client *models.Client, request models.M
 	}
 
 	// create a new chat if it doesn't exist
-	chat, err := services.CreateDirectChat(ctx, user, targetUserID)
+	chat, err := services.CreateDirectChat(ctx, targetUserID)
 	if err != nil {
 		log.WithError(err).Error("Failed to create chat")
 		sendErrorResponse(client, request.RequestID, "CHAT_CREATION_FAILED", "Failed to create chat")
@@ -731,7 +724,7 @@ func autoJoinUserChats(ctx context.Context, client *models.Client) error {
 }
 
 // validateMessagePermissions checks if a user can send messages in a chat
-func validateMessagePermissions(ctx context.Context, userID bson.ObjectID, chatID bson.ObjectID, request models.MessageRequest) (bool, error) {
+func validateMessagePermissions(ctx context.Context, userID bson.ObjectID, chatID bson.ObjectID) (bool, error) {
 	// Get chat details
 	chat, err := services.GetChat(ctx, models.ChatInfo{ChatID: chatID})
 	if err != nil {

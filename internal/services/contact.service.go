@@ -13,7 +13,7 @@ import (
 )
 
 // ============ CONTACTS & FRIENDS MANAGEMENT ============
-func GetContacts(userID bson.ObjectID, contactStatus objects.ContactStatus, limit int) ([]models.ContactInfo, error) {
+func GetContacts(ctx context.Context, userID bson.ObjectID, contactStatus objects.ContactStatus, limit int) ([]models.ContactInfo, error) {
 	contactRequests := []models.ContactInfo{}
 
 	contactProjection := bson.M{
@@ -109,14 +109,14 @@ func GetContacts(userID bson.ObjectID, contactStatus objects.ContactStatus, limi
 }
 
 // ============= Contact Actions =============
-func SendContactRequest(userID bson.ObjectID, targetUserID bson.ObjectID) error {
+func SendContactRequest(ctx context.Context, userID bson.ObjectID, targetUserID bson.ObjectID) error {
 	sess, err := objects.DBClient.StartSession()
 	if err != nil {
 		return fmt.Errorf("failed to start session: %w", err)
 	}
-	defer sess.EndSession(context.Background())
+	defer sess.EndSession(ctx)
 
-	_, err = sess.WithTransaction(context.Background(), func(sessCtx context.Context) (interface{}, error) {
+	_, err = sess.WithTransaction(ctx, func(sessCtx context.Context) (interface{}, error) {
 		userFilter := bson.M{"_id": userID}
 		targetFilter := bson.M{"_id": targetUserID}
 
@@ -129,20 +129,21 @@ func SendContactRequest(userID bson.ObjectID, targetUserID bson.ObjectID) error 
 			"contactInfo.contacts":     1,
 		}
 
-		user, err := FindByID[models.User](sessCtx, objects.DB.Collection(string(objects.UserColl)), userFilter, Projection)
+		var user, targetUser *models.User
+		err = objects.DB.Collection(string(objects.UserColl)).FindOne(sessCtx, userFilter, options.FindOne().SetProjection(Projection)).Decode(&user)
 		if err != nil {
 			if err == mongo.ErrNoDocuments {
-				return models.GetUserProfileResponse{}, fmt.Errorf("requesting user not found")
+				return nil, fmt.Errorf("requesting user not found")
 			}
-			return models.GetUserProfileResponse{}, fmt.Errorf("failed to fetch requesting user: %w", err)
+			return nil, fmt.Errorf("failed to fetch requesting user: %w", err)
 		}
 
-		targetUser, err := FindByID[models.User](sessCtx, objects.DB.Collection(string(objects.UserColl)), targetFilter, Projection)
+		err = objects.DB.Collection(string(objects.UserColl)).FindOne(sessCtx, targetFilter, options.FindOne().SetProjection(Projection)).Decode(&targetUser)
 		if err != nil {
 			if err == mongo.ErrNoDocuments {
-				return models.GetUserProfileResponse{}, fmt.Errorf("target user not found")
+				return nil, fmt.Errorf("target user not found")
 			}
-			return models.GetUserProfileResponse{}, fmt.Errorf("failed to fetch target user: %w", err)
+			return nil, fmt.Errorf("failed to fetch target user: %w", err)
 		}
 
 		checkContactRequest := func(user *models.User, targetUserID bson.ObjectID) error {
@@ -170,11 +171,11 @@ func SendContactRequest(userID bson.ObjectID, targetUserID bson.ObjectID) error 
 		}
 
 		if err := checkContactRequest(user, targetUserID); err != nil {
-			return models.GetUserProfileResponse{}, err
+			return nil, err
 		}
 
 		if err := checkContactRequest(targetUser, userID); err != nil {
-			return models.GetUserProfileResponse{}, err
+			return nil, err
 		}
 
 		now := time.Now()
@@ -217,7 +218,7 @@ func SendContactRequest(userID bson.ObjectID, targetUserID bson.ObjectID) error 
 	return nil
 }
 
-func AcceptOrDeclineContactRequest(userID, targetRequestID bson.ObjectID, action string) error {
+func AcceptOrDeclineContactRequest(ctx context.Context, userID, targetRequestID bson.ObjectID, action string) error {
 	sess, err := objects.DBClient.StartSession()
 	if err != nil {
 		return fmt.Errorf("failed to start session: %w", err)
@@ -225,7 +226,6 @@ func AcceptOrDeclineContactRequest(userID, targetRequestID bson.ObjectID, action
 	defer sess.EndSession(context.Background())
 
 	_, err = sess.WithTransaction(context.Background(), func(sessCtx context.Context) (interface{}, error) {
-		// first we have to get the contact request from the database
 		userFilter := bson.M{"_id": userID, "contactInfo.pendingIn": bson.M{"$in": []bson.ObjectID{targetRequestID}}}
 		targetFilter := bson.M{"_id": targetRequestID, "contactInfo.pendingOut": bson.M{"$in": []bson.ObjectID{userID}}}
 
@@ -309,21 +309,25 @@ func AcceptOrDeclineContactRequest(userID, targetRequestID bson.ObjectID, action
 	return nil
 }
 
-func RemoveContact(userID, targetUserID bson.ObjectID) error {
+func RemoveContact(ctx context.Context, userID, targetUserID bson.ObjectID) error {
 	sess, err := objects.DBClient.StartSession()
 	if err != nil {
 		return fmt.Errorf("failed to start session: %w", err)
 	}
-	defer sess.EndSession(context.Background())
+	defer sess.EndSession(ctx)
 
-	_, err = sess.WithTransaction(context.Background(), func(sessCtx context.Context) (interface{}, error) {
+	_, err = sess.WithTransaction(ctx, func(sessCtx context.Context) (interface{}, error) {
 		userFilter := bson.M{"_id": userID, "contactInfo.contacts." + targetUserID.Hex(): bson.M{"$exists": true}}
 
-		userContact, err := FindByID[models.ContactRequest](sessCtx, objects.DB.Collection(string(objects.UserColl)), userFilter, bson.M{
+		var userContact models.ContactRequest
+		err = objects.DB.Collection(string(objects.UserColl)).FindOne(sessCtx, userFilter, options.FindOne().SetProjection(bson.M{
 			"_id":                  1,
 			"contactInfo.contacts": bson.M{targetUserID.Hex(): 1},
-		})
+		})).Decode(&userContact)
 		if err != nil {
+			if err == mongo.ErrNoDocuments {
+				return nil, fmt.Errorf("user not found")
+			}
 			return nil, fmt.Errorf("failed to fetch user contact: %w", err)
 		}
 
@@ -377,14 +381,16 @@ func RemoveContact(userID, targetUserID bson.ObjectID) error {
 	return err
 }
 
-func BlockUnblockUser(userID, targetUserID bson.ObjectID, action string) error {
+func BlockUnblockUser(ctx context.Context, userID, targetUserID bson.ObjectID, action string) error {
 	userFilter := bson.M{"_id": userID, "contactInfo.contacts." + targetUserID.Hex(): bson.M{"$exists": true}}
 
-	userContact, err := FindByID[models.ContactRequest](context.Background(), objects.DB.Collection(string(objects.UserColl)), userFilter, bson.M{
+	var userContact models.ContactRequest
+
+	err := objects.DB.Collection(string(objects.UserColl)).FindOne(ctx, userFilter, options.FindOne().SetProjection(bson.M{
 		"_id":                      1,
 		"contactInfo.blockedChats": bson.M{targetUserID.Hex(): 1},
 		"contactInfo.contacts":     bson.M{targetUserID.Hex(): 1},
-	})
+	})).Decode(&userContact)
 	if err != nil {
 		if err == mongo.ErrNoDocuments {
 			return fmt.Errorf("user not found")
@@ -422,7 +428,7 @@ func BlockUnblockUser(userID, targetUserID bson.ObjectID, action string) error {
 		}
 	}
 
-	_, err = UpdateOne(context.Background(), objects.DB.Collection(string(objects.UserColl)), userFilter, userUpdate)
+	_, err = UpdateOne(ctx, objects.DB.Collection(string(objects.UserColl)), userFilter, userUpdate)
 	if err != nil {
 		return fmt.Errorf("failed to update user contact: %w", err)
 	}
@@ -430,15 +436,16 @@ func BlockUnblockUser(userID, targetUserID bson.ObjectID, action string) error {
 	return err
 }
 
-func AddToFavorites(userID, targetUserID bson.ObjectID) error {
+func AddToFavorites(ctx context.Context, userID, targetUserID bson.ObjectID) error {
 	userFilter := bson.M{"_id": userID, "contactInfo.contacts." + targetUserID.Hex(): bson.M{"$exists": true}}
 
-	userContact, err := FindByID[models.ContactRequest](context.Background(), objects.DB.Collection(string(objects.UserColl)), userFilter, bson.M{
+	var userContact models.ContactRequest
+	err := objects.DB.Collection(string(objects.UserColl)).FindOne(ctx, userFilter, options.FindOne().SetProjection(bson.M{
 		"_id":                      1,
 		"contactInfo.favorites":    1,
 		"contactInfo.blockedChats": 1,
 		"contactInfo.contacts":     1,
-	})
+	})).Decode(&userContact)
 	if err != nil {
 		if err == mongo.ErrNoDocuments {
 			return fmt.Errorf("user not found")
@@ -465,7 +472,7 @@ func AddToFavorites(userID, targetUserID bson.ObjectID) error {
 		},
 	}
 
-	_, err = UpdateOne(context.Background(), objects.DB.Collection(string(objects.UserColl)), userFilter, updateProjection)
+	_, err = UpdateOne(ctx, objects.DB.Collection(string(objects.UserColl)), userFilter, updateProjection)
 	if err != nil {
 		return fmt.Errorf("failed to update user contact: %w", err)
 	}
@@ -473,14 +480,15 @@ func AddToFavorites(userID, targetUserID bson.ObjectID) error {
 	return nil
 }
 
-func RemoveFromFavorites(userID, targetUserID bson.ObjectID) error {
+func RemoveFromFavorites(ctx context.Context, userID, targetUserID bson.ObjectID) error {
 	userFilter := bson.M{"_id": userID, "contactInfo.favorites." + targetUserID.Hex(): bson.M{"$exists": true}}
 
-	userContact, err := FindByID[models.ContactRequest](context.Background(), objects.DB.Collection(string(objects.UserColl)), userFilter, bson.M{
+	var userContact models.ContactRequest
+	err := objects.DB.Collection(string(objects.UserColl)).FindOne(ctx, userFilter, options.FindOne().SetProjection(bson.M{
 		"_id":                   1,
 		"contactInfo.favorites": 1,
 		"contactInfo.contacts":  1,
-	})
+	})).Decode(&userContact)
 
 	if err != nil {
 		if err == mongo.ErrNoDocuments {
@@ -504,7 +512,7 @@ func RemoveFromFavorites(userID, targetUserID bson.ObjectID) error {
 		},
 	}
 
-	_, err = UpdateOne(context.Background(), objects.DB.Collection(string(objects.UserColl)), userFilter, updateProjection)
+	_, err = UpdateOne(ctx, objects.DB.Collection(string(objects.UserColl)), userFilter, updateProjection)
 	if err != nil {
 		return fmt.Errorf("failed to update user contact: %w", err)
 	}

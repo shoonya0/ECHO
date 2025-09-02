@@ -440,7 +440,7 @@ func removeClientFromChat(client *models.Client, chatID string) {
 // ============ MESSAGE BROADCASTING ============
 
 // broadcastMessage broadcasts a message to appropriate clients
-func broadcastMessage(hubMsg models.HubMessage) {
+func BroadcastMessage(hubMsg models.HubMessage) {
 	ctx := logger.WithTransactionID(context.Background())
 	log := logger.WithContext(ctx)
 	log.WithFields(map[string]interface{}{

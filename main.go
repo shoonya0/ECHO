@@ -27,7 +27,7 @@ func init() {
 	flag.StringVar(&port, "port", ":8080", "The port to listen on.")
 	flag.BoolVar(&ver, "version", true, "Print server version.")
 	flag.StringVar(&configPath, "config", "", "Path to the configuration file.")
-	Level = logrus.InfoLevel
+	Level = logrus.DebugLevel
 }
 
 func main() {

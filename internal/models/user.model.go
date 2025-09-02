@@ -35,6 +35,8 @@ type User struct {
 
 	// Chats used for quick access (chatID -> unread count)
 	Chats map[bson.ObjectID]int `json:"chats" bson:"chats"`
+	// ChatInvitations is the list of +Token+ that the user is invited to
+	ChatInvitations []ChatInvitationEmbed `json:"chatInvitations" bson:"chatInvitations"`
 
 	// Timestamps
 	CreatedAt time.Time `json:"createdAt" bson:"createdAt"`
@@ -90,4 +92,9 @@ type MessagePrefsEmbed struct {
 	AutoDownloadImages   bool `json:"autoDownloadImages" bson:"autoDownloadImages"`
 	AutoDownloadFiles    bool `json:"autoDownloadFiles" bson:"autoDownloadFiles"`
 	ShowEmojiSuggestions bool `json:"showEmojiSuggestions" bson:"showEmojiSuggestions"`
+}
+
+type ChatInvitationEmbed struct {
+	Token  string `json:"token" bson:"token"`
+	Status string `json:"status" bson:"status"` // "pending", "accepted", "rejected"
 }

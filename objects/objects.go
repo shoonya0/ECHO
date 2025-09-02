@@ -138,6 +138,8 @@ var (
 	FileLog           *logrus.Logger
 )
 
+type UserData string
+
 // ContextKey is a type for context keys
 type ContextKey string
 
@@ -148,4 +150,6 @@ const (
 	UserIDKey ContextKey = "user_id"
 	// RequestIDKey is the context key for request ID
 	RequestIDKey ContextKey = "request_id"
+	// UserDataKey is the context key for user data
+	UserDataKey UserData = "user"
 )

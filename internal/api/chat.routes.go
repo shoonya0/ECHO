@@ -2,7 +2,6 @@ package routes
 
 import (
 	"gin/internal/controller"
-	"gin/internal/middleware"
 	"gin/objects"
 
 	"github.com/gin-gonic/gin"
@@ -17,16 +16,12 @@ func RegisterChatRoutes(r *gin.Engine) {
 	}
 
 	chatApi := r.Group(objects.ApiBasePath)
-	chatApi.Use(middleware.AuthMiddleware)
 
 	// ============ CHAT MANAGEMENT ROUTES ============
 	chatRoutes := chatApi.Group("chats")
 	{
-		chatRoutes.POST("/direct", controller.CreateDirectChatHTTP) // Create direct chat
-		chatRoutes.POST("/group", controller.CreateGroupChatHTTP)   // Create group chat
-		// add target users to group after group creation (this rout take array of user ids)
-		// chatRoutes.POST("/group/add-members", controller.AddGroupMembersHTTP)
-		chatRoutes.GET("/messages", controller.GetChatMessagesHTTP) // Get chat messages with pagination
+		chatRoutes.POST("/direct/:userId", controller.CreateDirectChatHTTP) // Create direct chat
+		chatRoutes.POST("/group", controller.CreateGroupChatHTTP)           // Create group chat
 
 		// Monitoring (for admin/debugging)
 		chatRoutes.GET("/hub/stats", controller.GetHubStatsHTTP) // Get WebSocket hub statistics
@@ -39,7 +34,8 @@ func RegisterChatRoutes(r *gin.Engine) {
 	messageRoutes := chatApi.Group("messages")
 	{
 		// Group Messages (legacy endpoint for backward compatibility)
-		messageRoutes.GET("/groups/chat", controller.GetGroupMessages) // Get group message history
+		messageRoutes.GET("/:chatID/messages", controller.GetChatMessagesHTTP) // Get chat messages with pagination
+		messageRoutes.GET("/groups/chat", controller.GetGroupMessages)         // Get group message history
 
 		// 		// Message Operations (Future implementations)
 		// 		messageRoutes.PUT("/:messageID", controller.EditMessage)                        // Edit message
@@ -63,7 +59,7 @@ func RegisterChatRoutes(r *gin.Engine) {
 		// 		groupRoutes.GET("/", controller.GetUserGroups)          // Get user's groups
 
 		// 		// Member Management
-		// 		groupRoutes.POST("/:groupID/members", controller.AddGroupMember)               // Add member
+		groupRoutes.POST("/:groupID/add-members", controller.AddGroupMembersHTTP) // Add group members by admin
 		// 		groupRoutes.DELETE("/:groupID/members/:userID", controller.RemoveGroupMember)  // Remove member
 		// 		groupRoutes.PUT("/:groupID/members/:userID/role", controller.UpdateMemberRole) // Update role
 		// 		groupRoutes.GET("/:groupID/members", controller.GetGroupMembers)               // Get members
@@ -94,11 +90,11 @@ func RegisterChatRoutes(r *gin.Engine) {
 		// send an invite code to an user
 		groupRoutes.POST("/invites/:inviteID/:userID/send", controller.SendInviteToUser) // Send invite to user
 
-		// join a group via an invite code
+		// join a group via an invite code -> user route
 		groupRoutes.POST("/join/:inviteCode", controller.JoinGroupByInvite) // Join via invite
 
 		// get all invite chat of an user
-		// groupRoutes.GET("/invites", controller.GetAllInvites) // Get all invites of an user
+		groupRoutes.GET("/invites", controller.GetAllInvitesOfUser) // Get all invites of an user
 	}
 
 	// 	// ============ CHANNEL ROUTES (for Discord-like functionality) ============

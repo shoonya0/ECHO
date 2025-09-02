@@ -151,7 +151,7 @@ func AuthMiddleware(ctx *gin.Context) {
 
 	objectID, err := bson.ObjectIDFromHex(claims.RegisteredClaims.Subject)
 	if err != nil {
-		log.WithError(err).Error("Invalid user ID format")
+		log.Debug("Invalid user ID format")
 		utils.ErrorResponse(ctx, http.StatusUnauthorized, "invalid user id format", err.Error())
 		ctx.Abort()
 		return
@@ -167,10 +167,10 @@ func AuthMiddleware(ctx *gin.Context) {
 
 	ctx.Set("user", user)
 	log.WithFields(map[string]interface{}{
-		"user_id":  user.ID.Hex(),
+		"userId":   user.ID.Hex(),
 		"email":    user.Email,
 		"username": user.Username,
-	}).Info("User authenticated successfully")
+	}).Debug("User authenticated successfully")
 
 	ctx.Next()
 }

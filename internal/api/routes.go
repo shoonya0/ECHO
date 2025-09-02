@@ -34,7 +34,7 @@ func Signup() gin.HandlerFunc {
 
 		var req SignupRequest
 		if err := c.ShouldBindJSON(&req); err != nil {
-			log.WithError(err).Error("invalid request")
+			log.WithError(err).Debug("invalid request")
 			utils.ErrorResponse(c, http.StatusBadRequest, "invalid request", err.Error())
 			return
 		}
@@ -46,14 +46,14 @@ func Signup() gin.HandlerFunc {
 			return
 		}
 		if count > 0 {
-			log.WithError(err).Error("email already registered")
+			log.WithError(err).Debug("email already registered")
 			utils.ErrorResponse(c, http.StatusConflict, "email already registered", nil)
 			return
 		}
 
 		hash, err := bcrypt.GenerateFromPassword([]byte(req.Password), bcrypt.DefaultCost)
 		if err != nil {
-			log.WithError(err).Error("could not hash password")
+			log.WithError(err).Debug("could not hash password")
 			utils.ErrorResponse(c, http.StatusInternalServerError, "could not hash password", err.Error())
 			return
 		}
@@ -77,13 +77,13 @@ func Login() gin.HandlerFunc {
 
 		var req LoginRequest
 		if err := c.ShouldBindJSON(&req); err != nil {
-			log.WithError(err).Error("invalid request")
+			log.Debug("invalid request")
 			utils.ErrorResponse(c, http.StatusBadRequest, "invalid request", err.Error())
 			return
 		}
 
 		if req.Email == "" || req.Password == "" {
-			log.Error("email and password are required")
+			log.Debug("email and password are required")
 			utils.ErrorResponse(c, http.StatusBadRequest, "email and password are required", nil)
 			return
 		}
@@ -102,7 +102,7 @@ func Login() gin.HandlerFunc {
 
 		err := objects.DB.Collection(string(objects.UserColl)).FindOne(c.Request.Context(), bson.M{"email": req.Email}, options.FindOne().SetProjection(userProjection)).Decode(&user)
 		if err == mongo.ErrNoDocuments {
-			log.Error("invalid credentials")
+			log.Debug("invalid credentials")
 			utils.ErrorResponse(c, http.StatusUnauthorized, "invalid credentials", err.Error())
 			return
 		} else if err != nil {
@@ -114,14 +114,14 @@ func Login() gin.HandlerFunc {
 		if err := bcrypt.CompareHashAndPassword(
 			[]byte(user.PasswordHash), []byte(req.Password),
 		); err != nil {
-			log.WithError(err).Error("invalid credentials")
+			log.WithError(err).Debug("invalid credentials")
 			utils.ErrorResponse(c, http.StatusUnauthorized, "invalid credentials", err.Error())
 			return
 		}
 
 		token, err := utils.GetJWTToken(user.ID.Hex(), user.Email, user.Username, user.Profile, user.AccountStatus, time.Now().Add(7*24*time.Hour).Unix())
 		if err != nil {
-			log.WithError(err).Error("could not generate token")
+			log.WithError(err).Debug("could not generate token")
 			utils.ErrorResponse(c, http.StatusInternalServerError, "could not generate token", err.Error())
 			return
 		}
@@ -144,13 +144,3 @@ func RegisterAPIRoutes(r *gin.Engine) {
 	RegisterUserRoutes(r)
 	RegisterChatRoutes(r)
 }
-
-// only create the chat when any user send a message to the other user
-// if any things is deleted don't marked it's deleted , just remove the chat from the user's contacts
-
-// make an invite code for the group chat
-// create invite code for any chatID
-// list all invite code of any specific chatID
-// update status of invite code
-// no of person joined via invite code (stroe only userID)
-// when user join via invite code , then add the user to the chat

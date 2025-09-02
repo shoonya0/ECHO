@@ -46,7 +46,6 @@ func GetUserChats(ctx context.Context, userID bson.ObjectID) ([]bson.ObjectID, e
 	return chats, nil
 }
 
-// GetChat retrieves chat information with basic details
 func GetChat(ctx context.Context, chatInfo models.ChatInfo) (models.Chat, error) {
 	chatFilter := bson.M{"_id": chatInfo.ChatID}
 	chatProjection := bson.M{
@@ -60,51 +59,63 @@ func GetChat(ctx context.Context, chatInfo models.ChatInfo) (models.Chat, error)
 		"updatedAt":     1,
 	}
 
-	chat, err := FindByID[models.Chat](ctx, objects.DB.Collection(string(objects.ChatColl)), chatFilter, chatProjection)
+	var chat models.Chat
+
+	err := objects.DB.Collection(string(objects.ChatColl)).FindOne(ctx, chatFilter, options.FindOne().SetProjection(chatProjection)).Decode(&chat)
 	if err != nil {
-		return models.Chat{}, fmt.Errorf("failed to get chat: %w", err)
+		return chat, fmt.Errorf("failed to get chat: %w", err)
 	}
 
-	return *chat, nil
+	return chat, nil
 }
 
-// GetChatWithMessages retrieves chat with recent messages
-func GetChatWithMessages(ctx context.Context, chatID bson.ObjectID, limit int, offset int) (models.Chat, []models.Message, error) {
-
-	// Get chat details
+func GetChatWithMessages(ctx context.Context, chatID bson.ObjectID, limit int, offset int) ([]models.Message, error) {
 	chat, err := GetChat(ctx, models.ChatInfo{ChatID: chatID})
 	if err != nil {
-		return models.Chat{}, nil, fmt.Errorf("failed to get chat: %w", err)
+		return nil, fmt.Errorf("failed to get chat: %w", err)
 	}
 
-	// Get recent messages
-	messageFilter := bson.M{"chatId": chatID}
+	messageFilter := bson.M{"chatId": chat.ChatID}
 
-	// Get recent messages using FindAll
-	messages, err := FindAll[models.Message](
-		ctx,
-		objects.DB.Collection(string(objects.MessageColl)),
-		messageFilter,
-		bson.M{},                // No projection, get all fields
-		bson.M{"createdAt": -1}, // Sort by createdAt descending (most recent first)
-		int64(limit),
-		int64(offset),
-	)
-	if err != nil {
-		return chat, nil, fmt.Errorf("failed to get messages: %w", err)
+	var messages []models.Message
+	messageProjection := bson.M{
+		"_id":             1,
+		"senderId":        1,
+		"sender":          1,
+		"content":         1,
+		"messageType":     1,
+		"thread.threadId": 1,
+		"reactions":       1,
+		"mentions":        1,
+		"status":          1,
+		"createdAt":       1,
+		"updatedAt":       1,
 	}
 
-	// Reverse messages to show oldest first
+	for i := 0; i < limit; i++ {
+		var message models.Message
+		err := objects.DB.Collection(string(objects.MessageColl)).FindOne(ctx, messageFilter, options.FindOne().SetProjection(messageProjection)).Decode(&message)
+		if err != nil {
+			return messages, fmt.Errorf("failed to get messages: %w", err)
+		}
+		messages = append(messages, message)
+		messageFilter["_id"] = message.ID
+	}
+
 	for i := 0; i < len(messages)/2; i++ {
 		j := len(messages) - 1 - i
 		messages[i], messages[j] = messages[j], messages[i]
 	}
 
-	return chat, messages, nil
+	return messages, nil
 }
 
 // ============ CHAT MANAGEMENT ============
-func CreateDirectChat(ctx context.Context, user models.LoginUserResponse, targetUserID bson.ObjectID) (*models.Chat, error) {
+func CreateDirectChat(ctx context.Context, targetUserID bson.ObjectID) (*models.Chat, error) {
+	user := ctx.Value(objects.UserDataKey).(models.LoginUserResponse)
+	if user == (models.LoginUserResponse{}) {
+		return nil, fmt.Errorf("invalid user data")
+	}
 
 	filter := bson.M{
 		"chatType": "direct",
@@ -161,28 +172,26 @@ func CreateDirectChat(ctx context.Context, user models.LoginUserResponse, target
 					},
 				}
 
-				// insert the chat into the database
 				_, err = objects.DB.Collection(string(objects.ChatColl)).InsertOne(ctx, chat)
 				if err != nil {
 					return nil, fmt.Errorf("failed to insert chat: %w", err)
 				}
 
-				// chats is the map[bson.ObjectID]int
+				filter := bson.M{
+					"_id": bson.M{
+						"$in": []bson.ObjectID{user.ID, targetUserID},
+					},
+				}
+
 				projection := bson.M{
 					"$set": bson.M{
 						"chats." + chat.ChatID.Hex(): 0,
 					},
 				}
 
-				_, err = objects.DB.Collection(string(objects.UserColl)).UpdateOne(ctx, bson.M{"_id": user.ID}, projection)
+				_, err = objects.DB.Collection(string(objects.UserColl)).UpdateMany(ctx, filter, projection)
 				if err != nil {
 					return nil, fmt.Errorf("failed to update user: %w", err)
-				}
-
-				// push chatId to the target user
-				_, err = objects.DB.Collection(string(objects.UserColl)).UpdateOne(ctx, bson.M{"_id": targetUserID}, projection)
-				if err != nil {
-					return nil, fmt.Errorf("failed to update target user: %w", err)
 				}
 
 				chatInfo = chat
@@ -202,60 +211,69 @@ func CreateDirectChat(ctx context.Context, user models.LoginUserResponse, target
 	return &existingChat, nil
 }
 
-// CreateGroupChat creates a new group chat
-func CreateGroupChat(ctx context.Context, creatorID bson.ObjectID, name, description string, participantIDs []bson.ObjectID) (*models.Chat, error) {
-	now := time.Now()
-
-	// Get creator details
-	creator, err := GetUserByID(ctx, creatorID)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get creator: %w", err)
+func CreateGroupChat(ctx context.Context, chatName, description string, participantIDs []bson.ObjectID) (*models.Chat, error) {
+	creator := ctx.Value(objects.UserDataKey).(models.LoginUserResponse)
+	if creator == (models.LoginUserResponse{}) {
+		return nil, fmt.Errorf("invalid user data")
 	}
+
+	now := time.Now()
 
 	participants := make(map[bson.ObjectID]models.ParticipantEmbed)
 
-	// Add creator as owner (using ParticipantRef without embedded user data)
-	participants[creatorID] = models.ParticipantEmbed{
-		Role: "owner",
+	participants[creator.ID] = models.ParticipantEmbed{
+		RequestStatus: string(objects.StatusAccepted),
+		OnlineStatus:  "online",
+		RequestedBy:   creator.ID,
+		Permissions:   []string{string(objects.ChatPermissionRead), string(objects.ChatPermissionWrite)},
+		IsBlocked:     false,
 		UserInfo: models.ContactUserInfo{
-			UserID:      creatorID,
+			UserID:      creator.ID,
 			DisplayName: creator.Profile.DisplayName,
 			Username:    creator.Username,
 			Avatar:      creator.Profile.Avatar,
 		},
-		JoinedAt: now,
+		LastSeen:  time.Time{},
+		IsMuted:   false,
+		Role:      string(objects.ChatRoleOwner),
+		CreatedAt: now,
+		UpdatedAt: now,
+		JoinedAt:  now,
 	}
 
-	// Add other participants
-	for _, userID := range participantIDs {
-		if userID == creatorID {
-			continue // Skip creator, already added
-		}
+	users, err := GetUsersByIDs(ctx, participantIDs)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get users: %w", err)
+	}
 
-		// Just verify user exists, but don't embed user data
-		_, err := GetUserByID(ctx, userID)
-		if err != nil {
-			continue // Skip invalid users
-		}
-
-		participants[userID] = models.ParticipantEmbed{
-			Role: "member",
+	for _, user := range users {
+		participants[user.ID] = models.ParticipantEmbed{
+			RequestStatus: string(objects.StatusPending),
+			OnlineStatus:  "offline",
+			RequestedBy:   creator.ID,
+			Permissions:   []string{string(objects.ChatPermissionRead), string(objects.ChatPermissionWrite)},
+			IsBlocked:     false,
 			UserInfo: models.ContactUserInfo{
-				UserID:      userID,
-				DisplayName: "Member",
-				Username:    "member",
-				Avatar:      "https://example.com/avatar.png",
+				UserID:      user.ID,
+				DisplayName: user.Profile.DisplayName,
+				Username:    user.Username,
+				Avatar:      user.Profile.Avatar,
 			},
-			JoinedAt: now,
+			LastSeen:  time.Time{},
+			IsMuted:   false,
+			Role:      string(objects.ChatRoleMember),
+			CreatedAt: now,
+			UpdatedAt: now,
+			JoinedAt:  now,
 		}
 	}
 
 	chat := models.Chat{
-		ChatType:     "group",
-		Name:         name,
+		ChatType:     string(objects.ChatTypeGroup),
+		Name:         chatName,
 		Description:  description,
-		OwnerID:      creatorID,
-		AdminIDs:     []bson.ObjectID{creatorID},
+		OwnerID:      creator.ID,
+		AdminIDs:     []bson.ObjectID{creator.ID},
 		Participants: participants,
 		Stats: models.ChatStatsEmbed{
 			ParticipantCount: len(participants),
@@ -269,7 +287,7 @@ func CreateGroupChat(ctx context.Context, creatorID bson.ObjectID, name, descrip
 		},
 		ReadReceipts:  make(map[bson.ObjectID]time.Time),
 		TypingUsers:   make(map[bson.ObjectID]time.Time),
-		ActiveClients: make(map[string]*models.Client), // Initialize for real-time capabilities
+		ActiveClients: make(map[string]*models.Client),
 		LastActivity:  now,
 		CreatedAt:     now,
 		UpdatedAt:     now,
@@ -619,6 +637,73 @@ func cleanupEmptyReaction(messageID bson.ObjectID, emoji string) {
 	objects.DB.Collection(string(objects.MessageColl)).UpdateOne(ctx, filter, update)
 }
 
+func AddGroupMember(ctx context.Context, userID bson.ObjectID, chatID bson.ObjectID, participantIDs []bson.ObjectID) error {
+	filter := bson.M{
+		"_id":      chatID,
+		"chatType": string(objects.ChatTypeGroup),
+	}
+
+	count, err := objects.DB.Collection(string(objects.ChatColl)).CountDocuments(ctx, filter)
+	if err != nil {
+		return fmt.Errorf("failed to get chat: %w", err)
+	}
+
+	if count == 0 {
+		return fmt.Errorf("chat not found")
+	}
+
+	sess, err := objects.DB.Client().StartSession()
+	if err != nil {
+		return fmt.Errorf("failed to start session: %w", err)
+	}
+	defer sess.EndSession(ctx)
+
+	_, err = sess.WithTransaction(ctx, func(sessCtx context.Context) (interface{}, error) {
+		users, err := GetUsersByIDs(ctx, participantIDs)
+		if err != nil {
+			return nil, fmt.Errorf("failed to get users: %w", err)
+		}
+
+		participants := make(map[bson.ObjectID]models.ParticipantEmbed)
+
+		for _, user := range users {
+			participants[user.ID] = models.ParticipantEmbed{
+				RequestStatus: string(objects.StatusPending),
+				OnlineStatus:  "offline",
+				RequestedBy:   userID,
+				Permissions:   []string{string(objects.ChatPermissionRead), string(objects.ChatPermissionWrite)},
+				IsBlocked:     false,
+				UserInfo: models.ContactUserInfo{
+					UserID:      user.ID,
+					DisplayName: user.Profile.DisplayName,
+					Username:    user.Username,
+					Avatar:      user.Profile.Avatar,
+				},
+				LastSeen:  time.Time{},
+				IsMuted:   false,
+				Role:      string(objects.ChatRoleMember),
+				CreatedAt: time.Now(),
+				UpdatedAt: time.Now(),
+				JoinedAt:  time.Now(),
+			}
+		}
+
+		_, err = objects.DB.Collection(string(objects.ChatColl)).UpdateOne(ctx, filter, bson.M{
+			"$set": bson.M{
+				"participants": participants,
+				"updatedAt":    time.Now(),
+			},
+		})
+		if err != nil {
+			return nil, fmt.Errorf("failed to update chat: %w", err)
+		}
+
+		return nil, nil
+	})
+
+	return err
+}
+
 // ================ Invites ================
 func CreateInvite(ctx context.Context, userID bson.ObjectID, chatID bson.ObjectID) (*models.InviteCodeEmbed, error) {
 	log := logger.WithContext(ctx)
@@ -810,6 +895,16 @@ func SendInviteToUser(ctx context.Context, userID bson.ObjectID, inviteID string
 	}
 
 	inviteInfoSplit := strings.Split(inviteInfo, "_")
+	expireTime, err := time.Parse(time.RFC3339, inviteInfoSplit[3])
+	if err != nil {
+		log.WithError(err).Error("failed to parse expire time")
+		return fmt.Errorf("failed to parse expire time: %w", err)
+	}
+
+	if expireTime.Before(time.Now()) {
+		log.WithError(fmt.Errorf("invalid invite code")).Error("invalid invite code")
+		return fmt.Errorf("invalid invite code")
+	}
 
 	filter := bson.M{
 		"_id": inviteInfoSplit[0],
@@ -831,8 +926,79 @@ func SendInviteToUser(ctx context.Context, userID bson.ObjectID, inviteID string
 		return fmt.Errorf("user you do not have permission to send invite or user already in the chat")
 	}
 
-	// invite := chat.InviteCode[0].UserIDs
+	targetUserProjection := bson.M{
+		"$push": bson.M{
+			"chatInvitations": models.ChatInvitationEmbed{
+				Token:  inviteID,
+				Status: "pending",
+			},
+		},
+	}
+	_, err = objects.DB.Collection(string(objects.UserColl)).UpdateOne(ctx, bson.M{"_id": targetUserID}, targetUserProjection)
+	if err != nil {
+		log.WithError(err).Error("failed to update target user")
+		return fmt.Errorf("failed to update target user: %w", err)
+	}
 
-	return invite, nil
+	return nil
+}
 
+func JoinGroupByInvite(ctx context.Context, userID bson.ObjectID, inviteID string) error {
+	log := logger.WithContext(ctx)
+
+	inviteIDBytes, err := hex.DecodeString(inviteID)
+	if err != nil {
+		log.WithError(err).Error("failed to decode invite ID")
+		return fmt.Errorf("failed to decode invite ID: %w", err)
+	}
+
+	inviteInfo, err := utils.Decrypt(inviteIDBytes)
+	if err != nil {
+		log.WithError(err).Error("failed to decrypt invite ID")
+		return fmt.Errorf("failed to decrypt invite ID: %w", err)
+	}
+
+	inviteInfoSplit := strings.Split(inviteInfo, "_")
+
+	chatID := inviteInfoSplit[0]
+	SendByUserID := inviteInfoSplit[1]
+
+	expireTime, err := time.Parse(time.RFC3339, inviteInfoSplit[3])
+	if err != nil {
+		log.WithError(err).Error("failed to parse expire time")
+		return fmt.Errorf("failed to parse expire time: %w", err)
+	}
+
+	if expireTime.Before(time.Now()) || expireTime.After(time.Now().Add(24*time.Hour)) {
+		log.WithError(fmt.Errorf("invalid invite code")).Error("invalid invite code")
+		return fmt.Errorf("invalid invite code")
+	}
+
+	chatObjectID, err := bson.ObjectIDFromHex(chatID)
+	if err != nil {
+		log.WithError(err).Error("failed to decode chat ID")
+		return fmt.Errorf("failed to decode chat ID: %w", err)
+	}
+
+	sendByUserID, err := bson.ObjectIDFromHex(SendByUserID)
+	if err != nil {
+		log.WithError(err).Error("failed to decode send by user ID")
+		return fmt.Errorf("failed to decode send by user ID: %w", err)
+	}
+
+	return AddGroupMember(ctx, sendByUserID, chatObjectID, []bson.ObjectID{userID})
+}
+
+func GetAllInvitesOfUser(ctx context.Context, userID bson.ObjectID) ([]models.ChatInvitationEmbed, error) {
+	log := logger.WithContext(ctx)
+
+	invites := []models.ChatInvitationEmbed{}
+
+	err := objects.DB.Collection(string(objects.UserColl)).FindOne(ctx, bson.M{"_id": userID}, options.FindOne().SetProjection(bson.M{"chatInvitations": 1})).Decode(&invites)
+	if err != nil {
+		log.WithError(err).Error("failed to get all invites of user")
+		return nil, fmt.Errorf("failed to get all invites of user: %w", err)
+	}
+
+	return invites, nil
 }

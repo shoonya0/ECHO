@@ -19,7 +19,7 @@ func LoggerMiddleware() gin.HandlerFunc {
 		c.Request = c.Request.WithContext(ctx)
 
 		// Add user ID to context if available
-		if userID, exists := c.Get("user_id"); exists {
+		if userID, exists := c.Get("userId"); exists {
 			ctx = logger.WithUserID(ctx, userID.(string))
 			c.Request = c.Request.WithContext(ctx)
 		}

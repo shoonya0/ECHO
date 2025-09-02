@@ -2,8 +2,8 @@ package services
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
+	"gin/internal/models"
 	"gin/logger"
 
 	"go.mongodb.org/mongo-driver/v2/bson"
@@ -11,42 +11,14 @@ import (
 	"go.mongodb.org/mongo-driver/v2/mongo/options"
 )
 
-// BuildPartialDocument creates a MongoDB update document only with non-nil fields
-// This prevents updating fields that weren't provided in the request
-func BuildPartialDocument(updateReq interface{}) bson.M {
-	updateDoc := bson.M{}
-
-	jsonData, err := json.Marshal(updateReq)
-	if err != nil {
-		return updateDoc
-	}
-
-	var dataMap map[string]interface{}
-	if err := json.Unmarshal(jsonData, &dataMap); err != nil {
-		return updateDoc
-	}
-
-	buildNestedUpdate("", dataMap, updateDoc)
-
-	return updateDoc
-}
-
-func buildNestedUpdate(prefix string, data map[string]interface{}, updateDoc bson.M) {
-	for key, value := range data {
-		fullKey := key
-		if prefix != "" {
-			fullKey = prefix + "." + key
-		}
-
-		switch metaData := value.(type) {
-		case map[string]interface{}:
-			buildNestedUpdate(fullKey, metaData, updateDoc)
-		case nil:
-			continue
-		default:
-			updateDoc[fullKey] = value
+func CountActiveUsers(users []models.User) int {
+	count := 0
+	for _, user := range users {
+		if user.AccountStatus.IsActive {
+			count++
 		}
 	}
+	return count
 }
 
 func contains(slice []bson.ObjectID, item bson.ObjectID) bool {

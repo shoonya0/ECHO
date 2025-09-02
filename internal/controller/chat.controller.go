@@ -7,7 +7,7 @@ import (
 	"gin/internal/services"
 	"gin/internal/utils"
 	"gin/logger"
-	"log"
+	"gin/objects"
 	"net/http"
 
 	"github.com/gin-gonic/gin"
@@ -16,37 +16,29 @@ import (
 
 // ============ HTTP ENDPOINTS FOR CHAT MANAGEMENT ============
 func CreateDirectChatHTTP(ctx *gin.Context) {
-	userInterface, exists := ctx.Get("user")
-	if !exists {
-		utils.ErrorResponse(ctx, http.StatusUnauthorized, "User not authenticated", nil)
-		return
-	}
-
-	user, ok := userInterface.(models.LoginUserResponse)
+	reqCtx, log, ok := ReduceGinContextToContext(ctx)
 	if !ok {
-		utils.ErrorResponse(ctx, http.StatusUnauthorized, "Invalid user data", nil)
+		log.Debug("user id not found")
 		return
 	}
 
-	var request struct {
-		UserID string `json:"userId" binding:"required"`
-	}
-
-	if err := ctx.ShouldBindJSON(&request); err != nil {
-		utils.ErrorResponse(ctx, http.StatusBadRequest, "Invalid request data", err.Error())
+	targetUserID := ctx.Param("userId")
+	if targetUserID == "" {
+		log.Debug("user id is required")
+		utils.ErrorResponse(ctx, http.StatusBadRequest, "User ID is required", nil)
 		return
 	}
 
-	targetUserID, err := bson.ObjectIDFromHex(request.UserID)
+	targetObjectID, err := bson.ObjectIDFromHex(targetUserID)
 	if err != nil {
+		log.Debug("invalid user id format")
 		utils.ErrorResponse(ctx, http.StatusBadRequest, "Invalid user ID format", nil)
 		return
 	}
 
-	reqCtx := ctx.Request.Context()
-	chat, err := services.CreateDirectChat(reqCtx, user, targetUserID)
+	chat, err := services.CreateDirectChat(reqCtx, targetObjectID)
 	if err != nil {
-		log.Printf("Failed to create direct chat: %v", err)
+		log.Debug("failed to create direct chat")
 		utils.ErrorResponse(ctx, http.StatusInternalServerError, "Failed to create chat", nil)
 		return
 	}
@@ -54,22 +46,13 @@ func CreateDirectChatHTTP(ctx *gin.Context) {
 	utils.SuccessResponse(ctx, "Direct chat created successfully", chat)
 }
 
-// CreateGroupChatHTTP creates a group chat via HTTP endpoint
 func CreateGroupChatHTTP(ctx *gin.Context) {
-	// Get current user
-	userInterface, exists := ctx.Get("user")
-	if !exists {
-		utils.ErrorResponse(ctx, http.StatusUnauthorized, "User not authenticated", nil)
-		return
-	}
-
-	user, ok := userInterface.(models.LoginUserResponse)
+	reqCtx, log, ok := ReduceGinContextToContext(ctx)
 	if !ok {
-		utils.ErrorResponse(ctx, http.StatusUnauthorized, "Invalid user data", nil)
+		log.Debug("user id not found")
 		return
 	}
 
-	// Parse request
 	var request struct {
 		Name         string   `json:"name" binding:"required"`
 		Description  string   `json:"description"`
@@ -77,11 +60,11 @@ func CreateGroupChatHTTP(ctx *gin.Context) {
 	}
 
 	if err := ctx.ShouldBindJSON(&request); err != nil {
+		log.Debug("invalid request data ", err)
 		utils.ErrorResponse(ctx, http.StatusBadRequest, "Invalid request data", err.Error())
 		return
 	}
 
-	// Parse participant IDs
 	var participantIDs []bson.ObjectID
 	for _, idStr := range request.Participants {
 		if id, err := bson.ObjectIDFromHex(idStr); err == nil {
@@ -90,15 +73,14 @@ func CreateGroupChatHTTP(ctx *gin.Context) {
 	}
 
 	if len(participantIDs) == 0 {
+		log.Debug("at least one valid participant is required")
 		utils.ErrorResponse(ctx, http.StatusBadRequest, "At least one valid participant is required", nil)
 		return
 	}
 
-	// Create group chat
-	reqCtx := ctx.Request.Context()
-	chat, err := services.CreateGroupChat(reqCtx, user.ID, request.Name, request.Description, participantIDs)
+	chat, err := services.CreateGroupChat(reqCtx, request.Name, request.Description, participantIDs)
 	if err != nil {
-		log.Printf("Failed to create group chat: %v", err)
+		log.Debug("failed to create group chat ", err)
 		utils.ErrorResponse(ctx, http.StatusInternalServerError, "Failed to create group chat", nil)
 		return
 	}
@@ -106,34 +88,91 @@ func CreateGroupChatHTTP(ctx *gin.Context) {
 	utils.SuccessResponse(ctx, "Group chat created successfully", chat)
 }
 
-// GetChatMessagesHTTP retrieves chat messages via HTTP endpoint
-func GetChatMessagesHTTP(ctx *gin.Context) {
-	// Get current user
-	_, exists := ctx.Get("user")
-	if !exists {
-		utils.ErrorResponse(ctx, http.StatusUnauthorized, "User not authenticated", nil)
+func AddGroupMembersHTTP(ctx *gin.Context) {
+	reqCtx, log, ok := ReduceGinContextToContext(ctx)
+	if !ok {
+		log.Debug("user id not found")
 		return
 	}
 
-	// Parse query parameters
-	chatIDStr := ctx.Query("chatId")
+	var request struct {
+		UserIDs []string `json:"userIDs" binding:"required"`
+	}
+
+	if err := ctx.ShouldBindJSON(&request); err != nil {
+		log.Debug("invalid request data ", err)
+		utils.ErrorResponse(ctx, http.StatusBadRequest, "Invalid request data", err.Error())
+		return
+	}
+
+	chatIDStr := ctx.Param("groupID")
 	if chatIDStr == "" {
+		log.Debug("chat ID is required")
 		utils.ErrorResponse(ctx, http.StatusBadRequest, "Chat ID is required", nil)
 		return
 	}
 
 	chatID, err := bson.ObjectIDFromHex(chatIDStr)
 	if err != nil {
+		log.Debug("invalid chat ID format")
 		utils.ErrorResponse(ctx, http.StatusBadRequest, "Invalid chat ID format", nil)
 		return
 	}
 
-	// Parse pagination parameters
+	var userIDs []bson.ObjectID
+	for _, userIDStr := range request.UserIDs {
+		userID, err := bson.ObjectIDFromHex(userIDStr)
+		if err != nil {
+			log.Debug("invalid user ID format")
+			utils.ErrorResponse(ctx, http.StatusBadRequest, "Invalid user ID format", nil)
+			return
+		}
+		userIDs = append(userIDs, userID)
+	}
+
+	user, ok := reqCtx.Value(objects.UserDataKey).(models.LoginUserResponse)
+	if !ok {
+		log.Debug("user not found")
+		utils.ErrorResponse(ctx, http.StatusUnauthorized, "User not authenticated", nil)
+		return
+	}
+
+	err = services.AddGroupMember(reqCtx, chatID, user.ID, userIDs)
+	if err != nil {
+		log.Debug("failed to add group member ", err)
+		utils.ErrorResponse(ctx, http.StatusInternalServerError, "Failed to add group member", nil)
+		return
+	}
+
+	utils.SuccessResponse(ctx, "Group member added successfully", nil)
+}
+
+func GetChatMessagesHTTP(ctx *gin.Context) {
+	reqCtx, log, ok := ReduceGinContextToContext(ctx)
+	if !ok {
+		log.Debug("user not authenticated")
+		return
+	}
+
+	chatIDStr := ctx.Param("chatID")
+	if chatIDStr == "" {
+		log.Debug("chat ID is required")
+		utils.ErrorResponse(ctx, http.StatusBadRequest, "Chat ID is required", nil)
+		return
+	}
+
+	chatID, err := bson.ObjectIDFromHex(chatIDStr)
+	if err != nil {
+		log.Debug("invalid chat ID format")
+		utils.ErrorResponse(ctx, http.StatusBadRequest, "Invalid chat ID format", nil)
+		return
+	}
+
 	limit := 50 // Default limit
 	offset := 0 // Default offset
 
 	if limitStr := ctx.Query("limit"); limitStr != "" {
-		if parsedLimit := utils.ParseInt(limitStr, 50); parsedLimit > 0 && parsedLimit <= 100 {
+		if parsedLimit := utils.ParseInt(limitStr, 50); parsedLimit > 0 && parsedLimit <= 10 {
 			limit = parsedLimit
 		}
 	}
@@ -144,23 +183,40 @@ func GetChatMessagesHTTP(ctx *gin.Context) {
 		}
 	}
 
-	// Get chat with messages
-	reqCtx := ctx.Request.Context()
-	chat, messages, err := services.GetChatWithMessages(reqCtx, chatID, limit, offset)
+	messages, err := services.GetChatWithMessages(reqCtx, chatID, limit, offset)
 	if err != nil {
-		log.Printf("Failed to get chat messages: %v", err)
+		log.Debug("failed to get chat messages ", err)
 		utils.ErrorResponse(ctx, http.StatusInternalServerError, "Failed to get chat messages", nil)
 		return
 	}
 
-	// Prepare response
-	response := map[string]interface{}{
-		"chat":     chat,
-		"messages": messages,
-		"pagination": map[string]interface{}{
-			"limit":  limit,
-			"offset": offset,
-			"count":  len(messages),
+	totalPages := (len(messages) + limit - 1) / limit
+
+	type PaginationResponse struct {
+		Limit      int `json:"limit"`
+		Offset     int `json:"offset"`
+		Count      int `json:"count"`
+		TotalCount int `json:"totalCount"`
+		Page       int `json:"page"`
+		TotalPages int `json:"totalPages"`
+	}
+
+	type ChatMessagesResponse struct {
+		Chat       bson.ObjectID      `json:"chat"`
+		Messages   []models.Message   `json:"messages"`
+		Pagination PaginationResponse `json:"pagination"`
+	}
+
+	response := ChatMessagesResponse{
+		Chat:     chatID,
+		Messages: messages,
+		Pagination: PaginationResponse{
+			Limit:      limit,
+			Offset:     offset,
+			Count:      len(messages),
+			TotalCount: len(messages),
+			Page:       1,
+			TotalPages: totalPages,
 		},
 	}
 
@@ -392,5 +448,62 @@ func SendInviteToUser(ctx *gin.Context) {
 }
 
 func JoinGroupByInvite(ctx *gin.Context) {
+	userInterface, exists := ctx.Get("user")
+	if !exists {
+		utils.ErrorResponse(ctx, http.StatusUnauthorized, "User not authenticated", nil)
+		return
+	}
+
+	reqCtx := context.WithValue(ctx.Request.Context(), "user", userInterface)
+	log := logger.WithContext(reqCtx)
+
+	inviteCode := ctx.Param("inviteCode")
+
+	if inviteCode == "" {
+		log.WithError(errors.New("invite code is required")).Error("invite code is required")
+		utils.ErrorResponse(ctx, http.StatusBadRequest, "Invite code is required", nil)
+		return
+	}
+
+	user, ok := userInterface.(models.LoginUserResponse)
+	if !ok {
+		log.WithError(errors.New("invalid user data")).Error("invalid user data")
+		utils.ErrorResponse(ctx, http.StatusUnauthorized, "Invalid user data", nil)
+		return
+	}
+	err := services.JoinGroupByInvite(reqCtx, user.ID, inviteCode)
+	if err != nil {
+		log.WithError(err).Error("failed to join group by invite")
+		utils.ErrorResponse(ctx, http.StatusInternalServerError, "failed to join group by invite", err.Error())
+		return
+	}
+
 	utils.SuccessResponse(ctx, "Joined group by invite successfully", nil)
+}
+
+func GetAllInvitesOfUser(ctx *gin.Context) {
+	userInterface, exists := ctx.Get("user")
+	if !exists {
+		utils.ErrorResponse(ctx, http.StatusUnauthorized, "User not authenticated", nil)
+		return
+	}
+
+	reqCtx := context.WithValue(ctx.Request.Context(), "user", userInterface)
+	log := logger.WithContext(reqCtx)
+
+	user, ok := userInterface.(models.LoginUserResponse)
+	if !ok {
+		log.WithError(errors.New("invalid user data")).Error("invalid user data")
+		utils.ErrorResponse(ctx, http.StatusUnauthorized, "Invalid user data", nil)
+		return
+	}
+
+	invites, err := services.GetAllInvitesOfUser(reqCtx, user.ID)
+	if err != nil {
+		log.WithError(err).Error("failed to get all invites of user")
+		utils.ErrorResponse(ctx, http.StatusInternalServerError, "failed to get all invites of user", err.Error())
+		return
+	}
+
+	utils.SuccessResponse(ctx, "All invites fetched successfully", invites)
 }
