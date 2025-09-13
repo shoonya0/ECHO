@@ -3,922 +3,680 @@ package services
 import (
 	"context"
 	"fmt"
-	"gin/internal/models"
-	"gin/logger"
-	"gin/objects"
 	"sync"
 	"time"
 
+	"gin/internal/models"
+	"gin/objects"
+
 	"github.com/google/uuid"
-	"github.com/gorilla/websocket"
+	"github.com/redis/go-redis/v9"
 	"go.mongodb.org/mongo-driver/v2/bson"
+	"go.uber.org/zap"
 )
 
-// ============ WEBSOCKET HUB FOR MANAGING REAL-TIME CONNECTIONS ============
+// ============ ENHANCED WEBSOCKET HUB WITH PUB/SUB ============
 
 var (
-	// Singleton hub instance
-	hubInstance *models.Hub
-	hubOnce     sync.Once
+	// Singleton hub instance with pub/sub support
+	enhancedHubInstance *EnhancedHub
+	enhancedHubOnce     sync.Once
 )
 
-// GetHubInstance returns the singleton hub instance
-func GetHubInstance() *models.Hub {
-	hubOnce.Do(func() {
-		hubInstance = &models.Hub{
-			Clients:       make(map[string]*models.Client),
-			ChatClients:   make(map[string]map[string]*models.Client),
-			UserClients:   make(map[string]map[string]*models.Client),
-			UserInfoCache: make(map[string]*models.UserDisplayInfo),
-			CacheExpiry:   make(map[string]time.Time),
+// EnhancedHub represents the WebSocket hub with Redis pub/sub integration
+type EnhancedHub struct {
+	*models.Hub
+	pubSubManager *PubSubManager
+	redisClient   *redis.Client
+	logger        *zap.Logger
+	instanceID    string
+}
+
+// GetHubInstance returns the singleton enhanced hub instance
+func GetHubInstance() *EnhancedHub {
+	enhancedHubOnce.Do(func() {
+		// Initialize Redis client
+		rdb := redis.NewClient(&redis.Options{
+			Addr:     objects.MainConfiguration.RedisUri,
+			Password: objects.MainConfiguration.RedisPass,
+			DB:       0,
+		})
+
+		if err := rdb.Ping(context.Background()).Err(); err != nil {
+			panic(fmt.Sprintf("websocket_hub_enhanced.go: Failed to connect to Redis: %v", err))
 		}
+
+		// Generate unique instance ID for this server
+		instanceID := fmt.Sprintf("instance-%s-%d", uuid.New().String()[:8], time.Now().Unix())
+
+		// Create base hub
+		baseHub := &models.Hub{
+			Clients:         make(map[string]*models.Client),
+			ChatClients:     make(map[string]map[string]*models.Client),
+			UserClients:     make(map[string]map[string]*models.Client),
+			UserInfoCache:   make(map[string]*models.UserDisplayInfo),
+			CacheExpiry:     make(map[string]time.Time),
+			UserActiveChats: make(map[string][]string), // Initialize centralized active chats
+			Register:        make(chan *models.Client),
+			Unregister:      make(chan *models.Client),
+			Broadcast:       make(chan *models.WebSocketMessage, 1000),
+		}
+
+		// Create context for hub
+		ctx, cancel := context.WithCancel(context.Background())
+		baseHub.Ctx = ctx
+		baseHub.Cancel = cancel
+
+		// Create logger
+		zapLogger, _ := zap.NewProduction()
+
+		// Create enhanced hub
+		enhancedHubInstance = &EnhancedHub{
+			Hub:         baseHub,
+			redisClient: rdb,
+			logger:      zapLogger,
+			instanceID:  instanceID,
+		}
+
+		// Initialize pub/sub manager
+		enhancedHubInstance.pubSubManager = NewPubSubManager(
+			rdb,
+			baseHub,
+			zapLogger,
+			instanceID,
+		)
+
 		// Initialize user lookup service
 		InitUserLookupService()
 	})
-	return hubInstance
+	return enhancedHubInstance
 }
 
-// RunHub starts the WebSocket hub and handles all real-time operations (simplified)
-func RunHub() {
-	ctx := logger.WithTransactionID(context.Background())
-	log := logger.WithContext(ctx)
-	log.Info("WebSocket Hub started - Managing real-time connections")
+// Start initializes and runs the enhanced hub with pub/sub
+func (eh *EnhancedHub) Start() error {
+	eh.logger.Info("websocket_hub_enhanced.go: Starting enhanced WebSocket hub",
+		zap.String("instanceID", eh.instanceID))
 
-	// Start cleanup routine for inactive connections
-	go cleanupInactiveConnections()
+	// Start pub/sub manager
+	if err := eh.pubSubManager.Start(); err != nil {
+		return fmt.Errorf("websocket_hub_enhanced.go: failed to start pub/sub manager: %w", err)
+	}
 
-	// Hub now operates without complex channel management
-	// Individual operations are called directly from API endpoints
-	log.Info("WebSocket Hub is ready to handle connections")
+	// Start hub goroutines
+	go eh.runHub()
+	go eh.cleanupInactiveConnections()
+	go eh.syncPresenceWithRedis()
+
+	eh.logger.Info("websocket_hub_enhanced.go: Enhanced WebSocket hub started successfully")
+	return nil
 }
 
-// ============ CLIENT MANAGEMENT ============
+// Stop gracefully shuts down the enhanced hub
+func (eh *EnhancedHub) Stop() {
+	eh.logger.Info("websocket_hub_enhanced.go: Stopping enhanced WebSocket hub")
 
-// registerClient registers a new client connection
-func registerClient(ctx context.Context, client *models.Client) {
-	log := logger.WithContext(ctx)
-	log.WithFields(map[string]interface{}{
-		"client_id": client.ID,
-		"user_id":   client.UserID.Hex(),
-	}).Debug("Registering new WebSocket client")
+	// Cancel context
+	eh.Cancel()
 
-	hub := GetHubInstance()
+	// Stop pub/sub manager
+	eh.pubSubManager.Stop()
+
+	// Close all client connections
+	eh.Mutex.Lock()
+	for _, client := range eh.Clients {
+		close(client.Send)
+		client.Connection.Close()
+	}
+	eh.Mutex.Unlock()
+
+	eh.logger.Info("websocket_hub_enhanced.go: Enhanced WebSocket hub stopped")
+}
+
+// runHub manages the main hub operations
+func (eh *EnhancedHub) runHub() {
+	for {
+		select {
+		case <-eh.Ctx.Done():
+			return
+
+		case client := <-eh.Register:
+			eh.handleClientRegistration(client)
+
+		case client := <-eh.Unregister:
+			eh.handleClientUnregistration(client)
+
+		case message := <-eh.Broadcast:
+			eh.handleBroadcast(message)
+		}
+	}
+}
+
+// handleClientRegistration handles new client connections with pub/sub
+func (eh *EnhancedHub) handleClientRegistration(client *models.Client) {
+	eh.logger.Info("websocket_hub_enhanced.go: Registering new client",
+		zap.String("clientID", client.ID),
+		zap.String("userID", client.UserID.Hex()))
+
+	eh.Mutex.Lock()
+	defer eh.Mutex.Unlock()
 
 	// Add client to hub
-	hub.Clients[client.ID] = client
+	eh.Clients[client.ID] = client
 
-	// Add client to user mapping
+	// Add to user mapping
 	userID := client.UserID.Hex()
-	if hub.UserClients[userID] == nil {
-		hub.UserClients[userID] = make(map[string]*models.Client)
+	if eh.UserClients[userID] == nil {
+		eh.UserClients[userID] = make(map[string]*models.Client)
 	}
-	hub.UserClients[userID][client.ID] = client
+	eh.UserClients[userID][client.ID] = client
 
-	// Update user presence to online
-	if err := UpdateUserPresence(ctx, client.UserID, string(objects.UserStatusOnline)); err != nil {
-		log.WithError(err).Error("Failed to update user presence")
+	// Get user's chats from database
+	ctx := context.Background()
+	userChats, err := eh.getUserChats(ctx, client.UserID)
+	if err != nil {
+		eh.logger.Error("websocket_hub_enhanced.go: Failed to get user chats",
+			zap.Error(err))
+		userChats = []string{}
+	}
+
+	// Subscribe to user and chat channels via pub/sub
+	if err := eh.pubSubManager.SubscribeUserToChannels(client.UserID, userChats); err != nil {
+		eh.logger.Error("websocket_hub_enhanced.go: Failed to subscribe to channels",
+			zap.Error(err))
+	}
+
+	// Update presence
+	eh.updateUserPresence(client.UserID, "online")
+
+	// Publish presence update to Redis
+	presenceStatus := &models.WSPresenceStatus{
+		UserID:   userID,
+		Status:   "online",
+		LastSeen: time.Now(),
+	}
+	if err := eh.pubSubManager.PublishPresenceUpdate(presenceStatus); err != nil {
+		eh.logger.Error("websocket_hub_enhanced.go: Failed to publish presence update",
+			zap.Error(err))
 	}
 
 	// Send welcome message
 	welcomeMsg := models.WebSocketMessage{
 		Type:      models.WSMessageTypeResponse,
-		Data:      map[string]interface{}{"status": "connected", "clientId": client.ID},
+		UserID:    userID,
+		Data:      map[string]interface{}{"status": "connected", "clientId": client.ID, "instanceId": eh.instanceID},
 		Timestamp: time.Now(),
 	}
 
 	select {
 	case client.Send <- welcomeMsg:
-		log.Debug("Welcome message sent to client")
 	default:
-		log.Warn("Client send channel blocked, closing connection")
-		close(client.Send)
-		delete(hub.Clients, client.ID)
+		eh.logger.Warn("websocket_hub_enhanced.go: Failed to send welcome message")
+	}
+}
+
+// handleClientUnregistration handles client disconnections with pub/sub cleanup
+func (eh *EnhancedHub) handleClientUnregistration(client *models.Client) {
+	eh.logger.Info("websocket_hub_enhanced.go: Unregistering client",
+		zap.String("clientID", client.ID),
+		zap.String("userID", client.UserID.Hex()))
+
+	eh.Mutex.Lock()
+	defer eh.Mutex.Unlock()
+
+	if _, ok := eh.Clients[client.ID]; !ok {
 		return
 	}
 
-	// Get user display info for logging
-	userInfo, err := GetUserDisplayInfo(client.UserID)
-	if err != nil {
-		log.WithError(err).Warn("Failed to get user display info")
-		log.WithFields(map[string]interface{}{
-			"client_id":     client.ID,
-			"user_id":       client.UserID.Hex(),
-			"total_clients": len(hub.Clients),
-		}).Info("Client connected")
-	} else {
-		log.WithFields(map[string]interface{}{
-			"client_id":     client.ID,
-			"user_id":       client.UserID.Hex(),
-			"username":      userInfo.Username,
-			"total_clients": len(hub.Clients),
-		}).Info("Client connected")
+	// Remove from all chats
+	userID := client.UserID.Hex()
+	if activeChats, exists := eh.UserActiveChats[userID]; exists {
+		for _, chatID := range activeChats {
+			eh.removeClientFromChat(client, chatID)
+		}
 	}
 
-	// Notify user's contacts about online status
-	notifyUserPresence(client, string(objects.UserStatusOnline))
-}
+	// Remove from hub
+	delete(eh.Clients, client.ID)
 
-// unregisterClient removes a client connection
-func unregisterClient(client *models.Client) {
-	ctx := logger.WithTransactionID(context.Background())
-	log := logger.WithContext(ctx)
-	log.WithFields(map[string]interface{}{
-		"client_id": client.ID,
-		"user_id":   client.UserID.Hex(),
-	}).Debug("Unregistering WebSocket client")
+	// Remove from user mapping
+	if userClients, exists := eh.UserClients[userID]; exists {
+		delete(userClients, client.ID)
 
-	hub := GetHubInstance()
+		// If no more clients for this user
+		if len(userClients) == 0 {
+			delete(eh.UserClients, userID)
 
-	if _, ok := hub.Clients[client.ID]; ok {
-		// Remove from all chats
-		for _, chatID := range client.ActiveChats {
-			log.WithField("chat_id", chatID).Debug("Removing client from chat")
-			removeClientFromChat(client, chatID)
-		}
-
-		// Remove from hub
-		delete(hub.Clients, client.ID)
-
-		// Remove from user mapping
-		userID := client.UserID.Hex()
-		if userClients, exists := hub.UserClients[userID]; exists {
-			delete(userClients, client.ID)
-
-			// If no more clients for this user, update presence to offline
-			if len(userClients) == 0 {
-				log.WithField("user_id", userID).Debug("User has no more active clients, marking as offline")
-				delete(hub.UserClients, userID)
-				if err := UpdateUserPresence(ctx, client.UserID, string(objects.UserStatusOffline)); err != nil {
-					log.WithError(err).Error("Failed to update user presence to offline")
+			// Get user's active chats for unsubscription
+			if activeChats, exists := eh.UserActiveChats[userID]; exists {
+				// Unsubscribe from channels
+				if err := eh.pubSubManager.UnsubscribeUserFromChannels(client.UserID, activeChats); err != nil {
+					eh.logger.Error("websocket_hub_enhanced.go: Failed to unsubscribe from channels",
+						zap.Error(err))
 				}
-				notifyUserPresence(client, string(objects.UserStatusOffline))
+			}
+
+			// Update presence to offline
+			eh.updateUserPresence(client.UserID, "offline")
+
+			// Publish presence update
+			presenceStatus := &models.WSPresenceStatus{
+				UserID:   userID,
+				Status:   "offline",
+				LastSeen: time.Now(),
+			}
+			if err := eh.pubSubManager.PublishPresenceUpdate(presenceStatus); err != nil {
+				eh.logger.Error("websocket_hub_enhanced.go: Failed to publish presence update",
+					zap.Error(err))
 			}
 		}
+	}
 
-		// Close send channel
-		close(client.Send)
+	// Close send channel
+	close(client.Send)
+}
 
-		// Get user display info for logging
-		userInfo, err := GetUserDisplayInfo(client.UserID)
-		if err != nil {
-			log.WithError(err).Warn("Failed to get user display info")
-			log.WithFields(map[string]interface{}{
-				"client_id":     client.ID,
-				"user_id":       client.UserID.Hex(),
-				"total_clients": len(hub.Clients),
-			}).Info("Client disconnected")
-		} else {
-			log.WithFields(map[string]interface{}{
-				"client_id":     client.ID,
-				"user_id":       client.UserID.Hex(),
-				"username":      userInfo.Username,
-				"total_clients": len(hub.Clients),
-			}).Info("Client disconnected")
+// handleBroadcast handles message broadcasting with pub/sub
+func (eh *EnhancedHub) handleBroadcast(message *models.WebSocketMessage) {
+	eh.logger.Debug("websocket_hub_enhanced.go: Handling broadcast",
+		zap.String("type", message.Type),
+		zap.String("chatID", message.ChatID))
+
+	// Determine broadcast strategy based on message type and target
+	if message.ChatID != "" {
+		// Publish to chat channel for cross-instance delivery
+		if err := eh.pubSubManager.PublishToChat(message.ChatID, message); err != nil {
+			eh.logger.Error("websocket_hub_enhanced.go: Failed to publish to chat",
+				zap.String("chatID", message.ChatID),
+				zap.Error(err))
+		}
+	} else if message.UserID != "" {
+		// Direct message to specific user
+		if err := eh.pubSubManager.PublishToUser(message.UserID, message); err != nil {
+			eh.logger.Error("websocket_hub_enhanced.go: Failed to publish to user",
+				zap.String("userID", message.UserID),
+				zap.Error(err))
 		}
 	} else {
-		log.WithField("client_id", client.ID).Warn("Attempted to unregister non-existent client")
+		// System-wide broadcast
+		if err := eh.pubSubManager.BroadcastSystemMessage(message); err != nil {
+			eh.logger.Error("websocket_hub_enhanced.go: Failed to broadcast system message",
+				zap.Error(err))
+		}
 	}
 }
 
-// ============ CHAT MANAGEMENT ============
+// JoinChat handles client joining a chat with pub/sub subscription
+func (eh *EnhancedHub) JoinChat(ctx context.Context, client *models.Client, chatID string) error {
+	eh.logger.Info("websocket_hub_enhanced.go: Client joining chat",
+		zap.String("clientID", client.ID),
+		zap.String("chatID", chatID))
 
-// handleJoinChat adds a client to a chat
-func handleJoinChat(ctx context.Context, req models.JoinChatRequest) {
-	log := logger.WithContext(ctx)
-	log.WithFields(map[string]interface{}{
-		"client_id": req.Client.ID,
-		"user_id":   req.Client.UserID.Hex(),
-		"chat_id":   req.ChatID,
-	}).Debug("Processing chat join request")
+	eh.Mutex.Lock()
+	defer eh.Mutex.Unlock()
 
-	hub := GetHubInstance()
-
-	// Create chat clients map if it doesn't exist
-	if _, exists := hub.ChatClients[req.ChatID]; !exists {
-		log.WithField("chat_id", req.ChatID).Debug("Creating new chat clients map")
-		hub.ChatClients[req.ChatID] = make(map[string]*models.Client)
+	// Add to chat clients
+	if eh.ChatClients[chatID] == nil {
+		eh.ChatClients[chatID] = make(map[string]*models.Client)
 	}
+	eh.ChatClients[chatID][client.ID] = client
 
-	// Check if client can join (permissions, etc.)
-	if !canJoinChat(req.Client, req.ChatID) {
-		log.WithFields(map[string]interface{}{
-			"client_id": req.Client.ID,
-			"chat_id":   req.ChatID,
-		}).Warn("Client denied permission to join chat")
-
-		errorMsg := models.WebSocketMessage{
-			Type: models.WSMessageTypeError,
-			Data: models.ErrorMessage{
-				Code:    "JOIN_DENIED",
-				Message: "Permission denied to join chat",
-			},
-			Timestamp: time.Now(),
-		}
-		req.Client.Send <- errorMsg
-		return
-	}
-
-	// Add client to chat
-	hub.ChatClients[req.ChatID][req.Client.ID] = req.Client
-
-	// Add chat to client's active chats
+	// Add to user's active chats (centralized in hub)
+	userID := client.UserID.Hex()
 	alreadyInChat := false
-	for _, chatID := range req.Client.ActiveChats {
-		if chatID == req.ChatID {
-			log.Debug("Client already in chat, skipping active chats update")
-			alreadyInChat = true
-			break
+	if activeChats, exists := eh.UserActiveChats[userID]; exists {
+		for _, activeChat := range activeChats {
+			if activeChat == chatID {
+				alreadyInChat = true
+				break
+			}
+		}
+		if !alreadyInChat {
+			eh.UserActiveChats[userID] = append(activeChats, chatID)
+		}
+	} else {
+		// First time this user has active chats
+		eh.UserActiveChats[userID] = []string{chatID}
+	}
+
+	// Subscribe to chat channel if not already subscribed
+	chatChannel := "chat:" + chatID
+	if !eh.pubSubManager.IsSubscribed(chatChannel) {
+		if err := eh.pubSubManager.subscribeToChannel(chatChannel); err != nil {
+			eh.logger.Error("websocket_hub_enhanced.go: Failed to subscribe to chat channel",
+				zap.String("chatID", chatID),
+				zap.Error(err))
 		}
 	}
-	if !alreadyInChat {
-		req.Client.ActiveChats = append(req.Client.ActiveChats, req.ChatID)
-	}
 
-	// Get user display info for notification
-	userInfo, err := GetUserDisplayInfo(req.Client.UserID)
-	username := req.Client.UserID.Hex()
-	if err != nil {
-		log.WithError(err).Warn("Failed to get user display info for join notification")
-	} else {
-		username = userInfo.Username
-	}
-
-	// Notify other clients in the chat
-	joinMsg := models.WebSocketMessage{
+	// Publish join event to chat
+	joinMsg := &models.WebSocketMessage{
 		Type:   models.WSMessageTypeJoin,
-		ChatID: req.ChatID,
-		UserID: req.Client.UserID.Hex(),
+		ChatID: chatID,
+		UserID: client.UserID.Hex(),
 		Data: models.UserJoinLeave{
-			UserID:    req.Client.UserID.Hex(),
-			Username:  username,
+			UserID:    client.UserID.Hex(),
 			Action:    "join",
 			Timestamp: time.Now(),
 		},
 		Timestamp: time.Now(),
 	}
 
-	broadcastToChat(req.ChatID, joinMsg, map[string]bool{req.Client.ID: true})
+	return eh.pubSubManager.PublishToChat(chatID, joinMsg)
+}
 
-	// Get chat info for comprehensive response
-	chatInfo, err := getChatInfoFromDB(req.ChatID)
-	if err != nil {
-		log.WithError(err).Error("Failed to get chat info from database")
-	}
+// LeaveChat handles client leaving a chat with pub/sub cleanup
+func (eh *EnhancedHub) LeaveChat(client *models.Client, chatID string) error {
+	eh.logger.Info("websocket_hub_enhanced.go: Client leaving chat",
+		zap.String("clientID", client.ID),
+		zap.String("chatID", chatID))
 
-	responseData := map[string]interface{}{
-		"action":  "joined",
-		"chatId":  req.ChatID,
-		"members": len(hub.ChatClients[req.ChatID]),
-	}
+	eh.Mutex.Lock()
+	defer eh.Mutex.Unlock()
 
-	// Add chat information if available
-	if chatInfo != nil {
-		responseData["chatName"] = chatInfo.Name
-		responseData["chatType"] = chatInfo.ChatType
-		responseData["participantCount"] = chatInfo.Stats.ParticipantCount
+	// Remove from chat
+	eh.removeClientFromChat(client, chatID)
 
-		// Add participant list for group chats (with user lookup)
-		if chatInfo.ChatType == "group" {
-			participants := make([]map[string]interface{}, 0)
-			for _, participant := range chatInfo.Participants {
-				userInfo, err := GetUserDisplayInfo(participant.UserInfo.UserID)
-				if err != nil {
-					log.WithError(err).WithField("participant_id", participant.UserInfo.UserID.Hex()).
-						Warn("Failed to get participant info")
-					continue // Skip users we can't fetch info for
-				}
-				participants = append(participants, map[string]interface{}{
-					"userId":      participant.UserInfo.UserID.Hex(),
-					"username":    userInfo.Username,
-					"displayName": userInfo.DisplayName,
-					"avatar":      userInfo.Avatar,
-					"role":        participant.Role,
-					"isOnline":    IsUserOnline(participant.UserInfo.UserID.Hex()),
-				})
-			}
-			responseData["participants"] = participants
-			log.WithField("participant_count", len(participants)).Debug("Added group chat participants to response")
-		}
-
-		// For direct chats, add the other participant's info
-		if chatInfo.ChatType == string(objects.ChatTypeDirect) {
-			for userID, participant := range chatInfo.Participants {
-				if userID != req.Client.UserID {
-					userInfo, err := GetUserDisplayInfo(participant.UserInfo.UserID)
-					if err != nil {
-						log.WithError(err).WithField("other_user_id", participant.UserInfo.UserID.Hex()).
-							Warn("Failed to get other user info for direct chat")
-					} else {
-						responseData["otherUser"] = map[string]interface{}{
-							"userId":      participant.UserInfo.UserID.Hex(),
-							"username":    userInfo.Username,
-							"displayName": userInfo.DisplayName,
-							"avatar":      userInfo.Avatar,
-							"isOnline":    IsUserOnline(participant.UserInfo.UserID.Hex()),
-						}
-						log.Debug("Added other user info to direct chat response")
-					}
-					break
-				}
-			}
-		}
-	}
-
-	// Send success response to joining client
-	successMsg := models.WebSocketMessage{
-		Type:      models.WSMessageTypeResponse,
-		ChatID:    req.ChatID,
-		Data:      responseData,
+	// Publish leave event
+	leaveMsg := &models.WebSocketMessage{
+		Type:   models.WSMessageTypeLeave,
+		ChatID: chatID,
+		UserID: client.UserID.Hex(),
+		Data: models.UserJoinLeave{
+			UserID:    client.UserID.Hex(),
+			Action:    "leave",
+			Timestamp: time.Now(),
+		},
 		Timestamp: time.Now(),
 	}
-	req.Client.Send <- successMsg
 
-	log.WithFields(map[string]interface{}{
-		"client_id":      req.Client.ID,
-		"chat_id":        req.ChatID,
-		"active_clients": len(hub.ChatClients[req.ChatID]),
-		"chat_type":      chatInfo.ChatType,
-	}).Info("Client joined chat successfully")
+	return eh.pubSubManager.PublishToChat(chatID, leaveMsg)
 }
 
-// handleLeaveChat removes a client from a chat
-func handleLeaveChat(req models.LeaveChatRequest) {
-	ctx := logger.WithTransactionID(context.Background())
-	log := logger.WithContext(ctx)
-	log.WithFields(map[string]interface{}{
-		"client_id": req.Client.ID,
-		"user_id":   req.Client.UserID.Hex(),
-		"chat_id":   req.ChatID,
-	}).Debug("Processing chat leave request")
+// SendChatMessage sends a message to a chat via pub/sub
+func (eh *EnhancedHub) SendChatMessage(ctx context.Context, chatID string, message *models.ChatMessage) error {
+	eh.logger.Info("websocket_hub_enhanced.go: Sending chat message",
+		zap.String("chatID", chatID),
+		zap.String("messageID", message.ID))
 
-	hub := GetHubInstance()
-
-	if chatClients, exists := hub.ChatClients[req.ChatID]; exists {
-		removeClientFromChat(req.Client, req.ChatID)
-
-		// Get user display info for notification
-		userInfo, err := GetUserDisplayInfo(req.Client.UserID)
-		username := req.Client.UserID.Hex()
-		if err != nil {
-			log.WithError(err).Warn("Failed to get user display info for leave notification")
-		} else {
-			username = userInfo.Username
-		}
-
-		// Notify other clients in the chat
-		leaveMsg := models.WebSocketMessage{
-			Type:   models.WSMessageTypeLeave,
-			ChatID: req.ChatID,
-			UserID: req.Client.UserID.Hex(),
-			Data: models.UserJoinLeave{
-				UserID:    req.Client.UserID.Hex(),
-				Username:  username,
-				Action:    "leave",
-				Timestamp: time.Now(),
-			},
-			Timestamp: time.Now(),
-		}
-
-		broadcastToChat(req.ChatID, leaveMsg, map[string]bool{req.Client.ID: true})
-
-		log.WithFields(map[string]interface{}{
-			"client_id":      req.Client.ID,
-			"chat_id":        req.ChatID,
-			"active_clients": len(chatClients) - 1, // -1 because client already removed
-			"username":       username,
-		}).Info("Client left chat successfully")
-	} else {
-		log.WithFields(map[string]interface{}{
-			"client_id": req.Client.ID,
-			"chat_id":   req.ChatID,
-		}).Warn("Attempted to leave non-existent chat")
+	// Create WebSocket message wrapper
+	wsMessage := &models.WebSocketMessage{
+		Type:      models.WSMessageTypeChat,
+		ChatID:    chatID,
+		UserID:    message.SenderID,
+		Data:      message,
+		Timestamp: message.CreatedAt,
 	}
+
+	// Publish to chat channel for cross-instance delivery
+	return eh.pubSubManager.PublishToChat(chatID, wsMessage)
 }
 
-// removeClientFromChat removes a client from a specific chat
-func removeClientFromChat(client *models.Client, chatID string) {
-	ctx := logger.WithTransactionID(context.Background())
-	log := logger.WithContext(ctx)
-	log.WithFields(map[string]interface{}{
-		"client_id": client.ID,
-		"user_id":   client.UserID.Hex(),
-		"chat_id":   chatID,
-	}).Debug("Removing client from chat")
+// SendDirectMessage sends a direct message to a specific user via pub/sub
+func (eh *EnhancedHub) SendDirectMessage(ctx context.Context, targetUserID string, message *models.ChatMessage) error {
+	eh.logger.Info("websocket_hub_enhanced.go: Sending direct message",
+		zap.String("targetUserID", targetUserID),
+		zap.String("messageID", message.ID))
 
-	hub := GetHubInstance()
-	hub.Mutex.Lock()
-	defer hub.Mutex.Unlock()
+	// Create WebSocket message wrapper
+	wsMessage := &models.WebSocketMessage{
+		Type:      models.WSMessageTypeChat,
+		UserID:    message.SenderID,
+		Data:      message,
+		Timestamp: message.CreatedAt,
+	}
 
-	if chatClients, exists := hub.ChatClients[chatID]; exists {
+	// Publish to user channel for cross-instance delivery
+	return eh.pubSubManager.PublishToUser(targetUserID, wsMessage)
+}
+
+// BroadcastTypingIndicator broadcasts typing status via pub/sub
+func (eh *EnhancedHub) BroadcastTypingIndicator(chatID string, userID string, isTyping bool) error {
+	eh.logger.Debug("websocket_hub_enhanced.go: Broadcasting typing indicator",
+		zap.String("chatID", chatID),
+		zap.String("userID", userID),
+		zap.Bool("isTyping", isTyping))
+
+	// Get user display info
+	userObjectID, _ := bson.ObjectIDFromHex(userID)
+	userInfo, _ := GetUserDisplayInfo(userObjectID)
+	username := "Unknown"
+	if userInfo != nil {
+		username = userInfo.Username
+	}
+
+	typingMsg := &models.WebSocketMessage{
+		Type:   models.WSMessageTypeTyping,
+		ChatID: chatID,
+		UserID: userID,
+		Data: models.TypingIndicator{
+			UserID:    userID,
+			Username:  username,
+			IsTyping:  isTyping,
+			Timestamp: time.Now(),
+		},
+		Timestamp: time.Now(),
+	}
+
+	return eh.pubSubManager.PublishToChat(chatID, typingMsg)
+}
+
+// removeClientFromChat removes a client from a chat (internal helper)
+func (eh *EnhancedHub) removeClientFromChat(client *models.Client, chatID string) {
+	if chatClients, exists := eh.ChatClients[chatID]; exists {
 		delete(chatClients, client.ID)
-		log.Debug("Removed client from chat clients map")
 
-		// Remove chat from client's active chats
-		for i, activeChat := range client.ActiveChats {
+		// Remove empty chat map
+		if len(chatClients) == 0 {
+			delete(eh.ChatClients, chatID)
+
+			// Consider unsubscribing from chat channel if no local clients
+			// (Keep subscription for now as other instances might still have clients)
+		}
+	}
+
+	// Remove from user's active chats (centralized in hub)
+	userID := client.UserID.Hex()
+	if activeChats, exists := eh.UserActiveChats[userID]; exists {
+		for i, activeChat := range activeChats {
 			if activeChat == chatID {
-				client.ActiveChats = append(client.ActiveChats[:i], client.ActiveChats[i+1:]...)
-				log.Debug("Removed chat from client's active chats")
+				eh.UserActiveChats[userID] = append(activeChats[:i], activeChats[i+1:]...)
 				break
 			}
 		}
-
-		// Remove empty chat clients map after a delay
-		if len(chatClients) == 0 {
-			log.WithField("chat_id", chatID).Info("Chat is now empty, scheduling cleanup")
-			go scheduleChatCleanup(chatID)
-		} else {
-			log.WithFields(map[string]interface{}{
-				"chat_id":        chatID,
-				"active_clients": len(chatClients),
-			}).Debug("Updated chat clients count")
+		// If no more active chats for this user, clean up
+		if len(eh.UserActiveChats[userID]) == 0 {
+			delete(eh.UserActiveChats, userID)
 		}
-	} else {
-		log.WithField("chat_id", chatID).Warn("Attempted to remove client from non-existent chat")
 	}
 }
 
-// ============ MESSAGE BROADCASTING ============
-
-// broadcastMessage broadcasts a message to appropriate clients
-func BroadcastMessage(hubMsg models.HubMessage) {
-	ctx := logger.WithTransactionID(context.Background())
-	log := logger.WithContext(ctx)
-	log.WithFields(map[string]interface{}{
-		"message_type": hubMsg.Message.Type,
-		"chat_id":      hubMsg.ChatID,
-		"exclude":      len(hubMsg.Exclude),
-	}).Debug("Broadcasting message")
-
-	if hubMsg.ChatID != "" {
-		// Broadcast to specific chat
-		broadcastToChat(hubMsg.ChatID, hubMsg.Message, hubMsg.Exclude)
-	} else {
-		// Global broadcast (rare case)
-		log.Info("Performing global broadcast")
-		broadcastToAll(hubMsg.Message, hubMsg.Exclude)
-	}
-}
-
-// broadcastToChat broadcasts a message to all clients in a chat
-func broadcastToChat(chatID string, message models.WebSocketMessage, exclude map[string]bool) {
-	ctx := logger.WithTransactionID(context.Background())
-	log := logger.WithContext(ctx)
-	log.WithFields(map[string]interface{}{
-		"chat_id":      chatID,
-		"message_type": message.Type,
-		"exclude":      len(exclude),
-	}).Debug("Broadcasting message to chat")
-
-	hub := GetHubInstance()
-	hub.Mutex.RLock()
-	defer hub.Mutex.RUnlock()
-
-	chatClients, exists := hub.ChatClients[chatID]
-	if !exists {
-		log.WithField("chat_id", chatID).Warn("Attempted to broadcast to non-existent chat")
-		return
-	}
-
-	successCount := 0
-	failureCount := 0
-
-	for clientID, client := range chatClients {
-		// Skip excluded clients
-		if exclude != nil && exclude[clientID] {
-			log.WithField("client_id", clientID).Debug("Skipping excluded client")
-			continue
-		}
-
-		select {
-		case client.Send <- message:
-			successCount++
-		default:
-			// Client's send channel is full or closed, remove client
-			log.WithFields(map[string]interface{}{
-				"client_id": clientID,
-				"chat_id":   chatID,
-			}).Warn("Client unresponsive, removing from chat")
-			unregisterClient(client)
-			failureCount++
-		}
-	}
-
-	log.WithFields(map[string]interface{}{
-		"chat_id":       chatID,
-		"total_clients": len(chatClients),
-		"success_count": successCount,
-		"failure_count": failureCount,
-		"excluded":      len(exclude),
-	}).Info("Message broadcast completed")
-}
-
-// broadcastToAll broadcasts a message to all connected clients
-func broadcastToAll(message models.WebSocketMessage, exclude map[string]bool) {
-	ctx := logger.WithTransactionID(context.Background())
-	log := logger.WithContext(ctx)
-	log.WithFields(map[string]interface{}{
-		"message_type": message.Type,
-		"exclude":      len(exclude),
-	}).Debug("Broadcasting message to all clients")
-
-	hub := GetHubInstance()
-	successCount := 0
-	failureCount := 0
-
-	for clientID, client := range hub.Clients {
-		if exclude != nil && exclude[clientID] {
-			log.WithField("client_id", clientID).Debug("Skipping excluded client")
-			continue
-		}
-
-		select {
-		case client.Send <- message:
-			successCount++
-		default:
-			log.WithField("client_id", clientID).Warn("Client unresponsive, removing from hub")
-			unregisterClient(client)
-			failureCount++
-		}
-	}
-
-	log.WithFields(map[string]interface{}{
-		"total_clients": len(hub.Clients),
-		"success_count": successCount,
-		"failure_count": failureCount,
-		"excluded":      len(exclude),
-	}).Info("Global broadcast completed")
-}
-
-// ============ UTILITY FUNCTIONS ============
-
-// Chat clients are now managed directly in ChatClients map
-// No separate room creation needed since Chat model handles both persistence and real-time
-
-// getChatInfoFromDB retrieves chat information from database
-func getChatInfoFromDB(chatID string) (*models.Chat, error) {
-	ctx := logger.WithTransactionID(context.Background())
-	log := logger.WithContext(ctx)
-	log.WithField("chat_id", chatID).Debug("Retrieving chat info from database")
-
-	chatObjectID, err := bson.ObjectIDFromHex(chatID)
+// getUserChats retrieves all chat IDs for a user from the database
+func (eh *EnhancedHub) getUserChats(ctx context.Context, userID bson.ObjectID) ([]string, error) {
+	// Query database for user's chats
+	chats, err := GetUserChats(ctx, userID)
 	if err != nil {
-		log.WithError(err).Error("Invalid chat ID format")
-		return nil, fmt.Errorf("invalid chat ID: %w", err)
+		return nil, err
 	}
 
-	chat, err := GetChat(ctx, models.ChatInfo{ChatID: chatObjectID})
-	if err != nil {
-		log.WithError(err).Warn("Failed to get chat from database")
-		return nil, fmt.Errorf("failed to get chat: %w", err)
+	chatIDs := make([]string, 0, len(chats))
+	for _, chat := range chats {
+		chatIDs = append(chatIDs, chat.Hex())
 	}
 
-	log.WithFields(map[string]interface{}{
-		"chat_name":         chat.Name,
-		"chat_type":         chat.ChatType,
-		"participant_count": chat.Stats.ParticipantCount,
-	}).Debug("Chat info retrieved successfully")
-
-	return &chat, nil
+	return chatIDs, nil
 }
 
-// canJoinChat checks if a client can join a specific chat with proper permissions
-func canJoinChat(client *models.Client, chatID string) bool {
-	ctx := logger.WithTransactionID(context.Background())
-	log := logger.WithContext(ctx)
-	log.WithFields(map[string]interface{}{
-		"client_id": client.ID,
-		"user_id":   client.UserID.Hex(),
-		"chat_id":   chatID,
-	}).Debug("Checking chat join permissions")
+// updateUserPresence updates user presence in cache and Redis
+func (eh *EnhancedHub) updateUserPresence(userID bson.ObjectID, status string) {
+	eh.Mutex.Lock()
+	defer eh.Mutex.Unlock()
 
-	// Get chat info to check if user is a participant
-	chatInfo, err := getChatInfoFromDB(chatID)
-	if err != nil {
-		log.WithError(err).Error("Failed to get chat info for permission check")
-		return false
-	}
+	userIDStr := userID.Hex()
 
-	// Check if user is a participant in the chat
-	userID := client.UserID.Hex()
-	participant, isParticipant := chatInfo.Participants[client.UserID]
-
-	if !isParticipant {
-		log.WithFields(map[string]interface{}{
-			"user_id": userID,
-			"chat_id": chatID,
-		}).Warn("User is not a participant in chat")
-		return false
-	}
-
-	// Check if user is blocked
-	if participant.IsBlocked {
-		log.WithFields(map[string]interface{}{
-			"user_id": userID,
-			"chat_id": chatID,
-		}).Warn("User is blocked from chat")
-		return false
-	}
-
-	// For private chats, additional checks
-	if chatInfo.Settings.IsPrivate {
-		// User must be explicitly invited (already checked by being a participant)
-		log.WithFields(map[string]interface{}{
-			"user_id": userID,
-			"chat_id": chatID,
-		}).Info("User joining private chat")
-	}
-
-	log.WithFields(map[string]interface{}{
-		"user_id": userID,
-		"chat_id": chatID,
-		"role":    participant.Role,
-	}).Debug("User has permission to join chat")
-	return true
-}
-
-// scheduleChatCleanup schedules cleanup of empty rooms (simplified)
-func scheduleChatCleanup(chatID string) {
-	ctx := logger.WithTransactionID(context.Background())
-	log := logger.WithContext(ctx)
-	log.WithField("chat_id", chatID).Debug("Scheduling chat cleanup")
-
-	// Immediate cleanup instead of delayed
-	hub := GetHubInstance()
-	hub.Mutex.Lock()
-	defer hub.Mutex.Unlock()
-
-	if chatClients, exists := hub.ChatClients[chatID]; exists {
-		if len(chatClients) == 0 {
-			delete(hub.ChatClients, chatID)
-			log.WithField("chat_id", chatID).Info("Empty chat cleaned up")
-		} else {
-			log.WithFields(map[string]interface{}{
-				"chat_id":        chatID,
-				"active_clients": len(chatClients),
-			}).Debug("Chat still has active clients, skipping cleanup")
-		}
+	// Update local cache
+	if userInfo, exists := eh.UserInfoCache[userIDStr]; exists {
+		userInfo.Status = status
+		userInfo.IsOnline = status != "offline"
+		userInfo.LastSeen = time.Now()
+		eh.CacheExpiry[userIDStr] = time.Now().Add(5 * time.Minute)
 	} else {
-		log.WithField("chat_id", chatID).Warn("Attempted to clean up non-existent chat")
+		// Create new cache entry - use lookup service directly since we already checked cache
+		userInfo, _ := GetUserDisplayInfo(userID)
+		if userInfo != nil {
+			userInfo.Status = status
+			userInfo.IsOnline = status != "offline"
+			userInfo.LastSeen = time.Now()
+			eh.UserInfoCache[userIDStr] = userInfo
+			eh.CacheExpiry[userIDStr] = time.Now().Add(5 * time.Minute)
+		}
 	}
+
+	// Update presence in Redis for persistence
+	ctx := context.Background()
+	presenceKey := fmt.Sprintf("presence:%s", userIDStr)
+	presenceData := map[string]interface{}{
+		"status":   status,
+		"lastSeen": time.Now().Unix(),
+	}
+
+	eh.redisClient.HSet(ctx, presenceKey, presenceData)
+	eh.redisClient.Expire(ctx, presenceKey, 30*time.Minute)
 }
 
-// cleanupInactiveConnections periodically removes inactive connections
-func cleanupInactiveConnections() {
-	ctx := logger.WithTransactionID(context.Background())
-	log := logger.WithContext(ctx)
-	log.Info("Starting inactive connections cleanup routine")
-
+// syncPresenceWithRedis periodically syncs presence data with Redis
+func (eh *EnhancedHub) syncPresenceWithRedis() {
 	ticker := time.NewTicker(30 * time.Second)
 	defer ticker.Stop()
 
-	for range ticker.C {
-		hub := GetHubInstance()
-		now := time.Now()
-		inactiveClients := make([]*models.Client, 0)
-		inactivityThreshold := 5 * time.Minute
-
-		log.WithFields(map[string]interface{}{
-			"total_clients":        len(hub.Clients),
-			"inactivity_threshold": inactivityThreshold.String(),
-		}).Debug("Checking for inactive clients")
-
-		for _, client := range hub.Clients {
-			inactiveDuration := now.Sub(client.LastActivity)
-			if inactiveDuration > inactivityThreshold {
-				log.WithFields(map[string]interface{}{
-					"client_id":         client.ID,
-					"user_id":           client.UserID.Hex(),
-					"inactive_duration": inactiveDuration.String(),
-				}).Debug("Found inactive client")
-				inactiveClients = append(inactiveClients, client)
-			}
-		}
-
-		if len(inactiveClients) > 0 {
-			log.WithField("inactive_count", len(inactiveClients)).Info("Removing inactive clients")
-			for _, client := range inactiveClients {
-				log.WithFields(map[string]interface{}{
-					"client_id": client.ID,
-					"user_id":   client.UserID.Hex(),
-				}).Info("Removing inactive client")
-				unregisterClient(client)
-			}
-		} else {
-			log.Debug("No inactive clients found")
+	for {
+		select {
+		case <-eh.Ctx.Done():
+			return
+		case <-ticker.C:
+			eh.performPresenceSync()
 		}
 	}
 }
 
-// notifyUserPresence notifies user's contacts about presence changes
-func notifyUserPresence(client *models.Client, status string) {
-	ctx := logger.WithTransactionID(context.Background())
-	log := logger.WithContext(ctx)
-	log.WithFields(map[string]interface{}{
-		"client_id": client.ID,
-		"user_id":   client.UserID.Hex(),
-		"status":    status,
-	}).Debug("Notifying contacts about user presence change")
+// performPresenceSync syncs local presence data with Redis
+func (eh *EnhancedHub) performPresenceSync() {
+	eh.Mutex.RLock()
+	userIDs := make([]string, 0, len(eh.UserClients))
+	for userID := range eh.UserClients {
+		userIDs = append(userIDs, userID)
+	}
+	eh.Mutex.RUnlock()
 
-	// TODO: Get user's contacts and notify them about presence change
-	// This would involve querying the contacts collection and sending presence updates
+	ctx := context.Background()
+	pipe := eh.redisClient.Pipeline()
+
+	for _, userID := range userIDs {
+		presenceKey := fmt.Sprintf("presence:%s", userID)
+		presenceData := map[string]interface{}{
+			"status":     "online",
+			"lastSeen":   time.Now().Unix(),
+			"instanceId": eh.instanceID,
+		}
+		pipe.HSet(ctx, presenceKey, presenceData)
+		pipe.Expire(ctx, presenceKey, 2*time.Minute)
+	}
+
+	if _, err := pipe.Exec(ctx); err != nil {
+		eh.logger.Error("websocket_hub_enhanced.go: Failed to sync presence with Redis",
+			zap.Error(err))
+	}
+}
+
+// cleanupInactiveConnections removes inactive connections
+func (eh *EnhancedHub) cleanupInactiveConnections() {
+	ticker := time.NewTicker(30 * time.Second)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-eh.Ctx.Done():
+			return
+		case <-ticker.C:
+			eh.performCleanup()
+		}
+	}
+}
+
+// performCleanup removes inactive clients
+func (eh *EnhancedHub) performCleanup() {
+	eh.Mutex.Lock()
+	defer eh.Mutex.Unlock()
 
 	now := time.Now()
-	presenceMsg := models.WebSocketMessage{
-		Type:   models.WSMessageTypePresence,
-		UserID: client.UserID.Hex(),
-		Data: models.WSPresenceStatus{
-			UserID:   client.UserID.Hex(),
-			Status:   status,
-			LastSeen: now,
-		},
-		Timestamp: now,
+	inactiveThreshold := 5 * time.Minute
+	toRemove := make([]*models.Client, 0)
+
+	for _, client := range eh.Clients {
+		if now.Sub(client.LastActivity) > inactiveThreshold {
+			toRemove = append(toRemove, client)
+		}
 	}
 
-	// For now, we'll broadcast to all clients
-	// In a production system, this should be optimized to only notify contacts
-	log.Info("Broadcasting presence update to all clients (TODO: optimize to only notify contacts)")
-	broadcastToAll(presenceMsg, map[string]bool{client.ID: true})
-}
-
-// ============ PUBLIC API FUNCTIONS ============
-
-// CreateClient creates a new WebSocket client
-func CreateClient(ctx context.Context, userID bson.ObjectID, conn *websocket.Conn) *models.Client {
-	log := logger.WithContext(ctx)
-
-	clientID := uuid.New().String()
-	log.WithFields(map[string]interface{}{
-		"client_id": clientID,
-		"user_id":   userID.Hex(),
-	}).Info("Creating new WebSocket client")
-
-	client := &models.Client{
-		ID:           clientID,
-		UserID:       userID,
-		Connection:   conn,
-		Send:         make(chan models.WebSocketMessage, 256),
-		ActiveChats:  make([]string, 0),
-		LastActivity: time.Now(),
-		Metadata:     make(map[string]interface{}),
+	for _, client := range toRemove {
+		eh.logger.Info("websocket_hub_enhanced.go: Removing inactive client",
+			zap.String("clientID", client.ID))
+		eh.Unregister <- client
 	}
 
-	log.WithFields(map[string]interface{}{
-		"client_id":   client.ID,
-		"user_id":     client.UserID.Hex(),
-		"buffer_size": 256,
-		"created_at":  client.LastActivity,
-	}).Debug("WebSocket client created successfully")
-
-	return client
-}
-
-// RegisterClient registers a client with the hub (direct call)
-func RegisterClient(ctx context.Context, client *models.Client) {
-	log := logger.WithContext(ctx)
-	log.WithFields(map[string]interface{}{
-		"client_id": client.ID,
-		"user_id":   client.UserID.Hex(),
-	}).Info("Registering client with hub")
-	registerClient(ctx, client)
-}
-
-// UnregisterClient unregisters a client from the hub (direct call)
-func UnregisterClient(client *models.Client) {
-	ctx := logger.WithTransactionID(context.Background())
-	log := logger.WithContext(ctx)
-	log.WithFields(map[string]interface{}{
-		"client_id": client.ID,
-		"user_id":   client.UserID.Hex(),
-	}).Info("Unregistering client from hub")
-	unregisterClient(client)
-}
-
-// BroadcastToChat broadcasts a message to a specific chat (direct call)
-func BroadcastToChat(chatID string, message models.WebSocketMessage) {
-	ctx := logger.WithTransactionID(context.Background())
-	log := logger.WithContext(ctx)
-	log.WithFields(map[string]interface{}{
-		"chat_id":      chatID,
-		"message_type": message.Type,
-	}).Debug("Broadcasting message to chat")
-	broadcastToChat(chatID, message, nil)
-}
-
-// JoinChatRoom adds a client to a chat (direct call)
-func JoinChatRoom(ctx context.Context, client *models.Client, chatID string) {
-	log := logger.WithContext(ctx)
-	log.WithFields(map[string]interface{}{
-		"client_id": client.ID,
-		"user_id":   client.UserID.Hex(),
-		"chat_id":   chatID,
-	}).Info("Adding client to chat room")
-
-	joinReq := models.JoinChatRequest{
-		Client: client,
-		ChatID: chatID,
+	// Clean expired cache entries
+	for userID, expiry := range eh.CacheExpiry {
+		if now.After(expiry) {
+			delete(eh.UserInfoCache, userID)
+			delete(eh.CacheExpiry, userID)
+		}
 	}
-	handleJoinChat(ctx, joinReq)
 }
 
-// LeaveChatRoom removes a client from a chat (direct call)
-func LeaveChatRoom(client *models.Client, chatID string) {
-	ctx := logger.WithTransactionID(context.Background())
-	log := logger.WithContext(ctx)
-	log.WithFields(map[string]interface{}{
-		"client_id": client.ID,
-		"user_id":   client.UserID.Hex(),
-		"chat_id":   chatID,
-	}).Info("Removing client from chat room")
+// GetUserInfo gets user display information from hub cache first, then lookup service
+func (eh *EnhancedHub) GetUserInfo(userID bson.ObjectID) (*models.UserDisplayInfo, error) {
+	eh.Mutex.RLock()
+	userIDStr := userID.Hex()
 
-	leaveReq := models.LeaveChatRequest{
-		Client: client,
-		ChatID: chatID,
+	// Check hub cache first
+	if userInfo, exists := eh.UserInfoCache[userIDStr]; exists {
+		// Check if cache entry is still valid
+		if expiry, hasExpiry := eh.CacheExpiry[userIDStr]; hasExpiry && time.Now().Before(expiry) {
+			eh.Mutex.RUnlock()
+			return userInfo, nil
+		}
 	}
-	handleLeaveChat(leaveReq)
-}
+	eh.Mutex.RUnlock()
 
-// GetChatClients returns clients connected to a chat
-func GetChatClients(chatID string) (map[string]*models.Client, bool) {
-	ctx := logger.WithTransactionID(context.Background())
-	log := logger.WithContext(ctx)
-	log.WithField("chat_id", chatID).Debug("Getting chat clients")
-
-	hub := GetHubInstance()
-	hub.Mutex.RLock()
-	defer hub.Mutex.RUnlock()
-	clients, exists := hub.ChatClients[chatID]
-
-	log.WithFields(map[string]interface{}{
-		"chat_id":      chatID,
-		"exists":       exists,
-		"client_count": len(clients),
-	}).Debug("Retrieved chat clients")
-
-	return clients, exists
-}
-
-// GetUserClients returns all clients for a specific user
-func GetUserClients(userID string) map[string]*models.Client {
-	ctx := logger.WithTransactionID(context.Background())
-	log := logger.WithContext(ctx)
-	log.WithField("user_id", userID).Debug("Getting user clients")
-
-	hub := GetHubInstance()
-	if clients, exists := hub.UserClients[userID]; exists {
-		log.WithFields(map[string]interface{}{
-			"user_id":      userID,
-			"client_count": len(clients),
-		}).Debug("Retrieved user clients")
-		return clients
+	// Not in cache or expired, get from lookup service
+	userInfo, err := GetUserDisplayInfo(userID)
+	if err != nil {
+		return nil, err
 	}
 
-	log.WithField("user_id", userID).Debug("No clients found for user")
-	return nil
+	// Cache the result in hub for future use
+	eh.Mutex.Lock()
+	eh.UserInfoCache[userIDStr] = userInfo
+	eh.CacheExpiry[userIDStr] = time.Now().Add(5 * time.Minute)
+	eh.Mutex.Unlock()
+
+	return userInfo, nil
 }
 
-// IsUserOnline checks if a user has any active connections
-func IsUserOnline(userID string) bool {
-	ctx := logger.WithTransactionID(context.Background())
-	log := logger.WithContext(ctx)
-	log.WithField("user_id", userID).Debug("Checking user online status")
+// GetStats returns hub statistics including pub/sub info
+func (eh *EnhancedHub) GetStats() map[string]interface{} {
+	eh.Mutex.RLock()
+	defer eh.Mutex.RUnlock()
 
-	hub := GetHubInstance()
-	clients, exists := hub.UserClients[userID]
-	isOnline := exists && len(clients) > 0
+	subscribedChannels := eh.pubSubManager.GetSubscribedChannels()
 
-	log.WithFields(map[string]interface{}{
-		"user_id":      userID,
-		"is_online":    isOnline,
-		"client_count": len(clients),
-	}).Debug("User online status checked")
-
-	return isOnline
-}
-
-// GetHubStats returns current hub statistics
-func GetHubStats() map[string]interface{} {
-	ctx := logger.WithTransactionID(context.Background())
-	log := logger.WithContext(ctx)
-	log.Debug("Getting hub statistics")
-
-	hub := GetHubInstance()
-	hub.Mutex.RLock()
-	defer hub.Mutex.RUnlock()
-
-	stats := map[string]interface{}{
-		"totalClients": len(hub.Clients),
-		"totalChats":   len(hub.ChatClients),
-		"totalUsers":   len(hub.UserClients),
-		"cacheSize":    len(hub.UserInfoCache),
-		"timestamp":    time.Now(),
+	return map[string]interface{}{
+		"instanceId":         eh.instanceID,
+		"totalClients":       len(eh.Clients),
+		"totalChats":         len(eh.ChatClients),
+		"totalUsers":         len(eh.UserClients),
+		"cacheSize":          len(eh.UserInfoCache),
+		"subscribedChannels": len(subscribedChannels),
+		"channels":           subscribedChannels,
+		"timestamp":          time.Now(),
 	}
-
-	log.WithFields(map[string]interface{}{
-		"total_clients": stats["totalClients"],
-		"total_chats":   stats["totalChats"],
-		"total_users":   stats["totalUsers"],
-		"cache_size":    stats["cacheSize"],
-	}).Info("Hub statistics retrieved")
-
-	return stats
 }

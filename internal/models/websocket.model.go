@@ -1,10 +1,12 @@
 package models
 
 import (
+	"context"
 	"sync"
 	"time"
 
 	"github.com/gorilla/websocket"
+	"github.com/redis/go-redis/v9"
 	"go.mongodb.org/mongo-driver/v2/bson"
 )
 
@@ -147,14 +149,13 @@ type ChatNotification struct {
 }
 
 // ============ CLIENT CONNECTION MODELS ============
-
 // Client represents a WebSocket client connection (simplified - no redundant user data)
 type Client struct {
-	ID           string                 `json:"id"`
-	UserID       bson.ObjectID          `json:"userId"`
-	Connection   *websocket.Conn        `json:"-"`
-	Send         chan WebSocketMessage  `json:"-"`
-	ActiveChats  []string               `json:"activeChats"` // Chat IDs the client is subscribed to
+	ID         string                `json:"id"`
+	UserID     bson.ObjectID         `json:"userId"`
+	Connection *websocket.Conn       `json:"-"`
+	Send       chan WebSocketMessage `json:"-"`
+	// we have to seprate this userID[activeChats]
 	LastActivity time.Time              `json:"lastActivity"`
 	Metadata     map[string]interface{} `json:"metadata,omitempty"`
 }
@@ -172,20 +173,34 @@ type UserDisplayInfo struct {
 
 // Hub represents the WebSocket hub managing all connections (simplified)
 type Hub struct {
-	// Registered clients
+	// Master registry of all clients
 	Clients map[string]*Client `json:"-"`
 
-	// Chat to clients mapping (replaces ChatRooms)
-	// group chat
+	// Maps chat rooms to their connected clients
 	ChatClients map[string]map[string]*Client `json:"-"` // ChatID -> ClientID -> Client
 
-	// User to client mapping
-	// direct chat
+	// Maps users to their active connections
 	UserClients map[string]map[string]*Client `json:"-"` // UserID -> ClientID -> Client
+
+	// working on it
+	PubSub *redis.PubSub
+
+	// ==============XXX==============
+	// for later use
+	Register   chan *Client
+	Unregister chan *Client
+	Broadcast  chan *WebSocketMessage
+	Ctx        context.Context
+	Cancel     context.CancelFunc
+	// for later use
+	// ==============XXX==============
 
 	// User display info cache (TTL: 5 minutes)
 	UserInfoCache map[string]*UserDisplayInfo `json:"-"`
 	CacheExpiry   map[string]time.Time        `json:"-"`
+
+	// Centralized active chats per user (moved from Client to avoid replication)
+	UserActiveChats map[string][]string `json:"-"` // UserID -> Active Chat IDs
 
 	// Mutex for thread safety
 	Mutex sync.RWMutex `json:"-"`

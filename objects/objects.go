@@ -150,6 +150,12 @@ const (
 	UserIDKey ContextKey = "user_id"
 	// RequestIDKey is the context key for request ID
 	RequestIDKey ContextKey = "request_id"
+	// ClientIDKey is the context key for client ID
+	ClientIDKey ContextKey = "client_id"
+	// total clients key is the context key for total clients
+	TotalClientsKey ContextKey = "total_clients"
 	// UserDataKey is the context key for user data
 	UserDataKey UserData = "user"
+	// UsernameKey is the context key for username
+	UsernameKey UserData = "username"
 )

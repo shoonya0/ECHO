@@ -30,9 +30,9 @@ type JwtClaims struct {
 	Exp    int64  `json:"exp"`
 }
 
-// Helper function to get username from client
+// getUsernameFromClient returns the username for a client
 func getUsernameFromClient(client *models.Client) string {
-	userInfo, err := services.GetUserDisplayInfo(client.UserID)
+	userInfo, err := services.GetHubInstance().GetUserInfo(client.UserID)
 	if err != nil {
 		return client.UserID.Hex() // Fallback to user ID
 	}
@@ -44,44 +44,22 @@ var upgrader = websocket.Upgrader{
 	ReadBufferSize:  1024,
 	WriteBufferSize: 1024,
 	CheckOrigin: func(r *http.Request) bool {
-		// Allow connections from any origin (configure appropriately for production)
-		return true
+		return true // Allow all origins (configure for production)
 	},
 }
 
 // HandleWebSocketChat handles WebSocket connections for chat functionality
 func HandleWebSocketChat(ctx *gin.Context) {
-	user, exists := ctx.Get("user")
+	reqCtx, log, ok := ReduceGinContextToContext(ctx)
+	if !ok {
+		log.Debug("user not found")
+		return
+	}
+
+	user, exists := reqCtx.Value(objects.UserDataKey).(models.LoginUserResponse)
 	if !exists {
-		logger.WithContext(ctx).WithError(errors.New("user not found")).Error("User not authenticated")
+		log.Debug("user not found")
 		utils.ErrorResponse(ctx, http.StatusUnauthorized, "User not authenticated", nil)
-		return
-	}
-
-	// create a new context with the user
-	reqCtx := context.WithValue(ctx.Request.Context(), "user", user)
-
-	log := logger.WithContext(reqCtx)
-
-	// For WebSocket connections, authenticate via query parameter
-	token := ctx.GetHeader("Authorization")
-	if token == "" {
-		utils.ErrorResponse(ctx, http.StatusUnauthorized, "Token parameter required", nil)
-		return
-	}
-
-	// Verify the token using our auth logic
-	user, ok := ctx.Get("user")
-	if !ok {
-		log.WithError(fmt.Errorf("user not found")).Error("WebSocket authentication failed")
-		utils.ErrorResponse(ctx, http.StatusUnauthorized, "Authentication failed", "user not found")
-		return
-	}
-
-	userData, ok := user.(models.LoginUserResponse)
-	if !ok {
-		log.WithError(fmt.Errorf("user not found")).Error("WebSocket authentication failed")
-		utils.ErrorResponse(ctx, http.StatusUnauthorized, "Authentication failed", "user not found")
 		return
 	}
 
@@ -94,22 +72,21 @@ func HandleWebSocketChat(ctx *gin.Context) {
 	}
 
 	// Create new client (simplified - no username needed)
-	client := services.CreateClient(reqCtx, userData.ID, conn)
-
-	log.WithFields(map[string]interface{}{
-		"user_id":   userData.ID.Hex(),
-		"username":  userData.Username,
-		"client_id": client.ID,
-	}).Info("New WebSocket connection established")
+	client := &models.Client{
+		ID:         user.ID.Hex(),
+		UserID:     user.ID,
+		Connection: conn,
+		Send:       make(chan models.WebSocketMessage, 1000),
+	}
 
 	// Register client with hub
-	services.RegisterClient(reqCtx, client)
+	services.GetHubInstance().Register <- client
 
-	// Auto-join user to their active chats
-	err = autoJoinUserChats(reqCtx, client)
-	if err != nil {
-		log.WithField("client_id", client.ID).Error(err.Error())
-	}
+	log.WithFields(map[string]interface{}{
+		string(objects.UserIDKey):   user.ID.Hex(),
+		string(objects.UsernameKey): user.Username,
+		string(objects.ClientIDKey): client.ID,
+	}).Info("New WebSocket connection established")
 
 	// Start sequential handlers for reading and writing
 	go func() {
@@ -161,11 +138,10 @@ func handleClientWrite(client *models.Client) {
 	}
 }
 
-// needs to understand properly how to handle the read and write routines
 // handleClientRead handles reading messages from the WebSocket connection
 func handleClientRead(ctx context.Context, client *models.Client) {
 	defer func() {
-		services.UnregisterClient(client)
+		services.GetHubInstance().Unregister <- client
 		client.Connection.Close()
 		log.Printf("Read goroutine closed for client: %s", client.ID)
 	}()
@@ -188,7 +164,7 @@ func handleClientRead(ctx context.Context, client *models.Client) {
 				// Log other errors (like JSON parsing errors) but don't immediately close
 				log.Printf("Failed to parse message from client %s: %v", client.ID, err)
 
-				// Send error response to client instead of closing connection
+				// Send error response instead of closing connection
 				errorMsg := models.WebSocketMessage{
 					Type: models.WSMessageTypeError,
 					Data: models.ErrorMessage{
@@ -201,7 +177,7 @@ func handleClientRead(ctx context.Context, client *models.Client) {
 				select {
 				case client.Send <- errorMsg:
 				default:
-					// If can't send error, then close
+					// If can't send error, close connection
 					log.Printf("Cannot send error message to client %s, closing connection", client.ID)
 					break
 				}
@@ -210,7 +186,7 @@ func handleClientRead(ctx context.Context, client *models.Client) {
 			break
 		}
 
-		// unmarshal the message into a MessageRequest
+		// Parse the message into a MessageRequest
 		var request models.MessageRequest
 		if err := json.Unmarshal(message, &request); err != nil {
 			log.Printf("Failed to unmarshal message from client %s: %v", client.ID, err)
@@ -233,13 +209,6 @@ func handleClientRead(ctx context.Context, client *models.Client) {
 
 		// Update client activity
 		client.LastActivity = time.Now()
-
-		// contentPreview := request.Content
-		// if len(contentPreview) > 50 {
-		// 	contentPreview = contentPreview[:50] + "..."
-		// }
-		// log.Printf("Received WebSocket request from client %s: Type=%s, ChatID=%s, Content=%s",
-		// 	client.ID, request.Type, request.ChatID, contentPreview+" "+string(message))
 
 		// Process the request
 
@@ -394,7 +363,7 @@ func handleSendMessage(ctx context.Context, client *models.Client, request model
 	log.Printf("Message sent by client %s in chat %s", client.ID, request.ChatID)
 }
 
-// handleJoinRoom processes room joining requests
+// handleJoinChat processes chat joining requests
 func handleJoinChat(ctx context.Context, client *models.Client, request models.MessageRequest) {
 	log := logger.WithContext(ctx)
 	userInterface := ctx.Value("user")
@@ -422,12 +391,12 @@ func handleJoinChat(ctx context.Context, client *models.Client, request models.M
 	chatID := chat.ChatID.Hex()
 
 	// Join the chat room
-	services.JoinChatRoom(ctx, client, chatID)
+	services.GetHubInstance().JoinChat(ctx, client, chatID)
 
-	log.Printf("Client %s requested to join room %s", client.ID, chatID)
+	log.Printf("Client %s joined chat %s", client.ID, chatID)
 }
 
-// handleLeaveRoom processes room leaving requests
+// handleLeaveChat processes chat leaving requests
 func handleLeaveChat(client *models.Client, request models.MessageRequest) {
 	if request.ChatID == "" {
 		sendErrorResponse(client, request.RequestID, "INVALID_REQUEST", "ChatID is required")
@@ -435,9 +404,9 @@ func handleLeaveChat(client *models.Client, request models.MessageRequest) {
 	}
 
 	// Leave the chat room
-	services.LeaveChatRoom(client, request.ChatID)
+	services.GetHubInstance().LeaveChat(client, request.ChatID)
 
-	log.Printf("Client %s requested to leave room %s", client.ID, request.ChatID)
+	log.Printf("Client %s left chat %s", client.ID, request.ChatID)
 }
 
 // handleSetTyping processes typing indicator requests
@@ -470,7 +439,7 @@ func handleSetTyping(ctx context.Context, client *models.Client, request models.
 		return
 	}
 
-	log.Printf("Client %s set typing status to %v in room %s", client.ID, isTyping, request.ChatID)
+	log.Printf("Client %s typing status: %v in chat %s", client.ID, isTyping, request.ChatID)
 }
 
 // handleMarkRead processes message read status updates
@@ -514,7 +483,7 @@ func handleMarkRead(client *models.Client, request models.MessageRequest) {
 		return
 	}
 
-	log.Printf("Client %s marked %d messages as read in room %s", client.ID, len(messageIDs), request.ChatID)
+	log.Printf("Client %s marked %d messages as read in chat %s", client.ID, len(messageIDs), request.ChatID)
 }
 
 // handleAddReaction processes message reaction addition requests
@@ -577,7 +546,10 @@ func handleAddReaction(client *models.Client, request models.MessageRequest) {
 		Timestamp: time.Now(),
 	}
 
-	services.BroadcastToChat(request.ChatID, reactionEvent)
+	err = services.BroadcastToChat(request.ChatID, reactionEvent)
+	if err != nil {
+		log.Printf("Failed to broadcast reaction: %v", err)
+	}
 
 	// Send success response
 	sendSuccessResponse(client, request.RequestID, map[string]interface{}{
@@ -649,7 +621,10 @@ func handleRemoveReaction(client *models.Client, request models.MessageRequest) 
 		Timestamp: time.Now(),
 	}
 
-	services.BroadcastToChat(request.ChatID, reactionEvent)
+	err = services.BroadcastToChat(request.ChatID, reactionEvent)
+	if err != nil {
+		log.Printf("Failed to broadcast reaction removal: %v", err)
+	}
 
 	// Send success response
 	sendSuccessResponse(client, request.RequestID, map[string]interface{}{
@@ -693,45 +668,13 @@ func handleUpdateChat(client *models.Client, request models.MessageRequest) {
 
 // ============ UTILITY FUNCTIONS ============
 
-// autoJoinUserChats automatically joins the user to their active chats (sequential)
-func autoJoinUserChats(ctx context.Context, client *models.Client) error {
-	log := logger.WithContext(ctx)
-	// Get user's chats
-	userChats, err := services.GetUserChats(ctx, client.UserID)
-	if err != nil {
-		log.WithError(err).Error("Failed to get user chats for auto-join")
-		return err
-	}
-
-	if len(userChats) == 0 {
-		log.WithField("client_id", client.ID).Warn("No chats found for auto-join")
-		return nil
-	}
-
-	// Join each chat sequentially
-	for _, chatID := range userChats {
-		// Check if user is still a participant and not blocked
-		services.JoinChatRoom(ctx, client, chatID.Hex())
-		fmt.Printf("Auto-joined client %s to chat %s \n", client.ID, chatID.Hex())
-	}
-
-	log.WithFields(map[string]interface{}{
-		"user_id":    client.UserID.Hex(),
-		"client_id":  client.ID,
-		"chat_count": len(userChats),
-	}).Info("Auto-join completed")
-	return nil
-}
-
 // validateMessagePermissions checks if a user can send messages in a chat
 func validateMessagePermissions(ctx context.Context, userID bson.ObjectID, chatID bson.ObjectID) (bool, error) {
-	// Get chat details
 	chat, err := services.GetChat(ctx, models.ChatInfo{ChatID: chatID})
 	if err != nil {
 		return false, fmt.Errorf("failed to get chat: %w", err)
 	}
 
-	// Check if user is a participant
 	participant, isParticipant := chat.Participants[userID]
 	if !isParticipant {
 		return false, nil
@@ -742,31 +685,23 @@ func validateMessagePermissions(ctx context.Context, userID bson.ObjectID, chatI
 		return false, nil
 	}
 
-	// Check chat-specific permissions
 	switch chat.ChatType {
 	case string(objects.ChatTypeDirect):
-		// In direct chats, both participants can send messages
 		return true, nil
 
 	case string(objects.ChatTypeGroup):
-		// Check if user has message permission (default: all members can send)
 		permissions := participant.Permissions
 		if len(permissions) > 0 {
-			// If permissions are explicitly set, check for send_message permission
-			hasPermission := false
 			for _, perm := range permissions {
 				if perm == "send_message" || perm == "admin" || perm == "owner" {
-					hasPermission = true
-					break
+					return true, nil
 				}
 			}
-			return hasPermission, nil
+			return false, nil
 		}
-		// Default: members can send messages
-		return true, nil
+		return true, nil // Default: members can send
 
 	case string(objects.ChatTypeChannel):
-		// Only admins and owners can send messages in channels by default
 		return participant.Role == "admin" || participant.Role == "owner", nil
 
 	default:
@@ -776,12 +711,10 @@ func validateMessagePermissions(ctx context.Context, userID bson.ObjectID, chatI
 
 // validateMessageContent validates message content and attachments
 func validateMessageContent(request models.MessageRequest) error {
-	// Check content length
 	if len(request.Content) > 4000 { // 4KB limit
 		return fmt.Errorf("message content too long (max 4000 characters)")
 	}
 
-	// Validate message type
 	validTypes := map[string]bool{
 		"text":  true,
 		"image": true,
@@ -794,7 +727,6 @@ func validateMessageContent(request models.MessageRequest) error {
 		return fmt.Errorf("invalid message type: %s", request.MessageType)
 	}
 
-	// Validate attachments if present
 	if len(request.Attachments) > 10 { // Max 10 attachments
 		return fmt.Errorf("too many attachments (max 10)")
 	}
@@ -808,7 +740,6 @@ func validateMessageContent(request models.MessageRequest) error {
 		}
 	}
 
-	// Validate mentions
 	if len(request.Mentions) > 20 { // Max 20 mentions
 		return fmt.Errorf("too many mentions (max 20)")
 	}

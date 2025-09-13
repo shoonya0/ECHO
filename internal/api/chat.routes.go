@@ -9,11 +9,7 @@ import (
 
 // remaining :- when sending an message to an unknown user then we have to autojoin both the users insted of one.
 func RegisterChatRoutes(r *gin.Engine) {
-	// ============ WEBSOCKET ROUTES (NO AUTH MIDDLEWARE) ============
-	wsApi := r.Group(objects.ApiBasePath + "ws")
-	{
-		wsApi.GET("/chat", controller.HandleWebSocketChat) // Main WebSocket endpoint for real-time chat
-	}
+	// WebSocket routes are now handled in RegisterWebSocketRoutes in routes.go
 
 	chatApi := r.Group(objects.ApiBasePath)
 
@@ -22,9 +18,7 @@ func RegisterChatRoutes(r *gin.Engine) {
 	{
 		chatRoutes.POST("/direct/:userId", controller.CreateDirectChatHTTP) // Create direct chat
 		chatRoutes.POST("/group", controller.CreateGroupChatHTTP)           // Create group chat
-
-		// Monitoring (for admin/debugging)
-		chatRoutes.GET("/hub/stats", controller.GetHubStatsHTTP) // Get WebSocket hub statistics
+		chatRoutes.GET("/hub/stats", controller.GetHubStatsHTTP)            // Get WebSocket hub statistics -> Monitoring (for admin/debugging)
 	}
 
 	// chatUrl for group chat := to add people in group chat via invite code
@@ -35,7 +29,6 @@ func RegisterChatRoutes(r *gin.Engine) {
 	{
 		// Group Messages (legacy endpoint for backward compatibility)
 		messageRoutes.GET("/:chatID/messages", controller.GetChatMessagesHTTP) // Get chat messages with pagination
-		messageRoutes.GET("/groups/chat", controller.GetGroupMessages)         // Get group message history
 
 		// 		// Message Operations (Future implementations)
 		// 		messageRoutes.PUT("/:messageID", controller.EditMessage)                        // Edit message
@@ -70,31 +63,14 @@ func RegisterChatRoutes(r *gin.Engine) {
 		// 		groupRoutes.GET("/:groupID/settings", controller.GetGroupSettings)    // Get settings
 
 		// ============ INVITE CODE ROUTES ============
-
-		// make an invite code for the group chat
-		groupRoutes.POST("/:groupID/invites", controller.CreateInvite) // Create invite
-
-		// list all invite code of any specific chatID
-		groupRoutes.GET("/:groupID/invites", controller.GetGroupInvites) // Get group invites
-
-		// delete an invite code
-		groupRoutes.DELETE("/invites/:inviteID/", controller.DeleteInvite) // Delete invite
-
-		// update the status of an invite code -> done internally
-		// groupRoutes.PUT("/invites/:inviteID/status", controller.UpdateInviteStatus) // Update invite status
-
-		// get the joined users by an invite code
-		groupRoutes.GET("/invites/:inviteID/joined", controller.GetJoinedUsersByInvite) // Get joined users by invite
-
-		// in user we make map of chatID and invite code
-		// send an invite code to an user
+		groupRoutes.POST("/:groupID/invites", controller.CreateInvite)                   // Create invite -> invite code for the group chat
+		groupRoutes.GET("/:groupID/invites", controller.GetGroupInvites)                 // list all invite code of any chatID
+		groupRoutes.DELETE("/invites/:inviteID/", controller.DeleteInvite)               // Delete invite code
+		groupRoutes.GET("/invites/:inviteID/joined", controller.GetJoinedUsersByInvite)  // Get joined users by invite
 		groupRoutes.POST("/invites/:inviteID/:userID/send", controller.SendInviteToUser) // Send invite to user
-
-		// join a group via an invite code -> user route
-		groupRoutes.POST("/join/:inviteCode", controller.JoinGroupByInvite) // Join via invite
-
-		// get all invite chat of an user
-		groupRoutes.GET("/invites", controller.GetAllInvitesOfUser) // Get all invites of an user
+		groupRoutes.POST("/join/:inviteCode", controller.JoinGroupByInvite)              // join a group via an invite code -> this is an user route
+		groupRoutes.GET("/invites", controller.GetAllInvitesOfUser)                      // Get all invites of an user
+		// groupRoutes.PUT("/invites/:inviteID/status", controller.UpdateInviteStatus) // update the status of an invite code -> done internally
 	}
 
 	// 	// ============ CHANNEL ROUTES (for Discord-like functionality) ============

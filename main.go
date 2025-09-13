@@ -73,10 +73,8 @@ func main() {
 
 	// Start WebSocket hub in a separate goroutine
 	go func() {
-		hubCtx := logger.WithTransactionID(ctx)
-		hubLog := logger.WithContext(hubCtx)
-		hubLog.Info("Starting WebSocket Hub for real-time chat")
-		services.RunHub()
+		log.Info("Starting WebSocket Hub for real-time chat")
+		services.GetHubInstance().Start()
 	}()
 
 	log.WithField("port", objects.MainConfiguration.Port).Info("Starting Echo Chat Server with WebSocket support")

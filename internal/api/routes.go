@@ -1,6 +1,7 @@
 package routes
 
 import (
+	"gin/internal/controller"
 	"gin/internal/middleware"
 	"gin/internal/models"
 	"gin/internal/utils"
@@ -138,9 +139,21 @@ func RegisterAPIRoutes(r *gin.Engine) {
 	r.POST(objects.ApiBasePath+"login", Login())
 	r.POST(objects.ApiBasePath+"signup", Signup())
 
+	// Register WebSocket routes BEFORE auth middleware (they handle auth internally)
+	RegisterWebSocketRoutes(r)
+
 	r.Use(middleware.AuthMiddleware)
 	r.Use(middleware.LoggerMiddleware())
 
 	RegisterUserRoutes(r)
 	RegisterChatRoutes(r)
+}
+
+// RegisterWebSocketRoutes registers WebSocket endpoints that handle authentication internally
+func RegisterWebSocketRoutes(r *gin.Engine) {
+	wsGroup := r.Group(objects.ApiBasePath + "ws")
+	wsGroup.Use(middleware.AuthMiddleware) // Apply auth middleware to WebSocket routes
+	wsGroup.Use(middleware.LoggerMiddleware())
+
+	wsGroup.GET("/chat", controller.HandleWebSocketChat)
 }
