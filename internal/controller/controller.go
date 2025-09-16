@@ -24,7 +24,7 @@ func ReduceGinContextToContext(ctx *gin.Context) (context.Context, logrus.Entry,
 	reqCtx := context.WithValue(ctx.Request.Context(), objects.UserDataKey, userInterface)
 	log := logger.WithContext(reqCtx)
 
-	return ctx.Request.Context(), *log, true
+	return reqCtx, *log, true
 }
 
 // BuildPartialDocument creates a MongoDB update document only with non-nil fields

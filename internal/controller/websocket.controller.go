@@ -16,12 +16,12 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/golang-jwt/jwt/v5"
+	"github.com/google/uuid"
 	"github.com/gorilla/websocket"
 	"go.mongodb.org/mongo-driver/v2/bson"
 )
 
 // ============ WEBSOCKET CONTROLLER FOR REAL-TIME CHAT ============
-
 // JwtClaims represents JWT token claims
 type JwtClaims struct {
 	jwt.RegisteredClaims
@@ -56,6 +56,8 @@ func HandleWebSocketChat(ctx *gin.Context) {
 		return
 	}
 
+	fmt.Println("reqCtx", reqCtx.Value(objects.UserDataKey).(models.LoginUserResponse))
+
 	user, exists := reqCtx.Value(objects.UserDataKey).(models.LoginUserResponse)
 	if !exists {
 		log.Debug("user not found")
@@ -63,24 +65,21 @@ func HandleWebSocketChat(ctx *gin.Context) {
 		return
 	}
 
-	// Upgrade HTTP connection to WebSocket
-	conn, err := upgrader.Upgrade(ctx.Writer, ctx.Request, nil)
+	conn, err := upgrader.Upgrade(ctx.Writer, ctx.Request, nil) // Upgrade HTTP connection to WebSocket
 	if err != nil {
 		log.WithError(err).Error("Failed to upgrade WebSocket connection")
 		utils.ErrorResponse(ctx, http.StatusBadRequest, "Failed to upgrade WebSocket connection", nil)
 		return
 	}
 
-	// Create new client (simplified - no username needed)
-	client := &models.Client{
-		ID:         user.ID.Hex(),
+	client := &models.Client{ // Create new client with unique ID for each connection
+		ID:         uuid.New().String(), // Generate unique ID for each WebSocket connection
 		UserID:     user.ID,
 		Connection: conn,
 		Send:       make(chan models.WebSocketMessage, 1000),
 	}
 
-	// Register client with hub
-	services.GetHubInstance().Register <- client
+	services.GetHubInstance().Register <- client // Register client with hub
 
 	log.WithFields(map[string]interface{}{
 		string(objects.UserIDKey):   user.ID.Hex(),
@@ -88,17 +87,15 @@ func HandleWebSocketChat(ctx *gin.Context) {
 		string(objects.ClientIDKey): client.ID,
 	}).Info("New WebSocket connection established")
 
-	// Start sequential handlers for reading and writing
 	go func() {
-		// Handle writing in a simple goroutine
-		handleClientWrite(client)
+		handleClientWrite(client) // Handle writing in a simple goroutine
 	}()
 
-	// // Handle reading in the main routine (blocking)
-	handleClientRead(reqCtx, client)
+	handleClientRead(reqCtx, client) // Handle reading in the main routine (blocking)
 }
 
 // handleClientWrite handles writing messages to the WebSocket connection
+// message to be sent to the client
 func handleClientWrite(client *models.Client) {
 	ticker := time.NewTicker(54 * time.Second) // Ping every 54 seconds
 	defer func() {
@@ -111,25 +108,20 @@ func handleClientWrite(client *models.Client) {
 		case message, ok := <-client.Send:
 			client.Connection.SetWriteDeadline(time.Now().Add(10 * time.Second))
 			if !ok {
-				// Channel was closed
-				client.Connection.WriteMessage(websocket.CloseMessage, []byte{})
+				client.Connection.WriteMessage(websocket.CloseMessage, []byte{}) // Send close message
 				return
 			}
 
-			// Send message as JSON
-			if err := client.Connection.WriteJSON(message); err != nil {
+			if err := client.Connection.WriteJSON(message); err != nil { // Send message as JSON
 				log.Printf("Failed to write message to client %s: %v", client.ID, err)
 				return
 			}
 
-			// Update client activity
-			client.LastActivity = time.Now()
-
+			client.LastActivity = time.Now() // Update client activity
 		case <-ticker.C:
 			client.Connection.SetWriteDeadline(time.Now().Add(10 * time.Second))
 
-			// Send ping
-			if err := client.Connection.WriteMessage(websocket.PingMessage, nil); err != nil {
+			if err := client.Connection.WriteMessage(websocket.PingMessage, nil); err != nil { // Send ping
 				log.Printf("Failed to send ping to client %s: %v", client.ID, err)
 				return
 
@@ -139,6 +131,7 @@ func handleClientWrite(client *models.Client) {
 }
 
 // handleClientRead handles reading messages from the WebSocket connection
+// message to be read from the client
 func handleClientRead(ctx context.Context, client *models.Client) {
 	defer func() {
 		services.GetHubInstance().Unregister <- client
@@ -146,8 +139,7 @@ func handleClientRead(ctx context.Context, client *models.Client) {
 		log.Printf("Read goroutine closed for client: %s", client.ID)
 	}()
 
-	// Set read deadline and pong handler
-	client.Connection.SetReadDeadline(time.Now().Add(60 * time.Second))
+	client.Connection.SetReadDeadline(time.Now().Add(60 * time.Second)) // Set read deadline and pong handler
 	client.Connection.SetPongHandler(func(string) error {
 		client.Connection.SetReadDeadline(time.Now().Add(60 * time.Second))
 		client.LastActivity = time.Now()
@@ -155,17 +147,15 @@ func handleClientRead(ctx context.Context, client *models.Client) {
 	})
 
 	for {
-		// Read message from client
-		_, message, err := client.Connection.ReadMessage()
+		_, message, err := client.Connection.ReadMessage() // Read message from client
 		if err != nil {
 			if websocket.IsUnexpectedCloseError(err, websocket.CloseGoingAway, websocket.CloseAbnormalClosure) {
 				log.Printf("WebSocket error for client %s: %v", client.ID, err)
 			} else {
-				// Log other errors (like JSON parsing errors) but don't immediately close
-				log.Printf("Failed to parse message from client %s: %v", client.ID, err)
 
-				// Send error response instead of closing connection
-				errorMsg := models.WebSocketMessage{
+				log.Printf("Failed to parse message from client %s: %v", client.ID, err) // Log other errors (like JSON parsing errors) but don't immediately close
+
+				errorMsg := models.WebSocketMessage{ // Send error response instead of closing connection
 					Type: models.WSMessageTypeError,
 					Data: models.ErrorMessage{
 						Code:    "PARSE_ERROR",
@@ -177,8 +167,7 @@ func handleClientRead(ctx context.Context, client *models.Client) {
 				select {
 				case client.Send <- errorMsg:
 				default:
-					// If can't send error, close connection
-					log.Printf("Cannot send error message to client %s, closing connection", client.ID)
+					log.Printf("Cannot send error message to client %s, closing connection", client.ID) // If can't send error, close connection
 					break
 				}
 				continue // Don't close, try to read next message
@@ -186,8 +175,7 @@ func handleClientRead(ctx context.Context, client *models.Client) {
 			break
 		}
 
-		// Parse the message into a MessageRequest
-		var request models.MessageRequest
+		var request models.MessageRequest // Parse the message into a MessageRequest
 		if err := json.Unmarshal(message, &request); err != nil {
 			log.Printf("Failed to unmarshal message from client %s: %v", client.ID, err)
 			errorMsg := models.WebSocketMessage{
@@ -207,18 +195,14 @@ func handleClientRead(ctx context.Context, client *models.Client) {
 			continue
 		}
 
-		// Update client activity
-		client.LastActivity = time.Now()
+		client.LastActivity = time.Now() // Update client activity
 
-		// Process the request
-
-		handleClientRequest(ctx, client, request)
+		handleClientRequest(ctx, client, request) // Process the request
 	}
 }
 
 // handleClientRequest processes different types of client requests
 func handleClientRequest(ctx context.Context, client *models.Client, request models.MessageRequest) {
-
 	switch request.Type {
 	case models.WSRequestTypeSendMessage:
 		handleSendMessage(ctx, client, request)
@@ -265,21 +249,18 @@ func handleClientRequest(ctx context.Context, client *models.Client, request mod
 
 // handleSendMessage processes message sending requests with comprehensive validation
 func handleSendMessage(ctx context.Context, client *models.Client, request models.MessageRequest) {
-	// Validate request
-	if request.ChatID == "" || request.Content == "" {
+	if request.ChatID == "" || request.Content == "" { // Validate request
 		sendErrorResponse(client, request.RequestID, "INVALID_REQUEST", "ChatID and content are required")
 		return
 	}
 
-	// Parse chat ID
-	chatID, err := bson.ObjectIDFromHex(request.ChatID)
+	chatID, err := bson.ObjectIDFromHex(request.ChatID) // Parse chat ID
 	if err != nil {
 		sendErrorResponse(client, request.RequestID, "INVALID_CHAT_ID", "Invalid chat ID format")
 		return
 	}
 
-	// Check if user has permission to send messages in this chat
-	canSend, err := validateMessagePermissions(ctx, client.UserID, chatID)
+	canSend, err := validateMessagePermissions(ctx, client.UserID, chatID) // Check if user has permission to send messages in this chat
 	if err != nil {
 		log.Printf("Failed to validate message permissions: %v", err)
 		sendErrorResponse(client, request.RequestID, "PERMISSION_CHECK_FAILED", "Failed to validate permissions")
@@ -291,20 +272,17 @@ func handleSendMessage(ctx context.Context, client *models.Client, request model
 		return
 	}
 
-	// Validate message content and type
-	if err := validateMessageContent(request); err != nil {
+	if err := validateMessageContent(request); err != nil { // Validate message content and type
 		sendErrorResponse(client, request.RequestID, "INVALID_CONTENT", err.Error())
 		return
 	}
 
-	// Set default message type if not provided
-	messageType := request.MessageType
+	messageType := request.MessageType // Set default message type if not provided
 	if messageType == "" {
 		messageType = "text"
 	}
 
-	// Send message through service layer
-	message, err := services.SendMessage(
+	message, err := services.SendMessage( // Send message through service layer
 		ctx,
 		chatID,
 		client.UserID,
@@ -313,14 +291,14 @@ func handleSendMessage(ctx context.Context, client *models.Client, request model
 		request.Attachments,
 		request.Mentions,
 	)
+
 	if err != nil {
 		log.Printf("Failed to send message: %v", err)
 		sendErrorResponse(client, request.RequestID, "MESSAGE_FAILED", "Failed to send message")
 		return
 	}
 
-	// Send success response
-	response := models.MessageResponse{
+	response := models.MessageResponse{ // Send success response
 		Success:   true,
 		MessageID: message.ID.Hex(),
 		Data: map[string]interface{}{
@@ -342,8 +320,7 @@ func handleSendMessage(ctx context.Context, client *models.Client, request model
 	case client.Send <- wsMessage:
 	default:
 		log.Printf("Client %s send channel is full, dropping message", client.ID)
-		// Send error response about dropped message
-		errorResponse := models.WebSocketMessage{
+		errorResponse := models.WebSocketMessage{ // Send error response about dropped message
 			Type: models.WSMessageTypeError,
 			Data: models.ErrorMessage{
 				Code:    "CHANNEL_FULL",
@@ -352,8 +329,7 @@ func handleSendMessage(ctx context.Context, client *models.Client, request model
 			RequestID: request.RequestID,
 			Timestamp: time.Now(),
 		}
-		// Try to send error, if that fails too, the client is probably unresponsive
-		select {
+		select { // Try to send error, if that fails too, the client is probably unresponsive
 		case client.Send <- errorResponse:
 		default:
 			log.Printf("Client %s is unresponsive, marking for cleanup", client.ID)
@@ -366,22 +342,21 @@ func handleSendMessage(ctx context.Context, client *models.Client, request model
 // handleJoinChat processes chat joining requests
 func handleJoinChat(ctx context.Context, client *models.Client, request models.MessageRequest) {
 	log := logger.WithContext(ctx)
-	userInterface := ctx.Value("user")
+	userInterface := ctx.Value("user") // Get user from context
 	if userInterface == nil {
 		log.WithError(errors.New("user not Found")).Error("User not authenticated")
 		sendErrorResponse(client, request.RequestID, "USER_NOT_AUTHENTICATED", "User not authenticated")
 		return
 	}
 
-	targetUserID, err := bson.ObjectIDFromHex(request.SenderID)
+	targetUserID, err := bson.ObjectIDFromHex(request.SenderID) // Parse sender user ID
 	if err != nil {
 		log.WithError(err).Error("Invalid sender user ID")
 		sendErrorResponse(client, request.RequestID, "INVALID_USER_ID", "Invalid sender user ID")
 		return
 	}
 
-	// create a new chat if it doesn't exist
-	chat, err := services.CreateDirectChat(ctx, targetUserID)
+	chat, err := services.CreateDirectChat(ctx, targetUserID) // create a new chat if it doesn't exist
 	if err != nil {
 		log.WithError(err).Error("Failed to create chat")
 		sendErrorResponse(client, request.RequestID, "CHAT_CREATION_FAILED", "Failed to create chat")
@@ -390,8 +365,7 @@ func handleJoinChat(ctx context.Context, client *models.Client, request models.M
 
 	chatID := chat.ChatID.Hex()
 
-	// Join the chat room
-	services.GetHubInstance().JoinChat(ctx, client, chatID)
+	services.GetHubInstance().JoinChat(ctx, client, chatID) // Join the chat room
 
 	log.Printf("Client %s joined chat %s", client.ID, chatID)
 }
@@ -403,8 +377,7 @@ func handleLeaveChat(client *models.Client, request models.MessageRequest) {
 		return
 	}
 
-	// Leave the chat room
-	services.GetHubInstance().LeaveChat(client, request.ChatID)
+	services.GetHubInstance().LeaveChat(client, request.ChatID) // Leave the chat room
 
 	log.Printf("Client %s left chat %s", client.ID, request.ChatID)
 }
@@ -416,23 +389,20 @@ func handleSetTyping(ctx context.Context, client *models.Client, request models.
 		return
 	}
 
-	// Parse chat ID
-	chatID, err := bson.ObjectIDFromHex(request.ChatID)
+	chatID, err := bson.ObjectIDFromHex(request.ChatID) // Parse chat ID
 	if err != nil {
 		sendErrorResponse(client, request.RequestID, "INVALID_CHAT_ID", "Invalid chat ID format")
 		return
 	}
 
-	// Extract typing status from metadata
-	isTyping := false
+	isTyping := false // Extract typing status from metadata
 	if request.Metadata != nil {
 		if typing, ok := request.Metadata["isTyping"].(bool); ok {
 			isTyping = typing
 		}
 	}
 
-	// Update typing status
-	err = services.UpdateTypingStatus(ctx, chatID, client.UserID, isTyping)
+	err = services.UpdateTypingStatus(ctx, chatID, client.UserID, isTyping) // Update typing status
 	if err != nil {
 		log.Printf("Failed to update typing status: %v", err)
 		sendErrorResponse(client, request.RequestID, "TYPING_FAILED", "Failed to update typing status")
@@ -449,15 +419,13 @@ func handleMarkRead(client *models.Client, request models.MessageRequest) {
 		return
 	}
 
-	// Parse chat ID
-	chatID, err := bson.ObjectIDFromHex(request.ChatID)
+	chatID, err := bson.ObjectIDFromHex(request.ChatID) // Parse chat ID
 	if err != nil {
 		sendErrorResponse(client, request.RequestID, "INVALID_CHAT_ID", "Invalid chat ID format")
 		return
 	}
 
-	// Extract message IDs from metadata
-	var messageIDs []bson.ObjectID
+	messageIDs := []bson.ObjectID{} // Extract message IDs from metadata
 	if request.Metadata != nil {
 		if msgIDs, ok := request.Metadata["messageIds"].([]interface{}); ok {
 			for _, id := range msgIDs {
@@ -475,8 +443,7 @@ func handleMarkRead(client *models.Client, request models.MessageRequest) {
 		return
 	}
 
-	// Mark messages as read
-	err = services.MarkMessagesAsRead(chatID, client.UserID, messageIDs)
+	err = services.MarkMessagesAsRead(chatID, client.UserID, messageIDs) // Mark messages as read
 	if err != nil {
 		log.Printf("Failed to mark messages as read: %v", err)
 		sendErrorResponse(client, request.RequestID, "READ_FAILED", "Failed to mark messages as read")
@@ -493,8 +460,7 @@ func handleAddReaction(client *models.Client, request models.MessageRequest) {
 		return
 	}
 
-	// Extract messageID and emoji from metadata
-	var messageID, emoji string
+	messageID, emoji := "", "" // Extract messageID and emoji from metadata
 	if request.Metadata != nil {
 		if msgID, ok := request.Metadata["messageId"].(string); ok {
 			messageID = msgID
@@ -509,8 +475,7 @@ func handleAddReaction(client *models.Client, request models.MessageRequest) {
 		return
 	}
 
-	// Parse IDs
-	chatID, err := bson.ObjectIDFromHex(request.ChatID)
+	chatID, err := bson.ObjectIDFromHex(request.ChatID) // Parse IDs
 	if err != nil {
 		sendErrorResponse(client, request.RequestID, "INVALID_CHAT_ID", "Invalid chat ID format")
 		return
@@ -522,16 +487,14 @@ func handleAddReaction(client *models.Client, request models.MessageRequest) {
 		return
 	}
 
-	// Add reaction through service layer
-	err = services.AddMessageReaction(chatID, msgObjectID, client.UserID, emoji)
+	err = services.AddMessageReaction(chatID, msgObjectID, client.UserID, emoji) // Add reaction through service layer
 	if err != nil {
 		log.Printf("Failed to add reaction: %v", err)
 		sendErrorResponse(client, request.RequestID, "REACTION_FAILED", "Failed to add reaction")
 		return
 	}
 
-	// Broadcast reaction to chat
-	reactionEvent := models.WebSocketMessage{
+	reactionEvent := models.WebSocketMessage{ // Broadcast reaction to chat
 		Type:   models.WSMessageTypeReaction,
 		ChatID: request.ChatID,
 		UserID: client.UserID.Hex(),
@@ -546,13 +509,12 @@ func handleAddReaction(client *models.Client, request models.MessageRequest) {
 		Timestamp: time.Now(),
 	}
 
-	err = services.BroadcastToChat(request.ChatID, reactionEvent)
+	err = services.BroadcastToChat(request.ChatID, reactionEvent) // Broadcast reaction to chat
 	if err != nil {
 		log.Printf("Failed to broadcast reaction: %v", err)
 	}
 
-	// Send success response
-	sendSuccessResponse(client, request.RequestID, map[string]interface{}{
+	sendSuccessResponse(client, request.RequestID, map[string]interface{}{ // Send success response
 		"action":    "reaction_added",
 		"messageId": messageID,
 		"emoji":     emoji,
@@ -568,8 +530,7 @@ func handleRemoveReaction(client *models.Client, request models.MessageRequest) 
 		return
 	}
 
-	// Extract messageID and emoji from metadata
-	var messageID, emoji string
+	messageID, emoji := "", "" // Extract messageID and emoji from metadata
 	if request.Metadata != nil {
 		if msgID, ok := request.Metadata["messageId"].(string); ok {
 			messageID = msgID
@@ -584,8 +545,7 @@ func handleRemoveReaction(client *models.Client, request models.MessageRequest) 
 		return
 	}
 
-	// Parse IDs
-	chatID, err := bson.ObjectIDFromHex(request.ChatID)
+	chatID, err := bson.ObjectIDFromHex(request.ChatID) // Parse IDs
 	if err != nil {
 		sendErrorResponse(client, request.RequestID, "INVALID_CHAT_ID", "Invalid chat ID format")
 		return
@@ -597,16 +557,14 @@ func handleRemoveReaction(client *models.Client, request models.MessageRequest) 
 		return
 	}
 
-	// Remove reaction through service layer
-	err = services.RemoveMessageReaction(chatID, msgObjectID, client.UserID, emoji)
+	err = services.RemoveMessageReaction(chatID, msgObjectID, client.UserID, emoji) // Remove reaction through service layer
 	if err != nil {
 		log.Printf("Failed to remove reaction: %v", err)
 		sendErrorResponse(client, request.RequestID, "REACTION_FAILED", "Failed to remove reaction")
 		return
 	}
 
-	// Broadcast reaction removal to chat
-	reactionEvent := models.WebSocketMessage{
+	reactionEvent := models.WebSocketMessage{ // Broadcast reaction removal to chat
 		Type:   models.WSMessageTypeReaction,
 		ChatID: request.ChatID,
 		UserID: client.UserID.Hex(),
@@ -626,8 +584,7 @@ func handleRemoveReaction(client *models.Client, request models.MessageRequest) 
 		log.Printf("Failed to broadcast reaction removal: %v", err)
 	}
 
-	// Send success response
-	sendSuccessResponse(client, request.RequestID, map[string]interface{}{
+	sendSuccessResponse(client, request.RequestID, map[string]interface{}{ // Send success response
 		"action":    "reaction_removed",
 		"messageId": messageID,
 		"emoji":     emoji,
@@ -680,8 +637,8 @@ func validateMessagePermissions(ctx context.Context, userID bson.ObjectID, chatI
 		return false, nil
 	}
 
-	// Check if user is blocked or muted
-	if participant.IsBlocked || participant.IsMuted {
+	if participant.IsBlocked || participant.IsMuted { // Check if user is blocked or muted
+
 		return false, nil
 	}
 

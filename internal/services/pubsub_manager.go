@@ -126,7 +126,7 @@ func (pm *PubSubManager) SubscribeUserToChannels(userID bson.ObjectID, chatIDs [
 
 // UnsubscribeUserFromChannels unsubscribes a user from their channels
 func (pm *PubSubManager) UnsubscribeUserFromChannels(userID bson.ObjectID, chatIDs []string) error {
-	// Unsubscribe from user's personal channel
+	// Unsubscribe from user's personal channel (always safe to unsubscribe personal channels)
 	userChannel := pm.getUserChannel(userID.Hex())
 	if err := pm.unsubscribeFromChannel(userChannel); err != nil {
 		pm.logger.Error("pubsub_manager.go: Failed to unsubscribe from user channel",
@@ -134,13 +134,41 @@ func (pm *PubSubManager) UnsubscribeUserFromChannels(userID bson.ObjectID, chatI
 			zap.Error(err))
 	}
 
-	// Unsubscribe from chat channels
+	// Unsubscribe from chat channels - but only if no other clients are in the chat
 	for _, chatID := range chatIDs {
 		chatChannel := pm.getChatChannel(chatID)
-		if err := pm.unsubscribeFromChannel(chatChannel); err != nil {
-			pm.logger.Error("pubsub_manager.go: Failed to unsubscribe from chat channel",
+
+		// Check if there are other clients still in this chat on this instance
+		pm.hub.Mutex.RLock()
+		shouldUnsubscribe := true
+		if chatClients, exists := pm.hub.ChatClients[chatID]; exists {
+			// Count clients that are NOT from the disconnecting user
+			otherClientsCount := 0
+			for _, client := range chatClients {
+				if client.UserID != userID {
+					otherClientsCount++
+				}
+			}
+			// Only unsubscribe if no other clients from different users are in this chat
+			shouldUnsubscribe = (otherClientsCount == 0)
+		}
+		pm.hub.Mutex.RUnlock()
+
+		// Only unsubscribe if safe to do so
+		if shouldUnsubscribe {
+			if err := pm.unsubscribeFromChannel(chatChannel); err != nil {
+				pm.logger.Error("pubsub_manager.go: Failed to unsubscribe from chat channel",
+					zap.String("chatID", chatID),
+					zap.Error(err))
+			} else {
+				pm.logger.Debug("pubsub_manager.go: Unsubscribed from chat channel (no other clients)",
+					zap.String("chatID", chatID),
+					zap.String("userID", userID.Hex()))
+			}
+		} else {
+			pm.logger.Debug("pubsub_manager.go: Keeping chat channel subscription (other clients exist)",
 				zap.String("chatID", chatID),
-				zap.Error(err))
+				zap.String("userID", userID.Hex()))
 		}
 	}
 

@@ -59,7 +59,6 @@ func GetHubInstance() *EnhancedHub {
 			UserActiveChats: make(map[string][]string), // Initialize centralized active chats
 			Register:        make(chan *models.Client),
 			Unregister:      make(chan *models.Client),
-			Broadcast:       make(chan *models.WebSocketMessage, 1000),
 		}
 
 		// Create context for hub
@@ -144,9 +143,6 @@ func (eh *EnhancedHub) runHub() {
 
 		case client := <-eh.Unregister:
 			eh.handleClientUnregistration(client)
-
-		case message := <-eh.Broadcast:
-			eh.handleBroadcast(message)
 		}
 	}
 }
@@ -183,6 +179,23 @@ func (eh *EnhancedHub) handleClientRegistration(client *models.Client) {
 	if err := eh.pubSubManager.SubscribeUserToChannels(client.UserID, userChats); err != nil {
 		eh.logger.Error("websocket_hub_enhanced.go: Failed to subscribe to channels",
 			zap.Error(err))
+	}
+
+	// updated part
+	// Add client to all their chat rooms (this was missing!)
+	for _, chatID := range userChats {
+		if eh.ChatClients[chatID] == nil {
+			eh.ChatClients[chatID] = make(map[string]*models.Client)
+		}
+		eh.ChatClients[chatID][client.ID] = client
+		eh.logger.Debug("websocket_hub_enhanced.go: Added client to chat",
+			zap.String("clientID", client.ID),
+			zap.String("chatID", chatID))
+	}
+
+	// Update user's active chats
+	if len(userChats) > 0 {
+		eh.UserActiveChats[userID] = userChats
 	}
 
 	// Update presence
@@ -273,36 +286,6 @@ func (eh *EnhancedHub) handleClientUnregistration(client *models.Client) {
 
 	// Close send channel
 	close(client.Send)
-}
-
-// handleBroadcast handles message broadcasting with pub/sub
-func (eh *EnhancedHub) handleBroadcast(message *models.WebSocketMessage) {
-	eh.logger.Debug("websocket_hub_enhanced.go: Handling broadcast",
-		zap.String("type", message.Type),
-		zap.String("chatID", message.ChatID))
-
-	// Determine broadcast strategy based on message type and target
-	if message.ChatID != "" {
-		// Publish to chat channel for cross-instance delivery
-		if err := eh.pubSubManager.PublishToChat(message.ChatID, message); err != nil {
-			eh.logger.Error("websocket_hub_enhanced.go: Failed to publish to chat",
-				zap.String("chatID", message.ChatID),
-				zap.Error(err))
-		}
-	} else if message.UserID != "" {
-		// Direct message to specific user
-		if err := eh.pubSubManager.PublishToUser(message.UserID, message); err != nil {
-			eh.logger.Error("websocket_hub_enhanced.go: Failed to publish to user",
-				zap.String("userID", message.UserID),
-				zap.Error(err))
-		}
-	} else {
-		// System-wide broadcast
-		if err := eh.pubSubManager.BroadcastSystemMessage(message); err != nil {
-			eh.logger.Error("websocket_hub_enhanced.go: Failed to broadcast system message",
-				zap.Error(err))
-		}
-	}
 }
 
 // JoinChat handles client joining a chat with pub/sub subscription
@@ -469,8 +452,8 @@ func (eh *EnhancedHub) removeClientFromChat(client *models.Client, chatID string
 		if len(chatClients) == 0 {
 			delete(eh.ChatClients, chatID)
 
-			// Consider unsubscribing from chat channel if no local clients
-			// (Keep subscription for now as other instances might still have clients)
+			// Chat channel unsubscription is now handled safely in UnsubscribeUserFromChannels
+			// with proper reference counting to avoid breaking other users in the chat
 		}
 	}
 

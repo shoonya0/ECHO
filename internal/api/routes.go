@@ -120,17 +120,25 @@ func Login() gin.HandlerFunc {
 			return
 		}
 
-		token, err := utils.GetJWTToken(user.ID.Hex(), user.Email, user.Username, user.Profile, user.AccountStatus, time.Now().Add(7*24*time.Hour).Unix())
+		newUser := models.LoginUserResponse{
+			ID:            user.ID,
+			Email:         user.Email,
+			Username:      user.Username,
+			Profile:       user.Profile,
+			AccountStatus: user.AccountStatus,
+		}
+
+		token, err := utils.GetJWTToken(newUser.ID.Hex(), newUser.Email, newUser.Username, newUser.Profile, newUser.AccountStatus, time.Now().Add(7*24*time.Hour).Unix())
 		if err != nil {
 			log.WithError(err).Debug("could not generate token")
 			utils.ErrorResponse(c, http.StatusInternalServerError, "could not generate token", err.Error())
 			return
 		}
 
-		log.WithField("user", user.ID.Hex()).Info("login successful")
+		log.WithField("user", newUser.ID.Hex()).Info("login successful")
 		utils.SuccessResponse(c, "Login successful", gin.H{
 			"token": token,
-			"user":  user,
+			"user":  newUser,
 		})
 	}
 }
