@@ -57,8 +57,8 @@ func GetHubInstance() *EnhancedHub {
 			UserInfoCache:   make(map[string]*models.UserDisplayInfo),
 			CacheExpiry:     make(map[string]time.Time),
 			UserActiveChats: make(map[string][]string), // Initialize centralized active chats
-			Register:        make(chan *models.Client),
-			Unregister:      make(chan *models.Client),
+			Register:        make(chan *models.Client, 1000),
+			Unregister:      make(chan *models.Client, 1000),
 		}
 
 		// Create context for hub
@@ -110,6 +110,31 @@ func (eh *EnhancedHub) Start() error {
 	return nil
 }
 
+// Restart attempts to restart the hub if it has stopped
+func (eh *EnhancedHub) Restart() error {
+	eh.logger.Info("websocket_hub_enhanced.go: Attempting to restart hub")
+
+	// Check if context is cancelled
+	select {
+	case <-eh.Ctx.Done():
+		eh.logger.Warn("websocket_hub_enhanced.go: Hub context is cancelled, creating new context")
+		// Create new context
+		ctx, cancel := context.WithCancel(context.Background())
+		eh.Hub.Ctx = ctx
+		eh.Hub.Cancel = cancel
+	default:
+		eh.logger.Info("websocket_hub_enhanced.go: Hub context is still active")
+	}
+
+	// Restart goroutines
+	go eh.runHub()
+	go eh.cleanupInactiveConnections()
+	go eh.syncPresenceWithRedis()
+
+	eh.logger.Info("websocket_hub_enhanced.go: Hub restarted successfully")
+	return nil
+}
+
 // Stop gracefully shuts down the enhanced hub
 func (eh *EnhancedHub) Stop() {
 	eh.logger.Info("websocket_hub_enhanced.go: Stopping enhanced WebSocket hub")
@@ -136,10 +161,15 @@ func (eh *EnhancedHub) runHub() {
 	for {
 		select {
 		case <-eh.Ctx.Done():
+			eh.logger.Warn("websocket_hub_enhanced.go: Hub context cancelled, stopping main loop")
 			return
 
 		case client := <-eh.Register:
 			eh.handleClientRegistration(client)
+			// fmt.Println("chatID", chatID)
+			// fmt.Println("client", client)
+			// fmt.Println("ctx", ctx)
+			// fmt.Println("eh.Mutex.IsLocked()    ######    ", eh.Mutex.TryLock())
 
 		case client := <-eh.Unregister:
 			eh.handleClientUnregistration(client)
@@ -153,8 +183,22 @@ func (eh *EnhancedHub) handleClientRegistration(client *models.Client) {
 		zap.String("clientID", client.ID),
 		zap.String("userID", client.UserID.Hex()))
 
+	// Get user's chats from database BEFORE acquiring mutex (avoid deadlock!)
+	ctx := context.Background()
+	userChats, err := eh.getUserChats(ctx, client.UserID)
+	if err != nil {
+		eh.logger.Error("websocket_hub_enhanced.go: Failed to get user chats",
+			zap.Error(err))
+		userChats = []string{}
+	}
+
+	// Subscribe to user and chat channels via pub/sub BEFORE acquiring mutex
+	if err := eh.pubSubManager.SubscribeUserToChannels(client.UserID, userChats); err != nil {
+		eh.logger.Error("websocket_hub_enhanced.go: Failed to subscribe to channels",
+			zap.Error(err))
+	}
+
 	eh.Mutex.Lock()
-	defer eh.Mutex.Unlock()
 
 	// Add client to hub
 	eh.Clients[client.ID] = client
@@ -166,23 +210,7 @@ func (eh *EnhancedHub) handleClientRegistration(client *models.Client) {
 	}
 	eh.UserClients[userID][client.ID] = client
 
-	// Get user's chats from database
-	ctx := context.Background()
-	userChats, err := eh.getUserChats(ctx, client.UserID)
-	if err != nil {
-		eh.logger.Error("websocket_hub_enhanced.go: Failed to get user chats",
-			zap.Error(err))
-		userChats = []string{}
-	}
-
-	// Subscribe to user and chat channels via pub/sub
-	if err := eh.pubSubManager.SubscribeUserToChannels(client.UserID, userChats); err != nil {
-		eh.logger.Error("websocket_hub_enhanced.go: Failed to subscribe to channels",
-			zap.Error(err))
-	}
-
-	// updated part
-	// Add client to all their chat rooms (this was missing!)
+	// Add client to all their chat rooms
 	for _, chatID := range userChats {
 		if eh.ChatClients[chatID] == nil {
 			eh.ChatClients[chatID] = make(map[string]*models.Client)
@@ -197,6 +225,8 @@ func (eh *EnhancedHub) handleClientRegistration(client *models.Client) {
 	if len(userChats) > 0 {
 		eh.UserActiveChats[userID] = userChats
 	}
+
+	eh.Mutex.Unlock()
 
 	// Update presence
 	eh.updateUserPresence(client.UserID, "online")
@@ -234,7 +264,6 @@ func (eh *EnhancedHub) handleClientUnregistration(client *models.Client) {
 		zap.String("userID", client.UserID.Hex()))
 
 	eh.Mutex.Lock()
-	defer eh.Mutex.Unlock()
 
 	if _, ok := eh.Clients[client.ID]; !ok {
 		return
@@ -251,13 +280,18 @@ func (eh *EnhancedHub) handleClientUnregistration(client *models.Client) {
 	// Remove from hub
 	delete(eh.Clients, client.ID)
 
+	eh.Mutex.Unlock()
 	// Remove from user mapping
 	if userClients, exists := eh.UserClients[userID]; exists {
+		eh.Mutex.Lock()
 		delete(userClients, client.ID)
+		eh.Mutex.Unlock()
 
 		// If no more clients for this user
 		if len(userClients) == 0 {
+			eh.Mutex.Lock()
 			delete(eh.UserClients, userID)
+			eh.Mutex.Unlock()
 
 			// Get user's active chats for unsubscription
 			if activeChats, exists := eh.UserActiveChats[userID]; exists {
@@ -294,6 +328,22 @@ func (eh *EnhancedHub) JoinChat(ctx context.Context, client *models.Client, chat
 		zap.String("clientID", client.ID),
 		zap.String("chatID", chatID))
 
+	// Check if pub/sub subscription is needed BEFORE acquiring mutex
+	chatChannel := "chat:" + chatID
+	needsSubscription := false
+	if !eh.pubSubManager.IsSubscribed(chatChannel) {
+		needsSubscription = true
+	}
+
+	// Subscribe to chat channel BEFORE acquiring mutex (if needed)
+	if needsSubscription {
+		if err := eh.pubSubManager.subscribeToChannel(chatChannel); err != nil {
+			eh.logger.Error("websocket_hub_enhanced.go: Failed to subscribe to chat channel",
+				zap.String("chatID", chatID),
+				zap.Error(err))
+		}
+	}
+
 	eh.Mutex.Lock()
 	defer eh.Mutex.Unlock()
 
@@ -306,6 +356,7 @@ func (eh *EnhancedHub) JoinChat(ctx context.Context, client *models.Client, chat
 	// Add to user's active chats (centralized in hub)
 	userID := client.UserID.Hex()
 	alreadyInChat := false
+
 	if activeChats, exists := eh.UserActiveChats[userID]; exists {
 		for _, activeChat := range activeChats {
 			if activeChat == chatID {
@@ -319,16 +370,6 @@ func (eh *EnhancedHub) JoinChat(ctx context.Context, client *models.Client, chat
 	} else {
 		// First time this user has active chats
 		eh.UserActiveChats[userID] = []string{chatID}
-	}
-
-	// Subscribe to chat channel if not already subscribed
-	chatChannel := "chat:" + chatID
-	if !eh.pubSubManager.IsSubscribed(chatChannel) {
-		if err := eh.pubSubManager.subscribeToChannel(chatChannel); err != nil {
-			eh.logger.Error("websocket_hub_enhanced.go: Failed to subscribe to chat channel",
-				zap.String("chatID", chatID),
-				zap.Error(err))
-		}
 	}
 
 	// Publish join event to chat
@@ -491,27 +532,40 @@ func (eh *EnhancedHub) getUserChats(ctx context.Context, userID bson.ObjectID) (
 
 // updateUserPresence updates user presence in cache and Redis
 func (eh *EnhancedHub) updateUserPresence(userID bson.ObjectID, status string) {
+	userIDStr := userID.Hex()
+
+	eh.Mutex.Lock()
+
+	// Check if we need to fetch user info
+	needsUserInfo := false
+	if _, exists := eh.UserInfoCache[userIDStr]; !exists {
+		needsUserInfo = true
+	}
+
+	eh.Mutex.Unlock()
+
+	// Fetch user info outside of mutex if needed
+	var userInfo *models.UserDisplayInfo
+	if needsUserInfo {
+		userInfo, _ = GetUserDisplayInfo(userID)
+	}
+
 	eh.Mutex.Lock()
 	defer eh.Mutex.Unlock()
 
-	userIDStr := userID.Hex()
-
 	// Update local cache
-	if userInfo, exists := eh.UserInfoCache[userIDStr]; exists {
+	if existingUserInfo, exists := eh.UserInfoCache[userIDStr]; exists {
+		existingUserInfo.Status = status
+		existingUserInfo.IsOnline = status != "offline"
+		existingUserInfo.LastSeen = time.Now()
+		eh.CacheExpiry[userIDStr] = time.Now().Add(5 * time.Minute)
+	} else if userInfo != nil {
+		// Create new cache entry
 		userInfo.Status = status
 		userInfo.IsOnline = status != "offline"
 		userInfo.LastSeen = time.Now()
+		eh.UserInfoCache[userIDStr] = userInfo
 		eh.CacheExpiry[userIDStr] = time.Now().Add(5 * time.Minute)
-	} else {
-		// Create new cache entry - use lookup service directly since we already checked cache
-		userInfo, _ := GetUserDisplayInfo(userID)
-		if userInfo != nil {
-			userInfo.Status = status
-			userInfo.IsOnline = status != "offline"
-			userInfo.LastSeen = time.Now()
-			eh.UserInfoCache[userIDStr] = userInfo
-			eh.CacheExpiry[userIDStr] = time.Now().Add(5 * time.Minute)
-		}
 	}
 
 	// Update presence in Redis for persistence

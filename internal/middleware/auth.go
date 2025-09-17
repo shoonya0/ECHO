@@ -97,7 +97,6 @@ func AuthMiddleware(ctx *gin.Context) {
 	ctx.Request = ctx.Request.WithContext(reqCtx)
 
 	authHeader := ctx.GetHeader("Authorization")
-	log.WithField("path", ctx.Request.URL.Path).Debug("Processing authentication")
 
 	if authHeader == "" {
 		log.Warn("Missing authorization header")

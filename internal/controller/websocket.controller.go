@@ -56,8 +56,6 @@ func HandleWebSocketChat(ctx *gin.Context) {
 		return
 	}
 
-	fmt.Println("reqCtx", reqCtx.Value(objects.UserDataKey).(models.LoginUserResponse))
-
 	user, exists := reqCtx.Value(objects.UserDataKey).(models.LoginUserResponse)
 	if !exists {
 		log.Debug("user not found")
@@ -76,7 +74,21 @@ func HandleWebSocketChat(ctx *gin.Context) {
 		ID:         uuid.New().String(), // Generate unique ID for each WebSocket connection
 		UserID:     user.ID,
 		Connection: conn,
-		Send:       make(chan models.WebSocketMessage, 1000),
+		Send:       make(chan models.WebSocketMessage, 10),
+	}
+
+	// Check if hub is still running, restart if needed
+	hub := services.GetHubInstance()
+	select {
+	case <-hub.Ctx.Done():
+		log.Warn("websocket.controller.go: Hub context cancelled, attempting restart")
+		if err := hub.Restart(); err != nil {
+			log.WithError(err).Error("websocket.controller.go: Failed to restart hub")
+			utils.ErrorResponse(ctx, http.StatusInternalServerError, "WebSocket service temporarily unavailable", nil)
+			return
+		}
+	default:
+		// Hub is running normally
 	}
 
 	services.GetHubInstance().Register <- client // Register client with hub
@@ -246,7 +258,6 @@ func handleClientRequest(ctx context.Context, client *models.Client, request mod
 }
 
 // ============ REQUEST HANDLERS ============
-
 // handleSendMessage processes message sending requests with comprehensive validation
 func handleSendMessage(ctx context.Context, client *models.Client, request models.MessageRequest) {
 	if request.ChatID == "" || request.Content == "" { // Validate request
@@ -342,7 +353,8 @@ func handleSendMessage(ctx context.Context, client *models.Client, request model
 // handleJoinChat processes chat joining requests
 func handleJoinChat(ctx context.Context, client *models.Client, request models.MessageRequest) {
 	log := logger.WithContext(ctx)
-	userInterface := ctx.Value("user") // Get user from context
+	userInterface := ctx.Value(objects.UserDataKey) // Get user from context
+
 	if userInterface == nil {
 		log.WithError(errors.New("user not Found")).Error("User not authenticated")
 		sendErrorResponse(client, request.RequestID, "USER_NOT_AUTHENTICATED", "User not authenticated")

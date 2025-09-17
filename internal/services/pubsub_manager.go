@@ -366,13 +366,8 @@ func (pm *PubSubManager) handleChatMessage(chatID string, message *models.WebSoc
 	for _, client := range clients {
 		select {
 		case client.Send <- *message:
-			pm.logger.Debug("pubsub_manager.go: Sent chat message to client",
-				zap.String("clientID", client.ID),
-				zap.String("chatID", chatID))
 		default:
 			// Client's send channel is full, close it
-			pm.logger.Warn("pubsub_manager.go: Client send channel full, closing",
-				zap.String("clientID", client.ID))
 			close(client.Send)
 		}
 	}
