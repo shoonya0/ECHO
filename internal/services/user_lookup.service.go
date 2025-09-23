@@ -106,13 +106,8 @@ func fetchUserDisplayInfoFromDB(userID bson.ObjectID) (*models.UserDisplayInfo, 
 	}
 
 	return &models.UserDisplayInfo{
-		UserID:      user.ID,
 		Username:    user.Username,
 		DisplayName: user.Profile.DisplayName,
-		Avatar:      user.Profile.Avatar,
-		Status:      user.Presence.Status,
-		IsOnline:    user.Presence.IsOnline,
-		LastSeen:    user.Presence.LastSeen,
 	}, nil
 }
 

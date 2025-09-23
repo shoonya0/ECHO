@@ -14,6 +14,7 @@ type LoginUserResponse struct {
 	Username      string             `json:"username" bson:"username"`
 	Profile       UserProfileEmbed   `json:"profile" bson:"profile"`
 	AccountStatus AccountStatusEmbed `json:"accountStatus" bson:"accountStatus"`
+	Presence      PresenceEmbed      `json:"presence" bson:"presence"`
 }
 
 // ============ GET PROFILE MODEL (is in use)============

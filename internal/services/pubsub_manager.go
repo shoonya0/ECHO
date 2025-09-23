@@ -356,8 +356,8 @@ func (pm *PubSubManager) handleChatMessage(chatID string, message *models.WebSoc
 	// Broadcast to all clients in this chat on this instance
 	pm.hub.Mutex.RLock()
 	clients, exists := pm.hub.ChatClients[chatID]
-	pm.hub.Mutex.RUnlock()
 
+	pm.hub.Mutex.RUnlock()
 	if !exists || len(clients) == 0 {
 		return
 	}
@@ -400,24 +400,22 @@ func (pm *PubSubManager) handleUserMessage(userID string, message *models.WebSoc
 
 // handlePresenceMessage handles global presence updates
 func (pm *PubSubManager) handlePresenceMessage(message *models.WebSocketMessage) {
-	// Update local presence cache
-	if presenceData, ok := message.Data.(*models.WSPresenceStatus); ok {
-		pm.updateLocalPresenceCache(presenceData)
-	}
+	userID := message.UserID
 
-	// Broadcast to all connected clients on this instance
 	pm.hub.Mutex.RLock()
-	allClients := make([]*models.Client, 0)
-	for _, clients := range pm.hub.Clients {
-		allClients = append(allClients, clients)
-	}
+	activeChats, exists := pm.hub.UserActiveChats[userID]
 	pm.hub.Mutex.RUnlock()
 
-	for _, client := range allClients {
-		select {
-		case client.Send <- *message:
-		default:
-			// Skip if channel is full
+	if !exists {
+		return
+	}
+
+	for _, chatID := range activeChats {
+		// we have to publish to the chat channel
+		if err := pm.publishMessage(pm.getChatChannel(chatID), message); err != nil {
+			pm.logger.Error("pubsub_manager.go: Failed to publish message to chat channel",
+				zap.String("chatID", chatID),
+				zap.Error(err))
 		}
 	}
 }
@@ -453,17 +451,20 @@ func (pm *PubSubManager) handleInstanceMessage(message *models.WebSocketMessage)
 	// This could be used for targeted operations like connection migration
 }
 
-// updateLocalPresenceCache updates the local presence cache
-func (pm *PubSubManager) updateLocalPresenceCache(presence *models.WSPresenceStatus) {
+// UpdateUserInfoCache updates the user info cache
+func (eh *EnhancedHub) UpdateUserInfoCache(userID string, user models.UserDisplayInfo) {
+	eh.pubSubManager.updateUserInfoCache(userID, user)
+}
+
+func (pm *PubSubManager) updateUserInfoCache(userID string, user models.UserDisplayInfo) {
 	// Update hub's user info cache
 	pm.hub.Mutex.Lock()
 	defer pm.hub.Mutex.Unlock()
 
-	if userInfo, exists := pm.hub.UserInfoCache[presence.UserID]; exists {
-		userInfo.Status = presence.Status
-		userInfo.IsOnline = presence.Status != "offline"
-		userInfo.LastSeen = presence.LastSeen
-		pm.hub.CacheExpiry[presence.UserID] = time.Now().Add(5 * time.Minute)
+	if userInfo, exists := pm.hub.UserInfoCache[userID]; exists {
+		userInfo.Email = user.Email
+		userInfo.Username = user.Username
+		userInfo.DisplayName = user.DisplayName
 	}
 }
 

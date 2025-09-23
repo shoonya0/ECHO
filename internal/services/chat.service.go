@@ -452,21 +452,19 @@ func BroadcastToChat(chatID string, message models.WebSocketMessage) error {
 	}
 
 	// Fallback to direct hub broadcasting if pub/sub is not available
-	hub.Mutex.RLock()
-	clients, exists := hub.ChatClients[chatID]
-	hub.Mutex.RUnlock()
-
-	if !exists {
-		return fmt.Errorf("chat not found: %s", chatID)
-	}
-
-	for _, client := range clients {
-		select {
-		case client.Send <- message:
-		default:
-			logger.WithContext(context.Background()).WithField("clientID", client.ID).Warn("Failed to send message to client")
-		}
-	}
+	// hub.Mutex.RLock()
+	// clients, exists := hub.ChatClients[chatID]
+	// hub.Mutex.RUnlock()
+	// if !exists {
+	// 	return fmt.Errorf("chat not found: %s", chatID)
+	// }
+	// for _, client := range clients {
+	// 	select {
+	// 	case client.Send <- message:
+	// 	default:
+	// 		logger.WithContext(context.Background()).WithField("clientID", client.ID).Warn("Failed to send message to client")
+	// 	}
+	// }
 
 	return nil
 }

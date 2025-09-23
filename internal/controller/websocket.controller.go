@@ -91,7 +91,22 @@ func HandleWebSocketChat(ctx *gin.Context) {
 		// Hub is running normally
 	}
 
+	services.GetHubInstance().UpdateUserInfoCache(user.ID.Hex(), models.UserDisplayInfo{
+		Email:       user.Email,
+		Username:    user.Username,
+		DisplayName: user.Profile.DisplayName,
+	})
+
 	services.GetHubInstance().Register <- client // Register client with hub
+
+	// Update presence
+	services.GetPresenceInstance().Set(services.UserPresence{
+		UserID:     user.ID,
+		Status:     services.UserStatus(user.Presence.Status),
+		LastSeen:   user.Presence.LastSeen,
+		ClientID:   client.ID,
+		DeviceInfo: user.Presence.DeviceInfo,
+	})
 
 	log.WithFields(map[string]interface{}{
 		string(objects.UserIDKey):   user.ID.Hex(),
@@ -129,6 +144,17 @@ func handleClientWrite(client *models.Client) {
 				return
 			}
 
+			presence, ok := services.GetPresenceInstance().Get(client.UserID)
+			if ok {
+				if presence.Status == services.UserStatus(objects.UserStatusOnline) {
+
+					if err := services.GetHubInstance().UpdateUserPresence(client.UserID.Hex(), string(objects.UserStatusOnline)); err != nil {
+						log.Printf("Failed to publish presence update: %v", err)
+						return
+					}
+				}
+			}
+
 			client.LastActivity = time.Now() // Update client activity
 		case <-ticker.C:
 			client.Connection.SetWriteDeadline(time.Now().Add(10 * time.Second))
@@ -136,8 +162,8 @@ func handleClientWrite(client *models.Client) {
 			if err := client.Connection.WriteMessage(websocket.PingMessage, nil); err != nil { // Send ping
 				log.Printf("Failed to send ping to client %s: %v", client.ID, err)
 				return
-
 			}
+			// Update presence
 		}
 	}
 }

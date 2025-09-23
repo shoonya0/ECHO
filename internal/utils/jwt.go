@@ -28,23 +28,35 @@ type JwtClaims struct {
 	jwt.RegisteredClaims
 	Username      string                    `json:"username" bson:"username"`
 	Email         string                    `json:"email"`
-	Profile       models.UserProfileEmbed   `json:"profile" bson:"profile"`
+	DisplayName   string                    `json:"displayName" bson:"displayName"`
 	AccountStatus models.AccountStatusEmbed `json:"accountStatus" bson:"accountStatus"`
+	Presence      PresenceClaims            `json:"presence" bson:"presence"`
 }
 
-func GetJWTToken(userID string, email string, username string, profile models.UserProfileEmbed, accountStatus models.AccountStatusEmbed, exp int64) (string, error) {
+type PresenceClaims struct {
+	Status       string    `json:"status" bson:"status"`
+	LastSeen     time.Time `json:"lastSeen" bson:"lastSeen"`
+	LastActivity time.Time `json:"lastActivity" bson:"lastActivity"`
+}
+
+func GetJWTToken(user models.LoginUserResponse, exp int64) (string, error) {
 
 	jwtSecret := GetJWTSecret()
 
 	// create JWT token
 	claims := JwtClaims{
-		Email:         email,
-		Username:      username,
-		Profile:       profile,
-		AccountStatus: accountStatus,
+		Email:         user.Email,
+		Username:      user.Username,
+		DisplayName:   user.Profile.DisplayName,
+		AccountStatus: user.AccountStatus,
+		Presence: PresenceClaims{
+			Status:       user.Presence.Status,
+			LastSeen:     user.Presence.LastSeen,
+			LastActivity: user.Presence.LastActivity,
+		},
 		RegisteredClaims: jwt.RegisteredClaims{
 			Issuer:    "Echo",
-			Subject:   userID,
+			Subject:   user.ID.Hex(),
 			Audience:  jwt.ClaimStrings{"Web-App", "Mobile-App"},
 			ExpiresAt: jwt.NewNumericDate(time.Now().Add(7 * 24 * time.Hour)),
 			NotBefore: jwt.NewNumericDate(time.Now().Add(-1 * time.Minute)),

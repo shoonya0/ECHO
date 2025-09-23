@@ -56,9 +56,9 @@ func GetHubInstance() *EnhancedHub {
 			UserClients:     make(map[string]map[string]*models.Client),
 			UserInfoCache:   make(map[string]*models.UserDisplayInfo),
 			CacheExpiry:     make(map[string]time.Time),
-			UserActiveChats: make(map[string][]string), // Initialize centralized active chats
 			Register:        make(chan *models.Client, 1000),
 			Unregister:      make(chan *models.Client, 1000),
+			UserActiveChats: make(map[string][]string), // Initialize centralized active chats
 		}
 
 		// Create context for hub
@@ -166,10 +166,6 @@ func (eh *EnhancedHub) runHub() {
 
 		case client := <-eh.Register:
 			eh.handleClientRegistration(client)
-			// fmt.Println("chatID", chatID)
-			// fmt.Println("client", client)
-			// fmt.Println("ctx", ctx)
-			// fmt.Println("eh.Mutex.IsLocked()    ######    ", eh.Mutex.TryLock())
 
 		case client := <-eh.Unregister:
 			eh.handleClientUnregistration(client)
@@ -228,20 +224,6 @@ func (eh *EnhancedHub) handleClientRegistration(client *models.Client) {
 
 	eh.Mutex.Unlock()
 
-	// Update presence
-	eh.updateUserPresence(client.UserID, "online")
-
-	// Publish presence update to Redis
-	presenceStatus := &models.WSPresenceStatus{
-		UserID:   userID,
-		Status:   "online",
-		LastSeen: time.Now(),
-	}
-	if err := eh.pubSubManager.PublishPresenceUpdate(presenceStatus); err != nil {
-		eh.logger.Error("websocket_hub_enhanced.go: Failed to publish presence update",
-			zap.Error(err))
-	}
-
 	// Send welcome message
 	welcomeMsg := models.WebSocketMessage{
 		Type:      models.WSMessageTypeResponse,
@@ -263,24 +245,30 @@ func (eh *EnhancedHub) handleClientUnregistration(client *models.Client) {
 		zap.String("clientID", client.ID),
 		zap.String("userID", client.UserID.Hex()))
 
-	eh.Mutex.Lock()
-
 	if _, ok := eh.Clients[client.ID]; !ok {
 		return
 	}
+	eh.Mutex.Lock()
 
-	// Remove from all chats
+	clientID := client.ID
 	userID := client.UserID.Hex()
-	if activeChats, exists := eh.UserActiveChats[userID]; exists {
-		for _, chatID := range activeChats {
-			eh.removeClientFromChat(client, chatID)
+
+	for _, chatID := range eh.UserActiveChats[userID] {
+		if _, ok := eh.ChatClients[chatID][clientID]; ok {
+			delete(eh.ChatClients[chatID], clientID)
+
+			// If their is no other client of same user in the chat, delete the chat
+			if len(eh.ChatClients[chatID]) == 0 {
+				delete(eh.ChatClients, chatID)
+			}
 		}
 	}
 
-	// Remove from hub
-	delete(eh.Clients, client.ID)
+	delete(eh.Clients, clientID)
 
+	// Remove from hub
 	eh.Mutex.Unlock()
+
 	// Remove from user mapping
 	if userClients, exists := eh.UserClients[userID]; exists {
 		eh.Mutex.Lock()
@@ -288,10 +276,17 @@ func (eh *EnhancedHub) handleClientUnregistration(client *models.Client) {
 		eh.Mutex.Unlock()
 
 		// If no more clients for this user
-		if len(userClients) == 0 {
+		if len(eh.UserClients[userID]) == 0 {
 			eh.Mutex.Lock()
 			delete(eh.UserClients, userID)
 			eh.Mutex.Unlock()
+
+			// Remove from active chats
+			if activeChats, exists := eh.UserActiveChats[userID]; exists {
+				for _, chatID := range activeChats {
+					eh.removeClientFromChat(client, chatID)
+				}
+			}
 
 			// Get user's active chats for unsubscription
 			if activeChats, exists := eh.UserActiveChats[userID]; exists {
@@ -302,13 +297,13 @@ func (eh *EnhancedHub) handleClientUnregistration(client *models.Client) {
 				}
 			}
 
-			// Update presence to offline
-			eh.updateUserPresence(client.UserID, "offline")
+			// delete from presence
+			GetPresenceInstance().Delete(client.UserID)
 
 			// Publish presence update
 			presenceStatus := &models.WSPresenceStatus{
 				UserID:   userID,
-				Status:   "offline",
+				Status:   string(objects.UserStatusOffline),
 				LastSeen: time.Now(),
 			}
 			if err := eh.pubSubManager.PublishPresenceUpdate(presenceStatus); err != nil {
@@ -320,6 +315,15 @@ func (eh *EnhancedHub) handleClientUnregistration(client *models.Client) {
 
 	// Close send channel
 	close(client.Send)
+}
+
+func (eh *EnhancedHub) UpdateUserPresence(userID string, status string) error {
+	err := eh.pubSubManager.PublishPresenceUpdate(&models.WSPresenceStatus{
+		UserID:   userID,
+		Status:   status,
+		LastSeen: time.Now(),
+	})
+	return err
 }
 
 // JoinChat handles client joining a chat with pub/sub subscription
@@ -530,56 +534,57 @@ func (eh *EnhancedHub) getUserChats(ctx context.Context, userID bson.ObjectID) (
 	return chatIDs, nil
 }
 
-// updateUserPresence updates user presence in cache and Redis
-func (eh *EnhancedHub) updateUserPresence(userID bson.ObjectID, status string) {
-	userIDStr := userID.Hex()
+// // updateUserPresence updates user presence in cache and Redis
+// func (eh *EnhancedHub) updateUserPresence(userID bson.ObjectID, status string) {
+// 	userIDStr := userID.Hex()
 
-	eh.Mutex.Lock()
+// 	eh.Mutex.Lock()
 
-	// Check if we need to fetch user info
-	needsUserInfo := false
-	if _, exists := eh.UserInfoCache[userIDStr]; !exists {
-		needsUserInfo = true
-	}
+// 	// Check if we need to fetch user info
+// 	needsUserInfo := false
+// 	if _, exists := eh.UserInfoCache[userIDStr]; !exists {
+// 		needsUserInfo = true
+// 	}
 
-	eh.Mutex.Unlock()
+// 	eh.Mutex.Unlock()
 
-	// Fetch user info outside of mutex if needed
-	var userInfo *models.UserDisplayInfo
-	if needsUserInfo {
-		userInfo, _ = GetUserDisplayInfo(userID)
-	}
+// 	// Fetch user info outside of mutex if needed
+// 	var userInfo *models.UserDisplayInfo
+// 	if needsUserInfo {
+// 		userInfo, _ = GetUserDisplayInfo(userID)
+// 	}
 
-	eh.Mutex.Lock()
-	defer eh.Mutex.Unlock()
+// 	eh.Mutex.Lock()
+// 	defer eh.Mutex.Unlock()
 
-	// Update local cache
-	if existingUserInfo, exists := eh.UserInfoCache[userIDStr]; exists {
-		existingUserInfo.Status = status
-		existingUserInfo.IsOnline = status != "offline"
-		existingUserInfo.LastSeen = time.Now()
-		eh.CacheExpiry[userIDStr] = time.Now().Add(5 * time.Minute)
-	} else if userInfo != nil {
-		// Create new cache entry
-		userInfo.Status = status
-		userInfo.IsOnline = status != "offline"
-		userInfo.LastSeen = time.Now()
-		eh.UserInfoCache[userIDStr] = userInfo
-		eh.CacheExpiry[userIDStr] = time.Now().Add(5 * time.Minute)
-	}
+// 	// Update local cache
+// 	if existingUserInfo, exists := eh.UserInfoCache[userIDStr]; exists {
+// 		existingUserInfo.Status = status
+// 		existingUserInfo.IsOnline = status != "offline"
+// 		existingUserInfo.LastSeen = time.Now()
+// 		eh.CacheExpiry[userIDStr] = time.Now().Add(5 * time.Minute)
+// 	} else if userInfo != nil {
+// 		// Create new cache entry
+// 		userInfo.Status = status
+// 		userInfo.IsOnline = status != "offline"
+// 		userInfo.LastSeen = time.Now()
+// 		eh.UserInfoCache[userIDStr] = userInfo
+// 		eh.CacheExpiry[userIDStr] = time.Now().Add(5 * time.Minute)
+// 	}
 
-	// Update presence in Redis for persistence
-	ctx := context.Background()
-	presenceKey := fmt.Sprintf("presence:%s", userIDStr)
-	presenceData := map[string]interface{}{
-		"status":   status,
-		"lastSeen": time.Now().Unix(),
-	}
+// 	// Update presence in Redis for persistence
+// 	ctx := context.Background()
+// 	presenceKey := fmt.Sprintf("presence:%s", userIDStr)
+// 	presenceData := map[string]interface{}{
+// 		"status":   status,
+// 		"lastSeen": time.Now().Unix(),
+// 	}
 
-	eh.redisClient.HSet(ctx, presenceKey, presenceData)
-	eh.redisClient.Expire(ctx, presenceKey, 30*time.Minute)
-}
+// 	eh.redisClient.HSet(ctx, presenceKey, presenceData)
+// 	eh.redisClient.Expire(ctx, presenceKey, 30*time.Minute)
+// }
 
+// don't needed
 // syncPresenceWithRedis periodically syncs presence data with Redis
 func (eh *EnhancedHub) syncPresenceWithRedis() {
 	ticker := time.NewTicker(30 * time.Second)

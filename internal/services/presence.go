@@ -1,7 +1,9 @@
 package services
 
 import (
-	"fmt"
+	"context"
+	"gin/objects"
+	"sync"
 	"time"
 
 	"go.mongodb.org/mongo-driver/v2/bson"
@@ -30,7 +32,7 @@ type UserStatus string
 
 type UserPresence struct {
 	UserID     bson.ObjectID `json:"user_id"`
-	Status     UserStatus    `json:"status"`
+	Status     UserStatus    `json:"status"` // "online", "away", "dnd", "invisible", "offline"
 	LastSeen   time.Time     `json:"last_seen"`
 	ClientID   string        `json:"client_id"`
 	DeviceInfo string        `json:"device_info,omitempty"`
@@ -44,28 +46,36 @@ type PresenceUpdate struct {
 
 type PresenceManager struct {
 	presence map[bson.ObjectID]UserPresence
+	mutex    sync.RWMutex
+	ctx      context.Context
+	cancel   context.CancelFunc
 }
 
-var PresenceInstance *PresenceManager
+var (
+	Presence            *PresenceManager
+	PresenceManagerOnce sync.Once
+)
 
-func PresenceInstanceInit() *PresenceManager {
-	if PresenceInstance != nil {
-		return PresenceInstance
-	}
-	PresenceInstance = &PresenceManager{
-		presence: make(map[bson.ObjectID]UserPresence),
-	}
-	return PresenceInstance
+func GetPresenceInstance() *PresenceManager {
+	PresenceManagerOnce.Do(func() {
+		Presence = &PresenceManager{
+			presence: make(map[bson.ObjectID]UserPresence),
+		}
+		ctx, cancel := context.WithCancel(context.Background())
+		Presence.ctx = ctx
+		Presence.cancel = cancel
+	})
+	return Presence
 }
 
-func (pm *PresenceManager) Get(userID bson.ObjectID) (UserPresence, error) {
-	if pm.presence == nil {
-		return UserPresence{}, fmt.Errorf("presence not found")
-	}
-	return pm.presence[userID], nil
+func (pm *PresenceManager) Get(userID bson.ObjectID) (UserPresence, bool) {
+	presence, exists := pm.presence[userID]
+	return presence, exists
 }
 
-func (pm *PresenceManager) Set(user UserPresence) error {
+func (pm *PresenceManager) Set(user UserPresence) {
+	pm.mutex.Lock()
+	defer pm.mutex.Unlock()
 	presence := UserPresence{
 		UserID:     user.UserID,
 		Status:     user.Status,
@@ -74,30 +84,28 @@ func (pm *PresenceManager) Set(user UserPresence) error {
 		DeviceInfo: user.DeviceInfo,
 	}
 	pm.presence[user.UserID] = presence
-	return nil
 }
 
-func (pm *PresenceManager) Update(userUpdate PresenceUpdate) error {
-	if pm.presence == nil {
-		return fmt.Errorf("presence not found")
-	}
+func (pm *PresenceManager) Update(userUpdate PresenceUpdate) bool {
+	pm.mutex.Lock()
+	defer pm.mutex.Unlock()
 
-	presence, err := pm.Get(userUpdate.UserID)
-	if err != nil {
-		return fmt.Errorf("presence not found")
+	presence, exists := pm.Get(userUpdate.UserID)
+	if !exists {
+		return false
 	}
 
 	presence.Status = userUpdate.Status
-	presence.LastSeen = time.Now()
-	pm.presence[presence.UserID] = presence
+	if presence.Status == UserStatus(objects.UserStatusOnline) {
+		presence.LastSeen = time.Now()
+	}
 
-	return nil
+	pm.presence[presence.UserID] = presence
+	return true
 }
 
-func (pm *PresenceManager) Delete(userID bson.ObjectID) error {
-	if pm.presence == nil {
-		return fmt.Errorf("user is not online")
-	}
+func (pm *PresenceManager) Delete(userID bson.ObjectID) {
+	pm.mutex.Lock()
+	defer pm.mutex.Unlock()
 	delete(pm.presence, userID)
-	return nil
 }

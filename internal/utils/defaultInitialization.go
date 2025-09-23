@@ -7,6 +7,7 @@ import (
 	"encoding/hex"
 	"fmt"
 	"gin/internal/models"
+	"gin/objects"
 	"io"
 	"time"
 
@@ -35,7 +36,7 @@ func NewUserWithDefaults(id bson.ObjectID, email, username, passwordHash string)
 
 		// Initialize Presence with defaults
 		Presence: models.PresenceEmbed{
-			Status:       "offline",
+			Status:       string(objects.UserStatusOnline),
 			IsOnline:     false,
 			LastSeen:     now,
 			LastActivity: now,

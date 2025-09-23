@@ -162,13 +162,9 @@ type Client struct {
 
 // UserDisplayInfo represents cached user display information for UI
 type UserDisplayInfo struct {
-	UserID      bson.ObjectID `json:"userId"`
-	Username    string        `json:"username"`
-	DisplayName string        `json:"displayName"`
-	Avatar      string        `json:"avatar"`
-	Status      string        `json:"status"`
-	IsOnline    bool          `json:"isOnline"`
-	LastSeen    time.Time     `json:"lastSeen"`
+	Email       string `json:"email"`
+	Username    string `json:"username"`
+	DisplayName string `json:"displayName"`
 }
 
 // Hub represents the WebSocket hub managing all connections (simplified)

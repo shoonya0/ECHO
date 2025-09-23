@@ -31,7 +31,7 @@ func validateClaims(claims utils.JwtClaims) error {
 		return fmt.Errorf("missing username in token claims")
 	} else if claims.Email == "" {
 		return fmt.Errorf("missing email in token claims")
-	} else if claims.Profile.DisplayName == "" {
+	} else if claims.DisplayName == "" {
 		return fmt.Errorf("missing display name in token claims")
 	} else if !claims.AccountStatus.IsActive {
 		return fmt.Errorf("account is not active")
@@ -51,18 +51,18 @@ func verifyToken(tokenString string) (utils.JwtClaims, error) {
 			IssuedAt:  jwt.NewNumericDate(time.Now()),
 			ID:        "",
 		},
-		Email:    "",
-		Username: "",
-		Profile: models.UserProfileEmbed{
-			DisplayName:   "",
-			Avatar:        "",
-			StatusMessage: "",
-			Bio:           "",
-		},
+		Email:       "",
+		Username:    "",
+		DisplayName: "",
 		AccountStatus: models.AccountStatusEmbed{
 			IsActive:   false,
 			IsVerified: false,
 			IsBanned:   false,
+		},
+		Presence: utils.PresenceClaims{
+			Status:       "",
+			LastSeen:     time.Now(),
+			LastActivity: time.Now(),
 		},
 	}
 
@@ -157,10 +157,17 @@ func AuthMiddleware(ctx *gin.Context) {
 	}
 
 	user := models.LoginUserResponse{
-		ID:            objectID,
-		Email:         claims.Email,
-		Username:      claims.Username,
-		Profile:       claims.Profile,
+		ID:       objectID,
+		Email:    claims.Email,
+		Username: claims.Username,
+		Profile: models.UserProfileEmbed{
+			DisplayName: claims.DisplayName,
+		},
+		Presence: models.PresenceEmbed{
+			Status:       claims.Presence.Status,
+			LastSeen:     claims.Presence.LastSeen,
+			LastActivity: claims.Presence.LastActivity,
+		},
 		AccountStatus: claims.AccountStatus,
 	}
 
