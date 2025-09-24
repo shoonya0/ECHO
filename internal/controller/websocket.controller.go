@@ -91,7 +91,7 @@ func HandleWebSocketChat(ctx *gin.Context) {
 		// Hub is running normally
 	}
 
-	services.GetHubInstance().UpdateUserInfoCache(user.ID.Hex(), models.UserDisplayInfo{
+	hub.UpdateUserInfoCache(user.ID.Hex(), models.UserDisplayInfo{
 		Email:       user.Email,
 		Username:    user.Username,
 		DisplayName: user.Profile.DisplayName,
@@ -142,17 +142,6 @@ func handleClientWrite(client *models.Client) {
 			if err := client.Connection.WriteJSON(message); err != nil { // Send message as JSON
 				log.Printf("Failed to write message to client %s: %v", client.ID, err)
 				return
-			}
-
-			presence, ok := services.GetPresenceInstance().Get(client.UserID)
-			if ok {
-				if presence.Status == services.UserStatus(objects.UserStatusOnline) {
-
-					if err := services.GetHubInstance().UpdateUserPresence(client.UserID.Hex(), string(objects.UserStatusOnline)); err != nil {
-						log.Printf("Failed to publish presence update: %v", err)
-						return
-					}
-				}
 			}
 
 			client.LastActivity = time.Now() // Update client activity

@@ -1,0 +1,31 @@
+signup
+{
+    "_id": "68ce5850d3a81feb938fb673",
+    "email" : "jhon.dao@gmail.com",
+    "password":"password",
+    "username": "Shoonya"
+}
+
+test_case_2
+{
+    "_id": "68ce585ea219d2c35ded7ca2",
+    "email": "alice.smith@example.com",
+    "password": "password",
+    "username": "AliceDev"
+}
+
+test_case_3
+{
+    "_id": "68ce586757c576bc4a75e757",
+    "email": "bob.johnson@techcorp.com",
+    "password": "password",
+    "username": "BobTheBuilder"
+}
+
+test_case_4
+{
+    "_id": "68ce586e8876b35ae77ef73c",
+    "email": "carol.wilson@startup.io",
+    "password": "password",
+    "username": "CarolUX"
+}

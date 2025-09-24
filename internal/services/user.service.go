@@ -177,6 +177,44 @@ func GetUsersByIDs(ctx context.Context, userIDs []bson.ObjectID) ([]models.Login
 	return users, nil
 }
 
+// fetchUserDisplayInfoFromDB fetches user display info from database
+func GetUserDisplayInfoFromDB(userID bson.ObjectID) (*models.UserDisplayInfo, error) {
+	filter := bson.M{"_id": userID}
+	projection := bson.M{
+		"username":            1,
+		"profile.displayName": 1,
+		"profile.avatar":      1,
+		"presence.status":     1,
+		"presence.isOnline":   1,
+		"presence.lastSeen":   1,
+	}
+
+	var user struct {
+		ID       bson.ObjectID           `bson:"_id"`
+		Username string                  `bson:"username"`
+		Profile  models.UserProfileEmbed `bson:"profile"`
+		Presence models.PresenceEmbed    `bson:"presence"`
+	}
+
+	err := objects.DB.Collection(string(objects.UserColl)).FindOne(
+		context.Background(),
+		filter,
+		options.FindOne().SetProjection(projection),
+	).Decode(&user)
+
+	if err != nil {
+		if err == mongo.ErrNoDocuments {
+			return nil, fmt.Errorf("user not found: %s", userID.Hex())
+		}
+		return nil, fmt.Errorf("failed to fetch user: %w", err)
+	}
+
+	return &models.UserDisplayInfo{
+		Username:    user.Username,
+		DisplayName: user.Profile.DisplayName,
+	}, nil
+}
+
 // func SearchUsers(ctx context.Context, query string, limit int) ([]models.User, error) {
 // 	filter := bson.M{
 // 		"$or": []bson.M{

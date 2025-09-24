@@ -217,29 +217,14 @@ func CreateGroupChat(ctx context.Context, chatName, description string, particip
 		return nil, fmt.Errorf("invalid user data")
 	}
 
-	now := time.Now()
-
 	participants := make(map[bson.ObjectID]models.ParticipantEmbed)
 
-	participants[creator.ID] = models.ParticipantEmbed{
-		RequestStatus: string(objects.StatusAccepted),
-		OnlineStatus:  "online",
-		RequestedBy:   creator.ID,
-		Permissions:   []string{string(objects.ChatPermissionRead), string(objects.ChatPermissionWrite)},
-		IsBlocked:     false,
-		UserInfo: models.ContactUserInfo{
-			UserID:      creator.ID,
-			DisplayName: creator.Profile.DisplayName,
-			Username:    creator.Username,
-			Avatar:      creator.Profile.Avatar,
-		},
-		LastSeen:  time.Time{},
-		IsMuted:   false,
-		Role:      string(objects.ChatRoleOwner),
-		CreatedAt: now,
-		UpdatedAt: now,
-		JoinedAt:  now,
-	}
+	participants[creator.ID] = utils.NewParticipantWithDefaults(string(objects.StatusAccepted), string(objects.UserStatusOffline), creator.ID, []string{string(objects.ChatPermissionRead), string(objects.ChatPermissionWrite)}, models.ContactUserInfo{
+		UserID:      creator.ID,
+		DisplayName: creator.Profile.DisplayName,
+		Username:    creator.Username,
+		Avatar:      creator.Profile.Avatar,
+	})
 
 	users, err := GetUsersByIDs(ctx, participantIDs)
 	if err != nil {
@@ -247,59 +232,57 @@ func CreateGroupChat(ctx context.Context, chatName, description string, particip
 	}
 
 	for _, user := range users {
-		participants[user.ID] = models.ParticipantEmbed{
-			RequestStatus: string(objects.StatusPending),
-			OnlineStatus:  "offline",
-			RequestedBy:   creator.ID,
-			Permissions:   []string{string(objects.ChatPermissionRead), string(objects.ChatPermissionWrite)},
-			IsBlocked:     false,
-			UserInfo: models.ContactUserInfo{
-				UserID:      user.ID,
-				DisplayName: user.Profile.DisplayName,
-				Username:    user.Username,
-				Avatar:      user.Profile.Avatar,
-			},
-			LastSeen:  time.Time{},
-			IsMuted:   false,
-			Role:      string(objects.ChatRoleMember),
-			CreatedAt: now,
-			UpdatedAt: now,
-			JoinedAt:  now,
-		}
+		participants[user.ID] = utils.NewParticipantWithDefaults(string(objects.StatusPending), string(objects.UserStatusOffline), creator.ID, []string{string(objects.ChatPermissionRead), string(objects.ChatPermissionWrite)}, models.ContactUserInfo{
+			UserID:      user.ID,
+			DisplayName: user.Profile.DisplayName,
+			Username:    user.Username,
+			Avatar:      user.Profile.Avatar,
+		})
 	}
 
-	chat := models.Chat{
-		ChatType:     string(objects.ChatTypeGroup),
-		Name:         chatName,
-		Description:  description,
-		OwnerID:      creator.ID,
-		AdminIDs:     []bson.ObjectID{creator.ID},
-		Participants: participants,
-		Stats: models.ChatStatsEmbed{
-			ParticipantCount: len(participants),
-			UnreadCount:      make(map[bson.ObjectID]int),
-		},
-		Settings: models.ChatSettingsEmbed{
-			AllowInvites:     true,
-			AllowFileSharing: true,
-			MessageRetention: 0, // Forever
-			MaxParticipants:  100,
-		},
-		ReadReceipts:  make(map[bson.ObjectID]time.Time),
-		TypingUsers:   make(map[bson.ObjectID]time.Time),
-		ActiveClients: make(map[string]*models.Client),
-		LastActivity:  now,
-		CreatedAt:     now,
-		UpdatedAt:     now,
-	}
+	chat := utils.NewChatWithDefaults(creator.ID, string(objects.ChatTypeGroup))
+	chat.Participants = participants
+	chat.Name = chatName
+	chat.Description = description
+	chat.Stats.ParticipantCount = len(participants)
+	chat.Settings.MaxParticipants = 100
 
-	result, err := objects.DB.Collection(string(objects.ChatColl)).InsertOne(ctx, chat)
+	ses, err := objects.DB.Client().StartSession()
 	if err != nil {
-		return nil, fmt.Errorf("failed to create group chat: %w", err)
+		return nil, fmt.Errorf("failed to start session: %w", err)
 	}
+	defer ses.EndSession(ctx)
 
-	chat.ChatID = result.InsertedID.(bson.ObjectID)
-	return &chat, nil
+	_, err = ses.WithTransaction(ctx, func(sessCtx context.Context) (interface{}, error) {
+		// createInvite
+		invite, ok := utils.NewInviteCodeWithDefaults(creator, chat.ChatID, time.Now().Add(24*time.Hour))
+		if !ok {
+			return nil, fmt.Errorf("failed to create invite code")
+		}
+
+		chat.InviteCode = append(chat.InviteCode, invite)
+
+		_, err = objects.DB.Collection(string(objects.ChatColl)).InsertOne(sessCtx, chat)
+		if err != nil {
+			return nil, fmt.Errorf("failed to create group chat: %w", err)
+		}
+
+		const creatingGroup bool = true
+
+		// send invite to users
+		for _, user := range users {
+			if user.ID == creator.ID {
+				continue
+			}
+			err = SendInviteToUser(sessCtx, user.ID, invite.InviteCode, user.ID, creatingGroup)
+			if err != nil {
+				return nil, fmt.Errorf("failed to send invite to user: %w", err)
+			}
+		}
+		return nil, nil
+	})
+
+	return &chat, err
 }
 
 // SendMessage creates and persists a new message, then broadcasts it
@@ -691,7 +674,7 @@ func AddGroupMember(ctx context.Context, userID bson.ObjectID, chatID bson.Objec
 	defer sess.EndSession(ctx)
 
 	_, err = sess.WithTransaction(ctx, func(sessCtx context.Context) (interface{}, error) {
-		users, err := GetUsersByIDs(ctx, participantIDs)
+		users, err := GetUsersByIDs(sessCtx, participantIDs)
 		if err != nil {
 			return nil, fmt.Errorf("failed to get users: %w", err)
 		}
@@ -699,28 +682,15 @@ func AddGroupMember(ctx context.Context, userID bson.ObjectID, chatID bson.Objec
 		participants := make(map[bson.ObjectID]models.ParticipantEmbed)
 
 		for _, user := range users {
-			participants[user.ID] = models.ParticipantEmbed{
-				RequestStatus: string(objects.StatusPending),
-				OnlineStatus:  "offline",
-				RequestedBy:   userID,
-				Permissions:   []string{string(objects.ChatPermissionRead), string(objects.ChatPermissionWrite)},
-				IsBlocked:     false,
-				UserInfo: models.ContactUserInfo{
-					UserID:      user.ID,
-					DisplayName: user.Profile.DisplayName,
-					Username:    user.Username,
-					Avatar:      user.Profile.Avatar,
-				},
-				LastSeen:  time.Time{},
-				IsMuted:   false,
-				Role:      string(objects.ChatRoleMember),
-				CreatedAt: time.Now(),
-				UpdatedAt: time.Now(),
-				JoinedAt:  time.Now(),
-			}
+			participants[user.ID] = utils.NewParticipantWithDefaults(string(objects.StatusPending), string(objects.UserStatusOffline), userID, []string{string(objects.ChatPermissionRead), string(objects.ChatPermissionWrite)}, models.ContactUserInfo{
+				UserID:      user.ID,
+				DisplayName: user.Profile.DisplayName,
+				Username:    user.Username,
+				Avatar:      user.Profile.Avatar,
+			})
 		}
 
-		_, err = objects.DB.Collection(string(objects.ChatColl)).UpdateOne(ctx, filter, bson.M{
+		_, err = objects.DB.Collection(string(objects.ChatColl)).UpdateOne(sessCtx, filter, bson.M{
 			"$set": bson.M{
 				"participants": participants,
 				"updatedAt":    time.Now(),
@@ -737,7 +707,7 @@ func AddGroupMember(ctx context.Context, userID bson.ObjectID, chatID bson.Objec
 }
 
 // ================ Invites ================
-func CreateInvite(ctx context.Context, userID bson.ObjectID, chatID bson.ObjectID) (*models.InviteCodeEmbed, error) {
+func CreateInvite(ctx context.Context, userID bson.ObjectID, chatID bson.ObjectID) (inviteCode string, err error) {
 	filter := bson.M{
 		"_id":  chatID,
 		"type": "group",
@@ -748,21 +718,21 @@ func CreateInvite(ctx context.Context, userID bson.ObjectID, chatID bson.ObjectI
 
 	count, err := objects.DB.Collection(string(objects.ChatColl)).CountDocuments(ctx, filter)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get chat: %w", err)
+		return "", fmt.Errorf("failed to get chat: %w", err)
 	}
 
 	if count == 0 {
-		return nil, fmt.Errorf("chat not found")
+		return "", fmt.Errorf("chat not found")
 	}
 
 	user, ok := ctx.Value("user").(models.LoginUserResponse)
 	if !ok {
-		return nil, fmt.Errorf("user not found")
+		return "", fmt.Errorf("user not found")
 	}
 
 	invite, ok := utils.NewInviteCodeWithDefaults(user, chatID, time.Now().Add(24*time.Hour))
 	if !ok {
-		return nil, fmt.Errorf("failed to create invite code")
+		return "", fmt.Errorf("failed to create invite code")
 	}
 
 	update := bson.M{
@@ -773,10 +743,10 @@ func CreateInvite(ctx context.Context, userID bson.ObjectID, chatID bson.ObjectI
 
 	_, err = objects.DB.Collection(string(objects.ChatColl)).UpdateOne(ctx, filter, update)
 	if err != nil {
-		return nil, fmt.Errorf("failed to create invite code: %w", err)
+		return "", fmt.Errorf("failed to create invite code: %w", err)
 	}
 
-	return &invite, nil
+	return invite.InviteCode, nil
 }
 
 func GetGroupInvites(ctx context.Context, userID bson.ObjectID, chatID bson.ObjectID) ([]models.InviteCodeEmbed, error) {
@@ -789,14 +759,12 @@ func GetGroupInvites(ctx context.Context, userID bson.ObjectID, chatID bson.Obje
 
 	chat := models.Chat{}
 
-	err := objects.DB.Collection(string(objects.ChatColl)).FindOne(ctx, filter, options.FindOne().SetProjection(bson.M{"invites": 1})).Decode(&chat)
+	err := objects.DB.Collection(string(objects.ChatColl)).FindOne(ctx, filter, options.FindOne().SetProjection(bson.M{"inviteCode": 1})).Decode(&chat)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get group invites: %w", err)
 	}
 
-	invites := chat.InviteCode
-
-	return invites, nil
+	return chat.InviteCode, nil
 }
 
 func DeleteInvite(ctx context.Context, userID bson.ObjectID, inviteID string) error {
@@ -892,7 +860,7 @@ func GetJoinedUsersByInvite(ctx context.Context, userID bson.ObjectID, inviteID 
 	return invite, nil
 }
 
-func SendInviteToUser(ctx context.Context, userID bson.ObjectID, inviteID string, targetUserID bson.ObjectID) error {
+func SendInviteToUser(ctx context.Context, userID bson.ObjectID, inviteID string, targetUserID bson.ObjectID, creatingGroup bool) error {
 	inviteIDBytes, err := hex.DecodeString(inviteID)
 	if err != nil {
 		return fmt.Errorf("failed to decode invite ID: %w", err)
@@ -922,13 +890,17 @@ func SendInviteToUser(ctx context.Context, userID bson.ObjectID, inviteID string
 		},
 	}
 
-	cntDoc, err := objects.DB.Collection(string(objects.ChatColl)).CountDocuments(ctx, filter)
-	if err != nil {
-		return fmt.Errorf("failed to get joined users by invite: %w", err)
-	}
+	if !creatingGroup {
+		cntDoc, err := objects.DB.Collection(string(objects.ChatColl)).CountDocuments(ctx, filter)
+		if err != nil {
+			return fmt.Errorf("failed to get joined users by invite: %w", err)
+		}
 
-	if cntDoc == 0 {
-		return fmt.Errorf("user you do not have permission to send invite or user already in the chat")
+		fmt.Println("cntDoc", cntDoc)
+
+		if cntDoc == 0 {
+			return fmt.Errorf("user you do not have permission to send invite or user already in the chat")
+		}
 	}
 
 	targetUserProjection := bson.M{
@@ -939,6 +911,7 @@ func SendInviteToUser(ctx context.Context, userID bson.ObjectID, inviteID string
 			},
 		},
 	}
+
 	_, err = objects.DB.Collection(string(objects.UserColl)).UpdateOne(ctx, bson.M{"_id": targetUserID}, targetUserProjection)
 	if err != nil {
 		return fmt.Errorf("failed to update target user: %w", err)
@@ -961,7 +934,6 @@ func JoinGroupByInvite(ctx context.Context, userID bson.ObjectID, inviteID strin
 	inviteInfoSplit := strings.Split(inviteInfo, "_")
 
 	chatID := inviteInfoSplit[0]
-	SendByUserID := inviteInfoSplit[1]
 
 	expireTime, err := time.Parse(time.RFC3339, inviteInfoSplit[3])
 	if err != nil {
@@ -977,16 +949,62 @@ func JoinGroupByInvite(ctx context.Context, userID bson.ObjectID, inviteID strin
 		return fmt.Errorf("failed to decode chat ID: %w", err)
 	}
 
-	sendByUserID, err := bson.ObjectIDFromHex(SendByUserID)
+	ses, err := objects.DB.Client().StartSession()
 	if err != nil {
-		return fmt.Errorf("failed to decode send by user ID: %w", err)
+		return fmt.Errorf("failed to start session: %w", err)
+	}
+	defer ses.EndSession(ctx)
+
+	_, err = ses.WithTransaction(ctx, func(sessCtx context.Context) (interface{}, error) {
+		// check if the user is already in the chat
+		count, err := objects.DB.Collection(string(objects.ChatColl)).CountDocuments(sessCtx, bson.M{"_id": chatObjectID, "participants." + userID.Hex(): bson.M{"$exists": true}})
+		if err != nil {
+			return nil, fmt.Errorf("failed to check if user is in the chat: %w", err)
+		}
+		if count > 0 {
+			return nil, fmt.Errorf("user already in the chat")
+		}
+
+		user, err := GetUserBasicInfo(sessCtx, userID)
+		if err != nil {
+			return nil, fmt.Errorf("failed to get user: %w", err)
+		}
+
+		userParticipant := utils.NewParticipantWithDefaults(string(objects.StatusAccepted), string(objects.UserStatusOffline), userID, []string{string(objects.ChatPermissionRead), string(objects.ChatPermissionWrite)}, models.ContactUserInfo{
+			UserID:      userID,
+			DisplayName: user.Profile.DisplayName,
+			Username:    user.Username,
+			Avatar:      user.Profile.Avatar,
+		})
+
+		updateInviteCodeUserIDs := bson.M{
+			"$set": bson.M{
+				"participants." + userID.Hex(): userParticipant,
+			},
+
+			"$push": bson.M{
+				"inviteCode.$.userIDs": userID,
+			},
+		}
+
+		_, err = objects.DB.Collection(string(objects.ChatColl)).UpdateOne(sessCtx, bson.M{"_id": chatObjectID, "inviteCode.inviteCode": inviteID}, updateInviteCodeUserIDs)
+		if err != nil {
+			return nil, fmt.Errorf("failed to update invite code user IDs: %w", err)
+		}
+
+		return nil, nil
+	})
+	if err != nil {
+		return fmt.Errorf("failed to add group member: %w", err)
 	}
 
-	return AddGroupMember(ctx, sendByUserID, chatObjectID, []bson.ObjectID{userID})
+	return nil
 }
 
 func GetAllInvitesOfUser(ctx context.Context, userID bson.ObjectID) ([]models.ChatInvitationEmbed, error) {
 	invites := []models.ChatInvitationEmbed{}
+
+	fmt.Println("userID", userID)
 
 	err := objects.DB.Collection(string(objects.UserColl)).FindOne(ctx, bson.M{"_id": userID}, options.FindOne().SetProjection(bson.M{"chatInvitations": 1})).Decode(&invites)
 	if err != nil {

@@ -84,9 +84,6 @@ func GetHubInstance() *EnhancedHub {
 			zapLogger,
 			instanceID,
 		)
-
-		// Initialize user lookup service
-		InitUserLookupService()
 	})
 	return enhancedHubInstance
 }
@@ -222,6 +219,21 @@ func (eh *EnhancedHub) handleClientRegistration(client *models.Client) {
 		eh.UserActiveChats[userID] = userChats
 	}
 
+	presence, ok := GetPresenceInstance().Get(client.UserID)
+	if ok {
+		if presence.Status == UserStatus(objects.UserStatusOnline) {
+			if err := eh.pubSubManager.PublishPresenceUpdate(&models.WSPresenceStatus{
+				UserID:   userID,
+				Status:   string(objects.UserStatusOnline),
+				LastSeen: time.Now(),
+			}); err != nil {
+				eh.logger.Error("websocket_hub_enhanced.go: Failed to publish presence update",
+					zap.Error(err))
+				return
+			}
+		}
+	}
+
 	eh.Mutex.Unlock()
 
 	// Send welcome message
@@ -315,15 +327,6 @@ func (eh *EnhancedHub) handleClientUnregistration(client *models.Client) {
 
 	// Close send channel
 	close(client.Send)
-}
-
-func (eh *EnhancedHub) UpdateUserPresence(userID string, status string) error {
-	err := eh.pubSubManager.PublishPresenceUpdate(&models.WSPresenceStatus{
-		UserID:   userID,
-		Status:   status,
-		LastSeen: time.Now(),
-	})
-	return err
 }
 
 // JoinChat handles client joining a chat with pub/sub subscription
@@ -465,11 +468,17 @@ func (eh *EnhancedHub) BroadcastTypingIndicator(chatID string, userID string, is
 		zap.Bool("isTyping", isTyping))
 
 	// Get user display info
-	userObjectID, _ := bson.ObjectIDFromHex(userID)
-	userInfo, _ := GetUserDisplayInfo(userObjectID)
-	username := "Unknown"
-	if userInfo != nil {
-		username = userInfo.Username
+	userObjectID, err := bson.ObjectIDFromHex(userID)
+	if err != nil {
+		return fmt.Errorf("failed to convert userID to ObjectID: %w", err)
+	}
+	userInfo, err := eh.GetUserInfo(userObjectID)
+	if err != nil {
+		return fmt.Errorf("failed to get user info: %w", err)
+	}
+	username := userInfo.Username
+	if username == "" {
+		username = userID
 	}
 
 	typingMsg := &models.WebSocketMessage{
@@ -690,7 +699,7 @@ func (eh *EnhancedHub) GetUserInfo(userID bson.ObjectID) (*models.UserDisplayInf
 	eh.Mutex.RUnlock()
 
 	// Not in cache or expired, get from lookup service
-	userInfo, err := GetUserDisplayInfo(userID)
+	userInfo, err := GetUserDisplayInfoFromDB(userID)
 	if err != nil {
 		return nil, err
 	}

@@ -112,7 +112,7 @@ func AddGroupMembersHTTP(ctx *gin.Context) {
 	chatID, err := bson.ObjectIDFromHex(chatIDStr)
 	if err != nil {
 		log.Debug("invalid chat ID format")
-		utils.ErrorResponse(ctx, http.StatusBadRequest, "Invalid chat ID format", nil)
+		utils.ErrorResponse(ctx, http.StatusBadRequest, "Invalid chat ID format", err.Error())
 		return
 	}
 
@@ -121,7 +121,7 @@ func AddGroupMembersHTTP(ctx *gin.Context) {
 		userID, err := bson.ObjectIDFromHex(userIDStr)
 		if err != nil {
 			log.Debug("invalid user ID format")
-			utils.ErrorResponse(ctx, http.StatusBadRequest, "Invalid user ID format", nil)
+			utils.ErrorResponse(ctx, http.StatusBadRequest, "Invalid user ID format", err.Error())
 			return
 		}
 		userIDs = append(userIDs, userID)
@@ -137,7 +137,7 @@ func AddGroupMembersHTTP(ctx *gin.Context) {
 	err = services.AddGroupMember(reqCtx, user.ID, chatID, userIDs)
 	if err != nil {
 		log.Debug("failed to add group member ", err)
-		utils.ErrorResponse(ctx, http.StatusInternalServerError, "Failed to add group member", nil)
+		utils.ErrorResponse(ctx, http.StatusInternalServerError, "Failed to add group member", err.Error())
 		return
 	}
 
@@ -183,7 +183,7 @@ func GetChatMessagesHTTP(ctx *gin.Context) {
 	messages, err := services.GetChatMessages(reqCtx, chatID, limit, offset)
 	if err != nil {
 		log.Debug("failed to get chat messages ", err)
-		utils.ErrorResponse(ctx, http.StatusInternalServerError, "Failed to get chat messages", nil)
+		utils.ErrorResponse(ctx, http.StatusInternalServerError, "Failed to get chat messages", err.Error())
 		return
 	}
 
@@ -400,7 +400,9 @@ func SendInviteToUser(ctx *gin.Context) {
 		return
 	}
 
-	err = services.SendInviteToUser(reqCtx, user.ID, inviteID, targetUserID)
+	const creatingGroup bool = false
+
+	err = services.SendInviteToUser(reqCtx, user.ID, inviteID, targetUserID, creatingGroup)
 	if err != nil {
 		log.Debug("failed to send invite to user " + err.Error())
 		utils.ErrorResponse(ctx, http.StatusInternalServerError, "failed to send invite to user", err.Error())

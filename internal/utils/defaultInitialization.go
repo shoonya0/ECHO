@@ -85,7 +85,8 @@ func NewUserWithDefaults(id bson.ObjectID, email, username, passwordHash string)
 				ShowEmojiSuggestions: true,
 			},
 		},
-		Chats: make(map[bson.ObjectID]int),
+		Chats:           make(map[bson.ObjectID]int),
+		ChatInvitations: make([]models.ChatInvitationEmbed, 0),
 	}
 }
 
@@ -100,7 +101,7 @@ func NewChatWithDefaults(id bson.ObjectID, chatType string) models.Chat {
 		Avatar:        "",
 		Participants:  make(map[bson.ObjectID]models.ParticipantEmbed),
 		OwnerID:       id,
-		AdminIDs:      []bson.ObjectID{},
+		AdminIDs:      []bson.ObjectID{id},
 		LastMessageID: bson.ObjectID{},
 		Stats: models.ChatStatsEmbed{
 			ParticipantCount: 0,
@@ -116,6 +117,7 @@ func NewChatWithDefaults(id bson.ObjectID, chatType string) models.Chat {
 			MessageRetention: 0,
 			MaxParticipants:  0,
 		},
+		InviteCode:    make([]models.InviteCodeEmbed, 0),
 		ReadReceipts:  make(map[bson.ObjectID]time.Time),
 		TypingUsers:   make(map[bson.ObjectID]time.Time),
 		ActiveClients: make(map[string]*models.Client),

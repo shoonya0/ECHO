@@ -67,10 +67,6 @@ func main() {
 
 	routes.RegisterAPIRoutes(r)
 
-	// Initialize user lookup service with caching
-	services.InitUserLookupService()
-	log.Info("User lookup service initialized")
-
 	// Start WebSocket hub in a separate goroutine
 	go func() {
 		log.Info("Starting WebSocket Hub for real-time chat")
