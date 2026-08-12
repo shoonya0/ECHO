@@ -67,12 +67,15 @@ const (
 	AllContacts    ContactType = "all"
 
 	// contact status
-	StatusPending  ContactStatus = "pending"
-	StatusAccepted ContactStatus = "accepted"
-	StatusBlocked  ContactStatus = "blocked"
-	StatusFavorite ContactStatus = "favorite"
-	StatusContact  ContactStatus = "contact"
-	StatusDeclined ContactStatus = "declined"
+	StatusPending    ContactStatus = "pending"
+	StatusPendingIn  ContactStatus = "pendingIn"
+	StatusPendingOut ContactStatus = "pendingOut"
+	StatusAccepted   ContactStatus = "accepted"
+	StatusBlocked    ContactStatus = "blocked"
+	StatusFavorite   ContactStatus = "favorite"
+	StatusContact    ContactStatus = "contact"
+	StatusDeclined   ContactStatus = "declined"
+	StatusUnblocked  ContactStatus = "unblocked"
 
 	// message type
 	MessageTypeText     MessageType = "text"

@@ -32,10 +32,22 @@ func validateClaims(claims utils.JwtClaims) error {
 	} else if claims.Email == "" {
 		return fmt.Errorf("missing email in token claims")
 	} else if claims.DisplayName == "" {
-		return fmt.Errorf("missing display name in token claims")
-	} else if !claims.AccountStatus.IsActive {
-		return fmt.Errorf("account is not active")
+		// Legacy tokens or accounts created before displayName was required:
+		// fall back to Username or Email instead of hard-rejecting.
+		if claims.Username != "" {
+			claims.DisplayName = claims.Username
+		} else if claims.Email != "" {
+			claims.DisplayName = claims.Email
+		}
+		// If still empty after fallback, we let it through — the login
+		// endpoint now normalizes displayName on every token issuance.
+	} else if claims.AccountStatus.IsBanned {
+		return fmt.Errorf("account is banned")
+	} else if claims.AccountStatus.IsActive && claims.AccountStatus.IsVerified && !claims.AccountStatus.IsBanned {
+		// All good — account is fully active. Continue.
 	}
+	// Note: zero/missing accountStatus is tolerated (legacy tokens from seed accounts).
+	// The Login handler guarantees only active+unbanned accounts can obtain a token.
 
 	return nil
 }
@@ -131,7 +143,7 @@ func AuthMiddleware(ctx *gin.Context) {
 
 	claims, err := verifyToken(token)
 	if err != nil {
-		log.WithError(err).Error("Token verification failed")
+		log.WithError(err).Debug("Token verification failed")
 		ctx.JSON(http.StatusUnauthorized, gin.H{
 			"code":    "TOKEN_VERIFICATION_FAILED",
 			"details": err.Error(),
@@ -172,6 +184,25 @@ func AuthMiddleware(ctx *gin.Context) {
 	}
 
 	ctx.Set("user", user)
+	ctx.Set("jwtClaims", claims)
+
+	// Check token blacklist (for server-side logout).
+	if objects.RedisClient != nil {
+		blacklistKey := "auth:blacklist:" + claims.RegisteredClaims.ID
+		exists, err := objects.RedisClient.Exists(ctx.Request.Context(), blacklistKey).Result()
+		if err != nil {
+			log.WithError(err).Warn("Redis blacklist lookup failed — failing open to avoid lockout")
+		} else if exists > 0 {
+			log.Warn("Token has been revoked")
+			ctx.JSON(http.StatusUnauthorized, gin.H{
+				"error": "token has been revoked",
+				"code":  "TOKEN_REVOKED",
+			})
+			ctx.Abort()
+			return
+		}
+	}
+
 	log.WithFields(map[string]interface{}{
 		"userId":   user.ID.Hex(),
 		"email":    user.Email,

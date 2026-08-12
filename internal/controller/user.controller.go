@@ -5,8 +5,8 @@ import (
 	"gin/internal/models"
 	"gin/internal/services"
 	"gin/internal/utils"
-	"gin/objects"
 	"net/http"
+	"strconv"
 
 	"github.com/gin-gonic/gin"
 	"go.mongodb.org/mongo-driver/v2/bson"
@@ -20,14 +20,29 @@ func GetProfile(ctx *gin.Context) {
 		return
 	}
 
-	UserDataKey := reqCtx.Value(objects.UserDataKey).(models.LoginUserResponse)
-	if UserDataKey == (models.LoginUserResponse{}) {
+	userID, ok := ctx.Get("userId")
+	if !ok {
 		log.Debug("user id not found")
 		utils.ErrorResponse(ctx, http.StatusUnauthorized, "user id not found", nil)
 		return
 	}
 
-	utils.SuccessResponse(ctx, "User profile fetched successfully", UserDataKey)
+	objectID, err := bson.ObjectIDFromHex(userID.(string))
+	if err != nil {
+		log.Debug("invalid user id format")
+		utils.ErrorResponse(ctx, http.StatusBadRequest, "invalid user id format", err.Error())
+		return
+	}
+
+	profile, err := services.GetUserBasicInfo(reqCtx, objectID)
+	if err != nil {
+		log.Debug("failed to get user profile: " + err.Error())
+		status, msg := MapServiceErrorToHTTP(err)
+		utils.ErrorResponse(ctx, status, msg, nil)
+		return
+	}
+
+	utils.SuccessResponse(ctx, "User profile fetched successfully", profile)
 }
 
 func UpdateProfile(ctx *gin.Context) {
@@ -62,12 +77,21 @@ func UpdateProfile(ctx *gin.Context) {
 
 	err = services.UpdateProfile(reqCtx, objectID, updateDoc)
 	if err != nil {
-		log.Debug("failed to update profile" + err.Error())
-		utils.ErrorResponse(ctx, http.StatusInternalServerError, "failed to update profile", err.Error())
+		log.Debug("failed to update profile: " + err.Error())
+		status, msg := MapServiceErrorToHTTP(err)
+		utils.ErrorResponse(ctx, status, msg, nil)
 		return
 	}
 
-	utils.SuccessResponse(ctx, "Profile updated successfully", nil)
+	profile, err := services.GetUserBasicInfo(reqCtx, objectID)
+	if err != nil {
+		log.Debug("failed to get updated profile: " + err.Error())
+		status, msg := MapServiceErrorToHTTP(err)
+		utils.ErrorResponse(ctx, status, msg, nil)
+		return
+	}
+
+	utils.SuccessResponse(ctx, "Profile updated successfully", profile)
 }
 
 func DeleteProfile(ctx *gin.Context) {
@@ -86,8 +110,9 @@ func DeleteProfile(ctx *gin.Context) {
 
 	err := services.DeleteProfile(reqCtx, userID.(string))
 	if err != nil {
-		log.Debug("failed to delete profile" + err.Error())
-		utils.ErrorResponse(ctx, http.StatusInternalServerError, "failed to delete profile", err.Error())
+		log.Debug("failed to delete profile: " + err.Error())
+		status, msg := MapServiceErrorToHTTP(err)
+		utils.ErrorResponse(ctx, status, msg, nil)
 		return
 	}
 
@@ -112,15 +137,16 @@ func GetUserProfile(ctx *gin.Context) {
 
 	objectID, err := bson.ObjectIDFromHex(userID)
 	if err != nil {
-		log.Debug("invalid user id format" + err.Error())
+		log.Debug("invalid user id format: " + err.Error())
 		utils.ErrorResponse(ctx, http.StatusBadRequest, "invalid user id format", nil)
 		return
 	}
 
 	UserDataKey, err := services.GetUserProfile(reqCtx, objectID)
 	if err != nil {
-		log.Debug("failed to get user profile" + err.Error())
-		utils.ErrorResponse(ctx, http.StatusInternalServerError, "failed to get user profile", err.Error())
+		log.Debug("failed to get user profile: " + err.Error())
+		status, msg := MapServiceErrorToHTTP(err)
+		utils.ErrorResponse(ctx, status, msg, nil)
 		return
 	}
 
@@ -129,7 +155,52 @@ func GetUserProfile(ctx *gin.Context) {
 }
 
 func GetUserSuggestions(ctx *gin.Context) {
-	utils.SuccessResponse(ctx, "User suggestions", nil)
+	reqCtx, log, ok := ReduceGinContextToContext(ctx)
+	if !ok {
+		return
+	}
+
+	userID, ok := authUserID(ctx)
+	if !ok {
+		return
+	}
+
+	// Parse page (1-based, min 1).
+	page, err := strconv.Atoi(ctx.DefaultQuery("page", "1"))
+	if err != nil || page < 1 {
+		page = 1
+	}
+
+	// Parse limit (default 20, max 50).
+	limit, err := strconv.Atoi(ctx.DefaultQuery("limit", "20"))
+	if err != nil || limit < 1 {
+		limit = 20
+	}
+	if limit > 50 {
+		limit = 50
+	}
+
+	// Parse optional comma-separated excludeIds.
+	var excludeIDs []bson.ObjectID
+	if raw := ctx.Query("excludeIds"); raw != "" {
+		parts := utils.SplitAndTrim(raw, ",")
+		for _, p := range parts {
+			id, err := bson.ObjectIDFromHex(p)
+			if err == nil {
+				excludeIDs = append(excludeIDs, id)
+			}
+		}
+	}
+
+	results, total, err := services.GetUserSuggestions(reqCtx, userID, page, limit, excludeIDs)
+	if err != nil {
+		log.Debug("failed to get user suggestions: " + err.Error())
+		status, msg := MapServiceErrorToHTTP(err)
+		utils.ErrorResponse(ctx, status, msg, nil)
+		return
+	}
+
+	utils.PaginatedResponse(ctx, "User suggestions fetched successfully", results, limit, int(total))
 }
 
 func GetNearbyUsers(ctx *gin.Context) {

@@ -21,12 +21,18 @@ func CORSMiddleware() gin.HandlerFunc {
 		// Get logger from context
 		log := logger.WithContext(c.Request.Context())
 
-		// Log CORS request details
+		// Log CORS request details (exclude Authorization header for security)
+		safeHeaders := make(map[string][]string)
+		for k, v := range c.Request.Header {
+			if k != "Authorization" {
+				safeHeaders[k] = v
+			}
+		}
 		log.WithFields(map[string]interface{}{
 			"origin":  c.GetHeader("Origin"),
 			"method":  c.Request.Method,
 			"path":    c.Request.URL.Path,
-			"headers": c.Request.Header,
+			"headers": safeHeaders,
 		}).Debug("Processing CORS request")
 
 		corsHandler(c)

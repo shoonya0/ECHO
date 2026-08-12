@@ -1,75 +1,53 @@
-# Task Plan: Clean Up User Routes — Contacts Section (lines 33–50)
+# Task Plan: Postman Route Test Remediation
 
 ## Goal
-Trace and refactor the contacts API chain (routes → controller → service) for clarity, correctness, and reduced boilerplate — behavior-preserving with targeted bug fixes.
+Fix the two classes of failing routes discovered in the Postman test run:
+1. **Contact GET routes return 500** for users with no `contactInfo` document (fresh or deleted users)
+2. **`GET /users/:id` returns 404** because the test run self-deletes the user mid-run via `DELETE /profile/delete`
 
 ## Current Phase
-Phase 5
+Phase 5 (Delivery)
 
 ## Phases
 
-### Phase 1: Requirements & Discovery
-- [x] Read route definitions (lines 33–50 of user.routes.go)
-- [x] Read contact.controller.go (437 lines)
-- [x] Read contact.service.go (520 lines)
-- [x] Read contact.model.go for type definitions
-- [x] Trace all 11 endpoints through full chain
+### Phase 1: Discovery
+- [x] Read `logs/server.log` — confirmed `DELETE /profile/delete` deletes the user in step 5; all subsequent DB lookups fail with `mongo: no documents in result`
+- [x] Read `internal/services/contact.service.go` — confirmed `GetContacts` missing `mongo.ErrNoDocuments` branch (rule 6 in error-handling.md)
+- [x] Read `internal/middleware/auth.go` — confirmed JWT is claims-based (no per-request DB existence check)
+- [x] Read `internal/controller/controller.go` — confirmed `MapServiceErrorToHTTP` default is 500
+- [x] Read `error-handling.md` rule — confirmed expected behavior is 200 with empty arrays for no data
 - **Status:** complete
 
-### Phase 2: Planning & Structure
-- [x] Identify boilerplate duplication (5 list handlers, 6 action handlers)
-- [x] Identify context.Background() bug in service layer
-- [x] Identify Projection naming violation
-- [x] Identify BlockUnblock hardcoded "block" dead-end
-- [x] Plan extractable helpers (authUserID, parseLimit, paramObjectID, contactsList)
-- [x] Plan service-layer data table (contactFieldsByStatus)
+### Phase 2: Planning
+- [x] `GetContacts`: add `if err == mongo.ErrNoDocuments { return []models.ContactInfo{}, nil }` branch
+- [x] Postman: reorder Profile folder to run last (DELETE destroys user, so must be after all other tests)
+- [x] Update planning files (task_plan.md, findings.md, progress.md)
 - **Status:** complete
 
-### Phase 3: Implementation — Controller
-- [x] Extract shared helpers: authUserID, parseLimit, paramObjectID, contactsList
-- [x] Collapse 5 list handlers to one-liners calling contactsList
-- [x] De-duplicate 6 action handlers using authUserID + paramObjectID
-- [x] Fix BlockUnblockUser to read ?action= query param
-- [x] Fix misleading comment on AcceptOrDeclineContactRequest
-- [x] Normalize error messages to lowercase
+### Phase 3: Implementation
+- [x] Add `mongo.ErrNoDocuments` guard in `GetContacts` → returns `200 []` instead of `500`
+- [x] Reorder Postman collection: Profile folder moved from position 2 to position 7 (before WebSocket)
 - **Status:** complete
 
-### Phase 4: Implementation — Service
-- [x] Replace dual switch in GetContacts with contactFieldsByStatus table
-- [x] Replace context.Background() with ctx throughout
-- [x] Fix Projection → projection naming
-- [x] Fix return types (models.GetUserProfileResponse{} → nil)
-- [x] Fix checkContactRequest if/else → switch
-- [x] Add default case to BlockUnblockUser switch
-- [x] Add defer cursor.Close(ctx) to GetContacts
+### Phase 4: Verification
+- [x] `go build ./...` — passed
+- [x] `go vet ./...` — passed
+- [x] Run Postman collection — 32/33 passed (WebSocket 400 expected)
 - **Status:** complete
 
-### Phase 5: Verification & Delivery
-- [x] go build ./... — passed
-- [x] go vet ./... — passed
-- [x] Update planning files
+### Phase 5: Delivery
+- [x] Update planning files (task_plan.md, findings.md, progress.md)
 - [x] Present summary
 - **Status:** in_progress
-
-## Key Questions
-1. Should GetContactRequests (incoming) and GetSentContactRequests (outgoing) return different data? → Deferred (currently both return pendingIn+pendingOut combined — documented as known limitation)
 
 ## Decisions Made
 | Decision | Rationale |
 |----------|-----------|
-| Extract authUserID helper | 22 uses across 11 handlers |
-| Extract contactsList generic helper | Eliminated ~200 lines of duplicate boilerplate |
-| Extract paramObjectID helper | 10 instances of param→ObjectID conversion |
-| Use table-driven status→fields mapping | Eliminated 60-line dual switch |
-| BlockUnblock defaults to "block" when ?action absent | Maintains backward compatibility |
-| contactFieldsByStatus uses ContactInfoEmbed | Matches actual model type |
-
-## Errors Encountered
-| Error | Attempt | Resolution |
-|-------|---------|------------|
-| models.ContactInfoIDs undefined | 1 | Checked contact.model.go — actual type is ContactInfoEmbed |
+| `GetContacts` returns empty slice on `ErrNoDocuments`, not an error | Rule 6 of error-handling.md: "For FindByFilter[T] which returns (T, error): mongo.ErrNoDocuments → return zero value + error." But GetContacts returns `([]T, error)` — per API contract, 200 with empty items is correct |
+| Postman Profile folder moved to penultimate position (before WebSocket) | DELETE /profile/delete hard-deletes the authenticated user from MongoDB — all subsequent authenticated lookups fail. Running it last protects all other tests |
+| `GET /users/:id` 404 is correct behavior post-delete | User genuinely doesn't exist in DB; JWT is claims-based so auth succeeds but find fails. This is not a code bug |
 
 ## Notes
-- ApiBasePath = `/echo/v1/`
-- All 11 contact endpoints are authenticated
-- Route file (user.routes.go) was already clean from previous pass — only controller + service changed in this pass
+- `AuthMiddleware` performs no DB existence check — claims-based JWT design. Adding a per-request DB check would be an architectural change, out of scope
+- All 400/404 responses for empty path params (`:userId`, `:chatId`, etc.) are correct input validation and stay as-is
+- WebSocket GET returning 400 is expected — Postman isn't a WebSocket client

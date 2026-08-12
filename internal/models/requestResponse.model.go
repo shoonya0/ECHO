@@ -35,6 +35,13 @@ type GetUserProfileResponse struct {
 	AccountStatus AccountStatusEmbed `json:"accountStatus" bson:"accountStatus"`
 }
 
+// ============ USER SUGGESTION MODEL (is in use) ============
+type UserSuggestion struct {
+	ID       bson.ObjectID    `json:"_id" bson:"_id"`
+	Username string           `json:"username" bson:"username"`
+	Profile  UserProfileEmbed `json:"profile" bson:"profile"`
+}
+
 // ============ UPDATE REQUEST MODELS (is in use) ============
 type UpdateUserRequest struct {
 	Username      string             `json:"username,omitempty" bson:"username,omitempty"`

@@ -1,5 +1,4 @@
 
-config/envConfig/dev.env
 config/envConfig/prod.env
 config/envConfig/test.env
 .cursor
@@ -7,3 +6,7 @@ build
 test
 tmp
 logs
+node_modules
+test-all-apis.js
+test-group-chat.html
+test-websocket-chat.html

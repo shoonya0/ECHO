@@ -65,8 +65,9 @@ func contactsList(ctx *gin.Context, status objects.ContactStatus, msgPrefix stri
 
 	results, err := services.GetContacts(reqCtx, userID, status, limit)
 	if err != nil {
-		log.Debug("failed to get " + msgPrefix)
-		utils.ErrorResponse(ctx, http.StatusInternalServerError, "failed to get "+msgPrefix, err.Error())
+		log.Debug("failed to get " + msgPrefix + ": " + err.Error())
+		statusCode, msg := MapServiceErrorToHTTP(err)
+		utils.ErrorResponse(ctx, statusCode, msg, nil)
 		return
 	}
 
@@ -82,12 +83,12 @@ func GetUsersContacts(ctx *gin.Context) {
 
 // GET /echo/v1/users/contacts/requests
 func GetContactRequests(ctx *gin.Context) {
-	contactsList(ctx, objects.StatusPending, "contact requests")
+	contactsList(ctx, objects.StatusPendingIn, "contact requests")
 }
 
 // GET /echo/v1/users/contacts/sent-requests
 func GetSentContactRequests(ctx *gin.Context) {
-	contactsList(ctx, objects.StatusPending, "sent contact requests")
+	contactsList(ctx, objects.StatusPendingOut, "sent contact requests")
 }
 
 // GET /echo/v1/users/contacts/blocked
@@ -120,8 +121,9 @@ func SendContactRequest(ctx *gin.Context) {
 	}
 
 	if err := services.SendContactRequest(reqCtx, userID, targetID); err != nil {
-		log.Debug("failed to send contact request")
-		utils.ErrorResponse(ctx, http.StatusInternalServerError, "failed to send contact request", err.Error())
+		log.Debug("failed to send contact request: " + err.Error())
+		statusCode, msg := MapServiceErrorToHTTP(err)
+		utils.ErrorResponse(ctx, statusCode, msg, nil)
 		return
 	}
 
@@ -153,8 +155,9 @@ func AcceptOrDeclineContactRequest(ctx *gin.Context) {
 	}
 
 	if err := services.AcceptOrDeclineContactRequest(reqCtx, userID, requestID, action); err != nil {
-		log.Debug("failed to " + action + " contact request")
-		utils.ErrorResponse(ctx, http.StatusInternalServerError, "failed to "+action+" contact request", err.Error())
+		log.Debug("failed to " + action + " contact request: " + err.Error())
+		statusCode, msg := MapServiceErrorToHTTP(err)
+		utils.ErrorResponse(ctx, statusCode, msg, nil)
 		return
 	}
 
@@ -179,8 +182,9 @@ func RemoveContact(ctx *gin.Context) {
 	}
 
 	if err := services.RemoveContact(reqCtx, userID, targetID); err != nil {
-		log.Debug("failed to remove contact")
-		utils.ErrorResponse(ctx, http.StatusInternalServerError, "failed to remove contact", err.Error())
+		log.Debug("failed to remove contact: " + err.Error())
+		statusCode, msg := MapServiceErrorToHTTP(err)
+		utils.ErrorResponse(ctx, statusCode, msg, nil)
 		return
 	}
 
@@ -188,7 +192,7 @@ func RemoveContact(ctx *gin.Context) {
 }
 
 // POST /echo/v1/users/contacts/blockUnblock/:userId?action=block|unblock
-// Blocks or unblocks a user.
+// Blocks or unblocks a user (default: block).
 func BlockUnblockUser(ctx *gin.Context) {
 	reqCtx, log, ok := ReduceGinContextToContext(ctx)
 	if !ok {
@@ -210,9 +214,21 @@ func BlockUnblockUser(ctx *gin.Context) {
 		action = string(objects.StatusBlocked) // default to block for backward compatibility
 	}
 
+	// Normalise "block" / "unblock" aliases to their canonical status constants.
+	switch action {
+	case string(objects.StatusBlocked), "block":
+		action = string(objects.StatusBlocked)
+	case string(objects.StatusUnblocked), "unblock":
+		action = string(objects.StatusUnblocked)
+	default:
+		utils.ErrorResponse(ctx, http.StatusBadRequest, "action must be 'block'/'blocked' or 'unblock'/'unblocked'", nil)
+		return
+	}
+
 	if err := services.BlockUnblockUser(reqCtx, userID, targetID, action); err != nil {
-		log.Debug("failed to " + action + " user")
-		utils.ErrorResponse(ctx, http.StatusInternalServerError, "failed to "+action+" user", err.Error())
+		log.Debug("failed to " + action + " user: " + err.Error())
+		statusCode, msg := MapServiceErrorToHTTP(err)
+		utils.ErrorResponse(ctx, statusCode, msg, nil)
 		return
 	}
 
@@ -237,8 +253,9 @@ func AddToFavorites(ctx *gin.Context) {
 	}
 
 	if err := services.AddToFavorites(reqCtx, userID, targetID); err != nil {
-		log.Debug("failed to add user to favorites")
-		utils.ErrorResponse(ctx, http.StatusInternalServerError, "failed to add user to favorites", err.Error())
+		log.Debug("failed to add user to favorites: " + err.Error())
+		statusCode, msg := MapServiceErrorToHTTP(err)
+		utils.ErrorResponse(ctx, statusCode, msg, nil)
 		return
 	}
 
@@ -263,8 +280,9 @@ func RemoveFromFavorites(ctx *gin.Context) {
 	}
 
 	if err := services.RemoveFromFavorites(reqCtx, userID, targetID); err != nil {
-		log.Debug("failed to remove user from favorites")
-		utils.ErrorResponse(ctx, http.StatusInternalServerError, "failed to remove user from favorites", err.Error())
+		log.Debug("failed to remove user from favorites: " + err.Error())
+		statusCode, msg := MapServiceErrorToHTTP(err)
+		utils.ErrorResponse(ctx, statusCode, msg, nil)
 		return
 	}
 

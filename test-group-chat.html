@@ -1,5 +1,6 @@
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -11,7 +12,7 @@
             margin: 0 auto;
             padding: 20px;
         }
-        
+
         .chat-container {
             border: 1px solid #ccc;
             height: 400px;
@@ -20,61 +21,63 @@
             margin: 10px 0;
             background-color: #f9f9f9;
         }
-        
+
         .message {
             margin: 5px 0;
             padding: 5px;
             border-radius: 5px;
+
         }
-        
+
         .message.own {
             background-color: #dcf8c6;
             text-align: right;
         }
-        
+
         .message.other {
             background-color: #fff;
         }
-        
+
         .message.system {
             background-color: #e3f2fd;
             font-style: italic;
             text-align: center;
         }
-        
+
         .input-container {
             display: flex;
             gap: 10px;
             margin: 10px 0;
         }
-        
-        input, button {
+
+        input,
+        button {
             padding: 10px;
             border: 1px solid #ccc;
             border-radius: 5px;
         }
-        
+
         input[type="text"] {
             flex: 1;
         }
-        
+
         .status {
             padding: 10px;
             margin: 5px 0;
             border-radius: 5px;
             font-weight: bold;
         }
-        
+
         .status.connected {
             background-color: #d4edda;
             color: #155724;
         }
-        
+
         .status.disconnected {
             background-color: #f8d7da;
             color: #721c24;
         }
-        
+
         .auth-section {
             background-color: #f0f0f0;
             padding: 15px;
@@ -83,9 +86,10 @@
         }
     </style>
 </head>
+
 <body>
     <h1>Echo Group Chat Test</h1>
-    
+
     <!-- Authentication Section -->
     <div class="auth-section">
         <h3>Authentication</h3>
@@ -100,17 +104,17 @@
             <button onclick="joinChat()">Join Chat</button>
         </div>
     </div>
-    
+
     <div id="status" class="status disconnected">Not Connected</div>
-    
+
     <!-- Chat Interface -->
     <div class="chat-container" id="chatContainer"></div>
-    
+
     <div class="input-container">
         <input type="text" id="messageInput" placeholder="Type your message..." onkeypress="handleKeyPress(event)">
         <button onclick="sendMessage()">Send</button>
     </div>
-    
+
     <div class="input-container">
         <button onclick="setTyping(true)">Start Typing</button>
         <button onclick="setTyping(false)">Stop Typing</button>
@@ -122,13 +126,13 @@
         let authToken = null;
         let currentChatId = null;
         let userId = null;
-        
+
         function updateStatus(message, isConnected) {
             const statusEl = document.getElementById('status');
             statusEl.textContent = message;
             statusEl.className = isConnected ? 'status connected' : 'status disconnected';
         }
-        
+
         function addMessage(message, type = 'other') {
             const chatContainer = document.getElementById('chatContainer');
             const messageEl = document.createElement('div');
@@ -137,16 +141,16 @@
             chatContainer.appendChild(messageEl);
             chatContainer.scrollTop = chatContainer.scrollHeight;
         }
-        
+
         async function login() {
             const username = document.getElementById('username').value;
             const password = document.getElementById('password').value;
-            
+
             if (!username || !password) {
                 alert('Please enter username and password');
                 return;
             }
-            
+
             try {
                 const response = await fetch('/api/v1/auth/login', {
                     method: 'POST',
@@ -158,9 +162,9 @@
                         password: password
                     })
                 });
-                
+
                 const data = await response.json();
-                
+
                 if (data.success) {
                     authToken = data.data.access_token;
                     userId = data.data.user.id;
@@ -174,13 +178,13 @@
                 alert('Login failed: ' + error.message);
             }
         }
-        
+
         async function createGroupChat() {
             if (!authToken) {
                 alert('Please login first');
                 return;
             }
-            
+
             try {
                 const response = await fetch('/api/v1/chats/group', {
                     method: 'POST',
@@ -194,9 +198,9 @@
                         participants: [] // Just the creator for now
                     })
                 });
-                
+
                 const data = await response.json();
-                
+
                 if (data.success) {
                     const chatId = data.data._id;
                     document.getElementById('groupChatId').value = chatId;
@@ -209,22 +213,22 @@
                 alert('Failed to create group chat: ' + error.message);
             }
         }
-        
+
         function connectWebSocket() {
             if (!authToken) {
                 alert('Please login first');
                 return;
             }
-            
+
             const wsUrl = `ws://localhost:8080/api/v1/ws/chat?token=${authToken}`;
             ws = new WebSocket(wsUrl);
-            
-            ws.onopen = function() {
+
+            ws.onopen = function () {
                 updateStatus('WebSocket Connected', true);
                 addMessage('Connected to WebSocket', 'system');
             };
-            
-            ws.onmessage = function(event) {
+
+            ws.onmessage = function (event) {
                 try {
                     const message = JSON.parse(event.data);
                     handleWebSocketMessage(message);
@@ -233,21 +237,21 @@
                     addMessage('Error parsing message: ' + error.message, 'system');
                 }
             };
-            
-            ws.onclose = function() {
+
+            ws.onclose = function () {
                 updateStatus('WebSocket Disconnected', false);
                 addMessage('WebSocket connection closed', 'system');
             };
-            
-            ws.onerror = function(error) {
+
+            ws.onerror = function (error) {
                 console.error('WebSocket error:', error);
                 addMessage('WebSocket error: ' + error.message, 'system');
             };
         }
-        
+
         function handleWebSocketMessage(message) {
             console.log('Received message:', message);
-            
+
             switch (message.type) {
                 case 'response':
                     if (message.data && message.data.status === 'connected') {
@@ -259,78 +263,78 @@
                         }
                     }
                     break;
-                    
+
                 case 'message':
                     const isOwnMessage = message.userId === userId;
                     const messageType = isOwnMessage ? 'own' : 'other';
                     addMessage(`<strong>${message.data.senderId}:</strong> ${message.data.content}`, messageType);
                     break;
-                    
+
                 case 'join':
                     addMessage(`${message.data.username} joined the chat`, 'system');
                     break;
-                    
+
                 case 'leave':
                     addMessage(`${message.data.username} left the chat`, 'system');
                     break;
-                    
+
                 case 'typing':
                     if (message.data.isTyping) {
                         addMessage(`${message.data.username} is typing...`, 'system');
                     }
                     break;
-                    
+
                 case 'error':
                     addMessage(`Error: ${message.data.message}`, 'system');
                     break;
-                    
+
                 default:
                     addMessage(`Unknown message type: ${message.type}`, 'system');
             }
         }
-        
+
         function joinChat() {
             const chatId = document.getElementById('groupChatId').value;
             if (!chatId) {
                 alert('Please enter a chat ID');
                 return;
             }
-            
+
             if (!ws || ws.readyState !== WebSocket.OPEN) {
                 alert('WebSocket not connected');
                 return;
             }
-            
+
             currentChatId = chatId;
-            
+
             const joinMessage = {
                 type: 'join_chat',
                 chatId: chatId,
                 requestId: 'join_' + Date.now()
             };
-            
+
             ws.send(JSON.stringify(joinMessage));
             addMessage(`Attempting to join chat: ${chatId}`, 'system');
         }
-        
+
         function sendMessage() {
             const messageInput = document.getElementById('messageInput');
             const content = messageInput.value.trim();
-            
+
             if (!content) {
                 return;
             }
-            
+
             if (!currentChatId) {
                 alert('Please join a chat first');
                 return;
             }
-            
+
             if (!ws || ws.readyState !== WebSocket.OPEN) {
                 alert('WebSocket not connected');
                 return;
             }
-            
+
             const message = {
                 type: 'send_message',
                 chatId: currentChatId,
@@ -338,16 +342,16 @@
                 messageType: 'text',
                 requestId: 'msg_' + Date.now()
             };
-            
+
             ws.send(JSON.stringify(message));
             messageInput.value = '';
         }
-        
+
         function setTyping(isTyping) {
             if (!currentChatId || !ws || ws.readyState !== WebSocket.OPEN) {
                 return;
             }
-            
+
             const typingMessage = {
                 type: 'set_typing',
                 chatId: currentChatId,
@@ -356,35 +360,36 @@
                 },
                 requestId: 'typing_' + Date.now()
             };
-            
+
             ws.send(JSON.stringify(typingMessage));
         }
-        
+
         function leaveChat() {
             if (!currentChatId || !ws || ws.readyState !== WebSocket.OPEN) {
                 return;
             }
-            
+
             const leaveMessage = {
                 type: 'leave_chat',
                 chatId: currentChatId,
                 requestId: 'leave_' + Date.now()
             };
-            
+
             ws.send(JSON.stringify(leaveMessage));
             currentChatId = null;
         }
-        
+
         function handleKeyPress(event) {
             if (event.key === 'Enter') {
                 sendMessage();
             }
         }
-        
+
         // Auto-connect on page load if we have saved credentials
-        window.addEventListener('load', function() {
+        window.addEventListener('load', function () {
             addMessage('Page loaded. Please login to start chatting.', 'system');
         });
     </script>
 </body>
+
 </html>

@@ -176,28 +176,12 @@ func handleClientRead(ctx context.Context, client *models.Client) {
 	for {
 		_, message, err := client.Connection.ReadMessage() // Read message from client
 		if err != nil {
+			// Any read error means the connection is no longer usable.
+			// Never re-read a dead socket — gorilla panics on repeated read.
 			if websocket.IsUnexpectedCloseError(err, websocket.CloseGoingAway, websocket.CloseAbnormalClosure) {
 				log.Printf("WebSocket error for client %s: %v", client.ID, err)
 			} else {
-
-				log.Printf("Failed to parse message from client %s: %v", client.ID, err) // Log other errors (like JSON parsing errors) but don't immediately close
-
-				errorMsg := models.WebSocketMessage{ // Send error response instead of closing connection
-					Type: models.WSMessageTypeError,
-					Data: models.ErrorMessage{
-						Code:    "PARSE_ERROR",
-						Message: "Failed to parse message: " + err.Error(),
-					},
-					Timestamp: time.Now(),
-				}
-
-				select {
-				case client.Send <- errorMsg:
-				default:
-					log.Printf("Cannot send error message to client %s, closing connection", client.ID) // If can't send error, close connection
-					break
-				}
-				continue // Don't close, try to read next message
+				log.Printf("WebSocket read failed for client %s: %v", client.ID, err)
 			}
 			break
 		}
@@ -217,9 +201,8 @@ func handleClientRead(ctx context.Context, client *models.Client) {
 			case client.Send <- errorMsg:
 			default:
 				log.Printf("Cannot send error message to client %s, closing connection", client.ID)
-				break
 			}
-			continue
+			continue // SAFE: connection is still valid, just skip this bad message
 		}
 
 		client.LastActivity = time.Now() // Update client activity
@@ -259,10 +242,10 @@ func handleClientRequest(ctx context.Context, client *models.Client, request mod
 		handleRemoveReaction(client, request)
 
 	case models.WSRequestTypeInviteUser:
-		handleInviteUser(client, request)
+		handleInviteUser(ctx, client, request)
 
 	case models.WSRequestTypeRemoveUser:
-		handleRemoveUser(client, request)
+		handleRemoveUser(ctx, client, request)
 
 	case models.WSRequestTypeUpdateChat:
 		handleUpdateChat(client, request)
@@ -517,7 +500,13 @@ func handleAddReaction(client *models.Client, request models.MessageRequest) {
 	err = services.AddMessageReaction(chatID, msgObjectID, client.UserID, emoji) // Add reaction through service layer
 	if err != nil {
 		log.Printf("Failed to add reaction: %v", err)
-		sendErrorResponse(client, request.RequestID, "REACTION_FAILED", "Failed to add reaction")
+		errCode := "REACTION_FAILED"
+		errMsg := "Failed to add reaction"
+		if err.Error() == "message not found" {
+			errCode = "MESSAGE_NOT_FOUND"
+			errMsg = "Message not found"
+		}
+		sendErrorResponse(client, request.RequestID, errCode, errMsg)
 		return
 	}
 
@@ -587,7 +576,13 @@ func handleRemoveReaction(client *models.Client, request models.MessageRequest) 
 	err = services.RemoveMessageReaction(chatID, msgObjectID, client.UserID, emoji) // Remove reaction through service layer
 	if err != nil {
 		log.Printf("Failed to remove reaction: %v", err)
-		sendErrorResponse(client, request.RequestID, "REACTION_FAILED", "Failed to remove reaction")
+		errCode := "REACTION_FAILED"
+		errMsg := "Failed to remove reaction"
+		if err.Error() == "message not found" {
+			errCode = "MESSAGE_NOT_FOUND"
+			errMsg = "Message not found"
+		}
+		sendErrorResponse(client, request.RequestID, errCode, errMsg)
 		return
 	}
 
@@ -632,16 +627,198 @@ func handleDeleteMessage(client *models.Client, request models.MessageRequest) {
 	sendErrorResponse(client, request.RequestID, "NOT_IMPLEMENTED", "Message deletion not yet implemented")
 }
 
-// handleInviteUser processes user invitation requests
-func handleInviteUser(client *models.Client, request models.MessageRequest) {
-	// TODO: Implement user invitation
-	sendErrorResponse(client, request.RequestID, "NOT_IMPLEMENTED", "User invitation not yet implemented")
+// handleInviteUser processes user invitation requests for group chats.
+// Requires: chatId (valid group), metadata.userIds ([]interface{} of hex user IDs).
+// The acting user must be a participant with owner or admin role.
+func handleInviteUser(ctx context.Context, client *models.Client, request models.MessageRequest) {
+	if request.ChatID == "" {
+		sendErrorResponse(client, request.RequestID, "INVALID_REQUEST", "ChatID is required")
+		return
+	}
+
+	chatID, err := bson.ObjectIDFromHex(request.ChatID)
+	if err != nil {
+		sendErrorResponse(client, request.RequestID, "INVALID_CHAT_ID", "Invalid chat ID format")
+		return
+	}
+
+	// Extract user IDs from metadata
+	userIDs := []bson.ObjectID{}
+	if request.Metadata != nil {
+		if rawIDs, ok := request.Metadata["userIds"].([]interface{}); ok {
+			for _, raw := range rawIDs {
+				if idStr, ok := raw.(string); ok {
+					if id, err := bson.ObjectIDFromHex(idStr); err == nil {
+						userIDs = append(userIDs, id)
+					}
+				}
+			}
+		}
+	}
+
+	if len(userIDs) == 0 {
+		sendErrorResponse(client, request.RequestID, "INVALID_REQUEST", "At least one valid userId is required")
+		return
+	}
+
+	// Verify chat exists and is a group where the user is a participant
+	chat, err := services.GetChat(ctx, models.ChatInfo{ChatID: chatID})
+	if err != nil {
+		log.Printf("Failed to get chat for invite: %v", err)
+		sendErrorResponse(client, request.RequestID, "INVALID_CHAT_ID", "Chat not found")
+		return
+	}
+
+	if chat.ChatType != string(objects.ChatTypeGroup) {
+		sendErrorResponse(client, request.RequestID, "INVALID_REQUEST", "Can only invite users to group chats")
+		return
+	}
+
+	actingParticipant, isParticipant := chat.Participants[client.UserID]
+	if !isParticipant {
+		sendErrorResponse(client, request.RequestID, "PERMISSION_DENIED", "You are not a participant of this chat")
+		return
+	}
+
+	// Only owners and admins can invite
+	if actingParticipant.Role != string(objects.ChatRoleOwner) && actingParticipant.Role != string(objects.ChatRoleAdmin) {
+		sendErrorResponse(client, request.RequestID, "PERMISSION_DENIED", "Only owners and admins can invite users")
+		return
+	}
+
+	// Add members through service layer
+	err = services.AddGroupMember(ctx, client.UserID, chatID, userIDs)
+	if err != nil {
+		log.Printf("Failed to add group members: %v", err)
+		sendErrorResponse(client, request.RequestID, "INVITE_FAILED", "Failed to invite users: "+err.Error())
+		return
+	}
+
+	// Build invited user ID strings for the event
+	invitedIDStrings := make([]string, len(userIDs))
+	for i, id := range userIDs {
+		invitedIDStrings[i] = id.Hex()
+	}
+
+	// Broadcast invite event to the chat
+	inviteEvent := models.WebSocketMessage{
+		Type:   models.WSMessageTypeChatUpdated,
+		ChatID: request.ChatID,
+		UserID: client.UserID.Hex(),
+		Data: models.UserInvite{
+			ChatID:      request.ChatID,
+			InviterID:   client.UserID.Hex(),
+			InviterName: getUsernameFromClient(client),
+			InviteeID:   "",
+			InviteeName: "",
+			Timestamp:   time.Now(),
+		},
+		Timestamp: time.Now(),
+	}
+
+	if err := services.BroadcastToChat(request.ChatID, inviteEvent); err != nil {
+		log.Printf("Failed to broadcast invite event: %v", err)
+	}
+
+	sendSuccessResponse(client, request.RequestID, map[string]interface{}{
+		"action":       "users_invited",
+		"chatId":       request.ChatID,
+		"invitedUsers": invitedIDStrings,
+	})
+
+	log.Printf("Client %s invited %d users to chat %s", client.ID, len(userIDs), request.ChatID)
 }
 
-// handleRemoveUser processes user removal requests
-func handleRemoveUser(client *models.Client, request models.MessageRequest) {
-	// TODO: Implement user removal
-	sendErrorResponse(client, request.RequestID, "NOT_IMPLEMENTED", "User removal not yet implemented")
+// handleRemoveUser processes user removal requests from group chats.
+// Requires: chatId (valid group), metadata.userIds ([]interface{} of hex user IDs).
+// The acting user must be an owner or admin. Cannot remove self.
+func handleRemoveUser(ctx context.Context, client *models.Client, request models.MessageRequest) {
+	if request.ChatID == "" {
+		sendErrorResponse(client, request.RequestID, "INVALID_REQUEST", "ChatID is required")
+		return
+	}
+
+	chatID, err := bson.ObjectIDFromHex(request.ChatID)
+	if err != nil {
+		sendErrorResponse(client, request.RequestID, "INVALID_CHAT_ID", "Invalid chat ID format")
+		return
+	}
+
+	// Extract user IDs from metadata
+	userIDs := []bson.ObjectID{}
+	if request.Metadata != nil {
+		if rawIDs, ok := request.Metadata["userIds"].([]interface{}); ok {
+			for _, raw := range rawIDs {
+				if idStr, ok := raw.(string); ok {
+					if id, err := bson.ObjectIDFromHex(idStr); err == nil {
+						userIDs = append(userIDs, id)
+					}
+				}
+			}
+		}
+	}
+
+	if len(userIDs) == 0 {
+		sendErrorResponse(client, request.RequestID, "INVALID_REQUEST", "At least one valid userId is required")
+		return
+	}
+
+	// Remove members through service layer (validates permissions, chat type, etc.)
+	err = services.RemoveGroupMember(ctx, client.UserID, chatID, userIDs)
+	if err != nil {
+		log.Printf("Failed to remove group members: %v", err)
+
+		errCode := "REMOVE_FAILED"
+		clientMsg := "Failed to remove users"
+
+		if errors.Is(err, services.ErrChatNotFound) {
+			errCode = "INVALID_CHAT_ID"
+			clientMsg = "Chat not found"
+		} else if errors.Is(err, services.ErrNotParticipant) || errors.Is(err, services.ErrPermissionDenied) {
+			errCode = "PERMISSION_DENIED"
+			clientMsg = "You do not have permission to remove users"
+		} else if errors.Is(err, services.ErrNoValidParticipants) {
+			errCode = "INVALID_REQUEST"
+			clientMsg = "No valid participants to remove"
+		}
+
+		sendErrorResponse(client, request.RequestID, errCode, clientMsg)
+		return
+	}
+
+	// Build removed user ID strings
+	removedIDStrings := make([]string, len(userIDs))
+	for i, id := range userIDs {
+		removedIDStrings[i] = id.Hex()
+	}
+
+	// Broadcast removal event to the chat
+	removeEvent := models.WebSocketMessage{
+		Type:   models.WSMessageTypeChatUpdated,
+		ChatID: request.ChatID,
+		UserID: client.UserID.Hex(),
+		Data: models.UserRemove{
+			ChatID:      request.ChatID,
+			RemovedByID: client.UserID.Hex(),
+			RemovedBy:   getUsernameFromClient(client),
+			RemovedID:   "",
+			RemovedUser: "",
+			Timestamp:   time.Now(),
+		},
+		Timestamp: time.Now(),
+	}
+
+	if err := services.BroadcastToChat(request.ChatID, removeEvent); err != nil {
+		log.Printf("Failed to broadcast remove event: %v", err)
+	}
+
+	sendSuccessResponse(client, request.RequestID, map[string]interface{}{
+		"action":       "users_removed",
+		"chatId":       request.ChatID,
+		"removedUsers": removedIDStrings,
+	})
+
+	log.Printf("Client %s removed %d users from chat %s", client.ID, len(userIDs), request.ChatID)
 }
 
 // handleUpdateChat processes chat update requests

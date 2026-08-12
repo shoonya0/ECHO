@@ -1,6 +1,7 @@
 package routes
 
 import (
+	"context"
 	"gin/internal/controller"
 	"gin/internal/middleware"
 	"gin/internal/models"
@@ -8,11 +9,12 @@ import (
 	"gin/logger"
 	"gin/objects"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/gin-gonic/gin"
-	"go.mongodb.org/mongo-driver/mongo"
 	"go.mongodb.org/mongo-driver/v2/bson"
+	"go.mongodb.org/mongo-driver/v2/mongo"
 	"go.mongodb.org/mongo-driver/v2/mongo/options"
 	"golang.org/x/crypto/bcrypt"
 )
@@ -47,7 +49,7 @@ func Signup() gin.HandlerFunc {
 			return
 		}
 		if count > 0 {
-			log.WithError(err).Debug("email already registered")
+			log.Debug("email already registered")
 			utils.ErrorResponse(c, http.StatusConflict, "email already registered", nil)
 			return
 		}
@@ -101,12 +103,12 @@ func Login() gin.HandlerFunc {
 			"presence.lastSeen":   1,
 		}
 
-		var user models.LoginUserResponse
-
-		err := objects.DB.Collection(string(objects.UserColl)).FindOne(c.Request.Context(), bson.M{"email": req.Email}, options.FindOne().SetProjection(userProjection)).Decode(&user)
+		// Decode into raw bson.M first to detect missing accountStatus field (legacy seed accounts).
+		var rawDoc bson.M
+		err := objects.DB.Collection(string(objects.UserColl)).FindOne(c.Request.Context(), bson.M{"email": req.Email}, options.FindOne().SetProjection(userProjection)).Decode(&rawDoc)
 		if err == mongo.ErrNoDocuments {
 			log.Debug("invalid credentials")
-			utils.ErrorResponse(c, http.StatusUnauthorized, "invalid credentials", err.Error())
+			utils.ErrorResponse(c, http.StatusUnauthorized, "invalid credentials", nil)
 			return
 		} else if err != nil {
 			log.WithError(err).Error("failed to find user")
@@ -114,12 +116,53 @@ func Login() gin.HandlerFunc {
 			return
 		}
 
+		// If accountStatus is missing from the stored document (legacy / direct-seed account),
+		// inject a default-active status so the typed decode produces the correct value.
+		if _, hasAccountStatus := rawDoc["accountStatus"]; !hasAccountStatus {
+			rawDoc["accountStatus"] = bson.M{
+				"isActive":   true,
+				"isVerified": false,
+				"isBanned":   false,
+			}
+		}
+
+		// Convert raw document to typed struct.
+		var user models.LoginUserResponse
+		bsonBytes, _ := bson.Marshal(rawDoc)
+		if err := bson.Unmarshal(bsonBytes, &user); err != nil {
+			log.WithError(err).Error("failed to decode user document")
+			utils.ErrorResponse(c, http.StatusInternalServerError, "failed to decode user", err.Error())
+			return
+		}
+
 		if err := bcrypt.CompareHashAndPassword(
 			[]byte(user.PasswordHash), []byte(req.Password),
 		); err != nil {
 			log.WithError(err).Debug("invalid credentials")
-			utils.ErrorResponse(c, http.StatusUnauthorized, "invalid credentials", err.Error())
+			utils.ErrorResponse(c, http.StatusUnauthorized, "invalid credentials", nil)
 			return
+		}
+
+		if user.AccountStatus.IsBanned {
+			log.Debug("account is banned")
+			utils.ErrorResponse(c, http.StatusForbidden, "account is banned", nil)
+			return
+		}
+
+		if !user.AccountStatus.IsActive {
+			log.Debug("account is not active")
+			utils.ErrorResponse(c, http.StatusForbidden, "account is not active", nil)
+			return
+		}
+
+		// Normalize displayName: legacy/seeded accounts may lack it.
+		// Without this the JWT carries an empty "displayName" claim, and
+		// AuthMiddleware rejects it with "missing display name in token claims".
+		displayNameFixed := false
+		normalizedDisplayName := normalizeDisplayName(user.Profile.DisplayName, user.Username, user.Email)
+		if normalizedDisplayName != user.Profile.DisplayName {
+			user.Profile.DisplayName = normalizedDisplayName
+			displayNameFixed = true
 		}
 
 		newUser := models.LoginUserResponse{
@@ -136,6 +179,20 @@ func Login() gin.HandlerFunc {
 			log.WithError(err).Debug("could not generate token")
 			utils.ErrorResponse(c, http.StatusInternalServerError, "could not generate token", err.Error())
 			return
+		}
+
+		// Self-heal the stored document so the fix persists.
+		if displayNameFixed {
+			go func() {
+				_, uErr := objects.DB.Collection(string(objects.UserColl)).UpdateOne(
+					context.Background(),
+					bson.M{"_id": user.ID},
+					bson.M{"$set": bson.M{"profile.displayName": normalizedDisplayName}},
+				)
+				if uErr != nil {
+					log.WithError(uErr).WithField("user", user.ID.Hex()).Debug("failed to self-heal display name")
+				}
+			}()
 		}
 
 		log.WithField("user", newUser.ID.Hex()).Info("login successful")
@@ -167,4 +224,27 @@ func RegisterWebSocketRoutes(r *gin.Engine) {
 	wsGroup.Use(middleware.LoggerMiddleware())
 
 	wsGroup.GET("/chat", controller.HandleWebSocketChat)
+}
+
+// normalizeDisplayName ensures a display name is never empty by falling
+// back through usable alternatives: displayName → username → email local-part → "User".
+func normalizeDisplayName(displayName, username, email string) string {
+	candidate := strings.TrimSpace(displayName)
+	if candidate != "" {
+		return candidate
+	}
+
+	candidate = strings.TrimSpace(username)
+	if candidate != "" {
+		return candidate
+	}
+
+	if idx := strings.LastIndex(email, "@"); idx > 0 {
+		candidate = strings.TrimSpace(email[:idx])
+		if candidate != "" {
+			return candidate
+		}
+	}
+
+	return "User"
 }

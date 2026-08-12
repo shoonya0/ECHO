@@ -1,6 +1,8 @@
 package controller
 
 import (
+	"gin/internal/services"
+	"gin/internal/utils"
 	"gin/logger"
 	"net/http"
 	"time"
@@ -46,16 +48,38 @@ func Refresh(c *gin.Context) {
 	})
 }
 
-// Invalidate the current refresh token.
+// Logout invalidates the current JWT by adding its JTI to a Redis blacklist.
 func Logout(c *gin.Context) {
-	log := logger.WithContext(c.Request.Context())
-	log.WithField("user_id", c.GetString("userId")).Info("Processing logout request")
+	reqCtx, log, ok := ReduceGinContextToContext(c)
+	if !ok {
+		return
+	}
 
-	// TODO: Add logout logic here
+	jwtClaimsValue, exists := c.Get("jwtClaims")
+	if !exists {
+		log.Debug("jwt claims not found in context")
+		utils.ErrorResponse(c, http.StatusUnauthorized, "jwt claims not found", nil)
+		return
+	}
+
+	claims, ok := jwtClaimsValue.(utils.JwtClaims)
+	if !ok {
+		log.Debug("invalid jwt claims type in context")
+		utils.ErrorResponse(c, http.StatusInternalServerError, "invalid token claims", nil)
+		return
+	}
+
+	jti := claims.RegisteredClaims.ID
+	exp := claims.RegisteredClaims.ExpiresAt.Time
+
+	if err := services.LogoutUser(reqCtx, jti, exp); err != nil {
+		log.WithError(err).Debug("failed to logout user")
+		utils.ErrorResponse(c, http.StatusInternalServerError, "failed to logout", nil)
+		return
+	}
+
 	log.Info("User logged out successfully")
-	c.JSON(http.StatusOK, gin.H{
-		"message": "Logout successful",
-	})
+	utils.SuccessResponse(c, "Logged out successfully", nil)
 }
 
 // Logout from all devices/sessions.

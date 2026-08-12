@@ -35,8 +35,9 @@ func CreateDirectChatHTTP(ctx *gin.Context) {
 
 	chat, err := services.CreateDirectChat(reqCtx, targetObjectID)
 	if err != nil {
-		log.Debug("failed to create direct chat")
-		utils.ErrorResponse(ctx, http.StatusInternalServerError, "Failed to create chat", nil)
+		log.Debug("failed to create direct chat: " + err.Error())
+		statusCode, msg := MapServiceErrorToHTTP(err)
+		utils.ErrorResponse(ctx, statusCode, msg, nil)
 		return
 	}
 
@@ -77,8 +78,9 @@ func CreateGroupChatHTTP(ctx *gin.Context) {
 
 	chat, err := services.CreateGroupChat(reqCtx, request.Name, request.Description, participantIDs)
 	if err != nil {
-		log.Debug("failed to create group chat ", err)
-		utils.ErrorResponse(ctx, http.StatusInternalServerError, "Failed to create group chat", nil)
+		log.Debug("failed to create group chat: " + err.Error())
+		statusCode, msg := MapServiceErrorToHTTP(err)
+		utils.ErrorResponse(ctx, statusCode, msg, nil)
 		return
 	}
 
@@ -136,8 +138,9 @@ func AddGroupMembersHTTP(ctx *gin.Context) {
 
 	err = services.AddGroupMember(reqCtx, user.ID, chatID, userIDs)
 	if err != nil {
-		log.Debug("failed to add group member ", err)
-		utils.ErrorResponse(ctx, http.StatusInternalServerError, "Failed to add group member", err.Error())
+		log.Debug("failed to add group member: " + err.Error())
+		statusCode, msg := MapServiceErrorToHTTP(err)
+		utils.ErrorResponse(ctx, statusCode, msg, nil)
 		return
 	}
 
@@ -169,7 +172,7 @@ func GetChatMessagesHTTP(ctx *gin.Context) {
 	offset := 0 // Default offset
 
 	if limitStr := ctx.Query("limit"); limitStr != "" {
-		if parsedLimit := utils.ParseInt(limitStr, 50); parsedLimit > 0 && parsedLimit <= 10 {
+		if parsedLimit := utils.ParseInt(limitStr, 50); parsedLimit > 0 && parsedLimit <= 100 {
 			limit = parsedLimit
 		}
 	}
@@ -182,12 +185,20 @@ func GetChatMessagesHTTP(ctx *gin.Context) {
 
 	messages, err := services.GetChatMessages(reqCtx, chatID, limit, offset)
 	if err != nil {
-		log.Debug("failed to get chat messages ", err)
-		utils.ErrorResponse(ctx, http.StatusInternalServerError, "Failed to get chat messages", err.Error())
+		log.Debug("failed to get chat messages: " + err.Error())
+		statusCode, msg := MapServiceErrorToHTTP(err)
+		utils.ErrorResponse(ctx, statusCode, msg, nil)
 		return
 	}
 
 	totalPages := (len(messages) + limit - 1) / limit
+	if len(messages) == 0 {
+		totalPages = 0
+	}
+	currentPage := 1
+	if limit > 0 {
+		currentPage = offset/limit + 1
+	}
 
 	type PaginationResponse struct {
 		Limit      int `json:"limit"`
@@ -212,7 +223,7 @@ func GetChatMessagesHTTP(ctx *gin.Context) {
 			Offset:     offset,
 			Count:      len(messages),
 			TotalCount: len(messages),
-			Page:       1,
+			Page:       currentPage,
 			TotalPages: totalPages,
 		},
 	}
@@ -257,8 +268,9 @@ func CreateInvite(ctx *gin.Context) {
 
 	_, err = services.CreateInvite(reqCtx, user.ID, chatID)
 	if err != nil {
-		log.Debug("failed to create invite ", err.Error())
-		utils.ErrorResponse(ctx, http.StatusInternalServerError, "failed to create invite", err.Error())
+		log.Debug("failed to create invite: " + err.Error())
+		statusCode, msg := MapServiceErrorToHTTP(err)
+		utils.ErrorResponse(ctx, statusCode, msg, nil)
 		return
 	}
 
@@ -295,8 +307,9 @@ func GetGroupInvites(ctx *gin.Context) {
 
 	invites, err := services.GetGroupInvites(reqCtx, user.ID, chatID)
 	if err != nil {
-		log.Debug("failed to get group invites ", err.Error())
-		utils.ErrorResponse(ctx, http.StatusInternalServerError, "failed to get group invites", err.Error())
+		log.Debug("failed to get group invites: " + err.Error())
+		statusCode, msg := MapServiceErrorToHTTP(err)
+		utils.ErrorResponse(ctx, statusCode, msg, nil)
 		return
 	}
 
@@ -326,8 +339,9 @@ func DeleteInvite(ctx *gin.Context) {
 
 	err := services.DeleteInvite(reqCtx, user.ID, inviteIDStr)
 	if err != nil {
-		log.Debug("failed to delete invite ", err.Error())
-		utils.ErrorResponse(ctx, http.StatusInternalServerError, "failed to delete invite", err.Error())
+		log.Debug("failed to delete invite: " + err.Error())
+		statusCode, msg := MapServiceErrorToHTTP(err)
+		utils.ErrorResponse(ctx, statusCode, msg, nil)
 		return
 	}
 
@@ -362,8 +376,9 @@ func GetJoinedUsersByInvite(ctx *gin.Context) {
 
 	joinedUsers, err := services.GetJoinedUsersByInvite(reqCtx, user.ID, inviteIDStr)
 	if err != nil {
-		log.Debug("failed to get joined users by invite ", err.Error())
-		utils.ErrorResponse(ctx, http.StatusInternalServerError, "failed to get joined users by invite", err.Error())
+		log.Debug("failed to get joined users by invite: " + err.Error())
+		statusCode, msg := MapServiceErrorToHTTP(err)
+		utils.ErrorResponse(ctx, statusCode, msg, nil)
 		return
 	}
 
@@ -395,7 +410,7 @@ func SendInviteToUser(ctx *gin.Context) {
 
 	targetUserID, err := bson.ObjectIDFromHex(userIDStr)
 	if err != nil {
-		log.Debug("invalid user ID format " + err.Error())
+		log.Debug("invalid user ID format: " + err.Error())
 		utils.ErrorResponse(ctx, http.StatusBadRequest, "Invalid user ID format", err.Error())
 		return
 	}
@@ -404,8 +419,9 @@ func SendInviteToUser(ctx *gin.Context) {
 
 	err = services.SendInviteToUser(reqCtx, user.ID, inviteID, targetUserID, creatingGroup)
 	if err != nil {
-		log.Debug("failed to send invite to user " + err.Error())
-		utils.ErrorResponse(ctx, http.StatusInternalServerError, "failed to send invite to user", err.Error())
+		log.Debug("failed to send invite to user: " + err.Error())
+		statusCode, msg := MapServiceErrorToHTTP(err)
+		utils.ErrorResponse(ctx, statusCode, msg, nil)
 		return
 	}
 
@@ -436,8 +452,9 @@ func JoinGroupByInvite(ctx *gin.Context) {
 
 	err := services.JoinGroupByInvite(reqCtx, user.ID, inviteCode)
 	if err != nil {
-		log.Debug("failed to join group by invite " + err.Error())
-		utils.ErrorResponse(ctx, http.StatusInternalServerError, "failed to join group by invite", err.Error())
+		log.Debug("failed to join group by invite: " + err.Error())
+		statusCode, msg := MapServiceErrorToHTTP(err)
+		utils.ErrorResponse(ctx, statusCode, msg, nil)
 		return
 	}
 
@@ -460,8 +477,9 @@ func GetAllInvitesOfUser(ctx *gin.Context) {
 
 	invites, err := services.GetAllInvitesOfUser(reqCtx, user.ID)
 	if err != nil {
-		log.Debug("failed to get all invites of user " + err.Error())
-		utils.ErrorResponse(ctx, http.StatusInternalServerError, "failed to get all invites of user", err.Error())
+		log.Debug("failed to get all invites of user: " + err.Error())
+		statusCode, msg := MapServiceErrorToHTTP(err)
+		utils.ErrorResponse(ctx, statusCode, msg, nil)
 		return
 	}
 

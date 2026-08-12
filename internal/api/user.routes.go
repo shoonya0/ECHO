@@ -11,6 +11,12 @@ import (
 func RegisterUserRoutes(r *gin.Engine) {
 	userApi := r.Group(objects.ApiBasePath)
 
+	// ============ AUTHENTICATION ============
+	authRoutes := userApi.Group("auth")
+	{
+		authRoutes.POST("/logout", controller.Logout)
+	}
+
 	// ============ PROFILE MANAGEMENT ============
 	profileRoutes := userApi.Group("profile")
 	{
