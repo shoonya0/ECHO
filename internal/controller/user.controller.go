@@ -75,7 +75,14 @@ func UpdateProfile(ctx *gin.Context) {
 
 	updateDoc := BuildPartialDocument(updateReq)
 
-	err = services.UpdateProfile(reqCtx, objectID, updateDoc)
+	// Drop backend/service-owned fields (accountStatus, timestamps, etc.)
+	// before they can reach MongoDB. Any client attempt to set them is logged.
+	sanitizedDoc, droppedKeys := FilterProfileUpdateKeys(updateDoc)
+	if len(droppedKeys) > 0 {
+		log.WithField("droppedKeys", droppedKeys).Warn("Dropped immutable fields from profile update")
+	}
+
+	err = services.UpdateProfile(reqCtx, objectID, sanitizedDoc)
 	if err != nil {
 		log.Debug("failed to update profile: " + err.Error())
 		status, msg := MapServiceErrorToHTTP(err)

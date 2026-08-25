@@ -80,9 +80,17 @@ func UpdateProfile(ctx context.Context, userID bson.ObjectID, profileUpdate map[
 		return fmt.Errorf("failed to fetch existing user: %w", err)
 	}
 
+	// Defense-in-depth: drop any backend/service-owned field that escaped
+	// the controller whitelist. Account state must never be changed through
+	// the profile-update path.
+	dropImmutableUpdateKeys(profileUpdate)
+
 	// Sanitize the update map: replace empty values for required fields
 	// with their previously stored values.
 	sanitizeUpdateFields(profileUpdate, existingDoc)
+
+	// updatedAt is server-controlled, never client-controlled.
+	profileUpdate["updatedAt"] = time.Now()
 
 	update := bson.M{"$set": profileUpdate}
 
@@ -363,6 +371,38 @@ func GetUserDisplayInfoFromDB(userID bson.ObjectID) (*models.UserDisplayInfo, er
 		Username:    user.Username,
 		DisplayName: user.Profile.DisplayName,
 	}, nil
+}
+
+// dropImmutableUpdateKeys removes backend/service-owned fields from an update
+// map. This is a defense-in-depth guard layered on top of the controller
+// whitelist; it ensures account state, credentials, contact graph, chat state,
+// and timestamps can never be mutated via UpdateProfile.
+func dropImmutableUpdateKeys(updateMap map[string]interface{}) {
+	for key := range updateMap {
+		if isImmutableUpdateKey(key) {
+			delete(updateMap, key)
+		}
+	}
+}
+
+// isImmutableUpdateKey reports whether a dotted key targets a field the user
+// must not change directly.
+func isImmutableUpdateKey(key string) bool {
+	immutablePrefixes := []string{
+		"accountStatus.",
+		"createdAt",
+		"updatedAt",
+		"passwordHash",
+		"contactInfo.",
+		"chats",
+		"chatInvitations",
+	}
+	for _, prefix := range immutablePrefixes {
+		if key == prefix || strings.HasPrefix(key, prefix) {
+			return true
+		}
+	}
+	return false
 }
 
 // sanitizeUpdateFields walks a dotted-path update map and replaces any empty-

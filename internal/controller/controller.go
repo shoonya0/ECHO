@@ -29,6 +29,64 @@ func ReduceGinContextToContext(ctx *gin.Context) (context.Context, logrus.Entry,
 	return reqCtx, *log, true
 }
 
+// userMutableKeys whitelists the fields a user is allowed to change through
+// PUT /profile/. Any dotted key not in this map is backend/service-owned
+// (account state, timestamps, credentials, contact graph, chat state) and is
+// dropped before the update reaches MongoDB.
+var userMutableKeys = map[string]bool{
+	// Identity
+	"username": true,
+	"email":    true,
+	"phone":    true,
+
+	// Profile
+	"profile.displayName":   true,
+	"profile.avatar":        true,
+	"profile.statusMessage": true,
+	"profile.bio":           true,
+
+	// Presence (user controls own status/device/location)
+	"presence.status":       true,
+	"presence.isOnline":     true,
+	"presence.lastSeen":     true,
+	"presence.lastActivity": true,
+	"presence.deviceInfo":   true,
+	"presence.location":     true,
+
+	// Settings (user preferences)
+	"settings.theme":                             true,
+	"settings.language":                          true,
+	"settings.soundsOn":                          true,
+	"settings.notifications.pushEnabled":         true,
+	"settings.notifications.emailEnabled":        true,
+	"settings.notifications.soundEnabled":        true,
+	"settings.notifications.mentionsOnly":        true,
+	"settings.notifications.messagePreview":      true,
+	"settings.privacy.showOnlineStatus":          true,
+	"settings.privacy.showLastSeen":              true,
+	"settings.privacy.allowContactBy":            true,
+	"settings.messagePrefs.autoDownloadImages":   true,
+	"settings.messagePrefs.autoDownloadFiles":    true,
+	"settings.messagePrefs.showEmojiSuggestions": true,
+}
+
+// FilterProfileUpdateKeys removes any key not present in userMutableKeys.
+// The returned map contains only user-owned fields; dropped keys are returned
+// separately so the caller can log them for observability.
+func FilterProfileUpdateKeys(updateDoc map[string]interface{}) (sanitized map[string]interface{}, dropped []string) {
+	sanitized = make(map[string]interface{}, len(updateDoc))
+
+	for key, value := range updateDoc {
+		if userMutableKeys[key] {
+			sanitized[key] = value
+			continue
+		}
+		dropped = append(dropped, key)
+	}
+
+	return sanitized, dropped
+}
+
 // BuildPartialDocument creates a MongoDB update document only with non-nil fields
 // This prevents updating fields that weren't provided in the request
 func BuildPartialDocument(updateReq interface{}) bson.M {

@@ -43,15 +43,16 @@ type UserSuggestion struct {
 }
 
 // ============ UPDATE REQUEST MODELS (is in use) ============
+// Pointer + omitempty on embedded groups prevents accidental writes of
+// zero-value structs when the client omits a group entirely.
 type UpdateUserRequest struct {
-	Username      string             `json:"username,omitempty" bson:"username,omitempty"`
-	Email         string             `json:"email,omitempty" bson:"email,omitempty"`
-	Phone         string             `json:"phone,omitempty" bson:"phone,omitempty"`
-	Profile       UserProfileEmbed   `json:"profile" bson:"profile"`
-	Presence      PresenceEmbed      `json:"presence" bson:"presence"`
-	AccountStatus AccountStatusEmbed `json:"accountStatus" bson:"accountStatus"`
-	Settings      UserSettingsEmbed  `json:"settings" bson:"settings"`
-	UpdatedAt     time.Time          `json:"updatedAt" bson:"updatedAt"`
+	Username      string              `json:"username,omitempty" bson:"username,omitempty"`
+	Email         string              `json:"email,omitempty" bson:"email,omitempty"`
+	Phone         string              `json:"phone,omitempty" bson:"phone,omitempty"`
+	Profile       *UserProfileEmbed   `json:"profile,omitempty" bson:"profile,omitempty"`
+	Presence      *PresenceEmbed      `json:"presence,omitempty" bson:"presence,omitempty"`
+	AccountStatus *AccountStatusEmbed `json:"accountStatus,omitempty" bson:"accountStatus,omitempty"`
+	Settings      *UserSettingsEmbed  `json:"settings,omitempty" bson:"settings,omitempty"`
 }
 
 // ============ CONTACT MODEL (is in use) ============
