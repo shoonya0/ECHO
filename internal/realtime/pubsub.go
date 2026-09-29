@@ -292,11 +292,8 @@ func (pm *PubSubManager) handleChatMessage(chatID string, message *models.WebSoc
 
 	// Send to all connected clients in this chat
 	for _, client := range clients {
-		select {
-		case client.Send <- *message:
-		default:
-			// Client's send channel is full, close it
-			close(client.Send)
+		if !client.TrySend(*message) {
+			pm.dropSlowClient(client)
 		}
 	}
 }
@@ -313,13 +310,23 @@ func (pm *PubSubManager) handleUserMessage(userID string, message *models.WebSoc
 	}
 
 	for _, client := range clients {
-		select {
-		case client.Send <- *message:
+		if client.TrySend(*message) {
 			pm.logger.WithFields(logrus.Fields{"clientID": client.ID, "userID": userID}).Debug("Sent user message to client")
-		default:
-			pm.logger.WithFields(logrus.Fields{"clientID": client.ID}).Warn("Client send channel full, closing")
-			close(client.Send)
+		} else {
+			pm.dropSlowClient(client)
 		}
+	}
+}
+
+// dropSlowClient disconnects a client whose send buffer is full. Closing the
+// channel is left to the hub's unregister path so it happens exactly once.
+func (pm *PubSubManager) dropSlowClient(client *models.Client) {
+	pm.logger.WithFields(logrus.Fields{"clientID": client.ID}).Warn("Client send channel full, disconnecting")
+	client.CloseSend()
+	select {
+	case pm.hub.Unregister <- client:
+	default:
+		pm.logger.WithFields(logrus.Fields{"clientID": client.ID}).Warn("Unregister queue full; client will be removed by cleanup")
 	}
 }
 
@@ -398,11 +405,7 @@ func (pm *PubSubManager) broadcastToAllClients(message *models.WebSocketMessage)
 	pm.hub.Mutex.RUnlock()
 
 	for _, client := range clients {
-		select {
-		case client.Send <- *message:
-		default:
-			// Skip if channel is full
-		}
+		client.TrySend(*message) // skip if the channel is full
 	}
 }
 

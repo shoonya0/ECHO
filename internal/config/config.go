@@ -41,7 +41,7 @@ func Load(path string) error {
 		RedisPass: os.Getenv("REDIS_PASS"),
 		JWTSecret: strings.Trim(strings.TrimSpace(os.Getenv("JWT_SECRET")), `"'`),
 		LogFile:   os.Getenv("LOG_FILE"),
-		LogLevel:  getEnv("LOG_LEVEL", "debug"),
+		LogLevel:  getEnv("LOG_LEVEL", "info"),
 	}
 
 	// A relative log path is relative to the project (where .env lives),
@@ -49,8 +49,6 @@ func Load(path string) error {
 	if Cfg.LogFile != "" && !filepath.IsAbs(Cfg.LogFile) && envDir != "" {
 		Cfg.LogFile = filepath.Join(envDir, Cfg.LogFile)
 	}
-
-	fmt.Println("Cfg.LogFile", Cfg.LogFile)
 
 	if Cfg.JWTSecret == "" {
 		return fmt.Errorf("JWT_SECRET is required")

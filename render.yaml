@@ -1,0 +1,35 @@
+# Render Blueprint: https://render.com/docs/blueprint-spec
+# Deploy: Render Dashboard -> New -> Blueprint -> pick this repo.
+# MongoDB is not hosted on Render; create a free MongoDB Atlas M0 cluster,
+# allow 0.0.0.0/0 in Atlas Network Access, and paste its URI when prompted.
+services:
+  - type: web
+    name: echo-server
+    runtime: docker
+    plan: free
+    region: oregon # keep Atlas in a nearby region (e.g. AWS us-west-2)
+    dockerfilePath: ./Dockerfile
+    healthCheckPath: /health
+    autoDeploy: true
+    envVars:
+      - key: DB_URI
+        sync: false # entered in the dashboard on first deploy
+      - key: REDIS_URI
+        fromService:
+          type: keyvalue
+          name: echo-redis
+          property: connectionString
+      - key: JWT_SECRET
+        generateValue: true
+      - key: LOG_LEVEL
+        value: info
+      - key: GIN_MODE
+        value: release
+      # PORT is set by Render; LOG_FILE is left unset so logs go to stdout.
+
+  - type: keyvalue
+    name: echo-redis
+    plan: free # in-memory only: data (e.g. logout blacklist) is lost on restart
+    region: oregon
+    maxmemoryPolicy: noeviction
+    ipAllowList: [] # internal access only

@@ -58,7 +58,7 @@ All settings are environment variables; `.env` is only a local convenience.
 | `REDIS_PASS` | —                                    | Only for `host:port` form                     |
 | `JWT_SECRET` | — (required)                         |                                               |
 | `LOG_FILE`   | — (stdout)                           | Set to a path to log to a file                |
-| `LOG_LEVEL`  | `debug`                              | `debug`, `info`, `warn`, `error`              |
+| `LOG_LEVEL`  | `info`                               | `debug`, `info`, `warn`, `error`              |
 
 ## API overview
 

@@ -193,9 +193,7 @@ func (eh *Hub) handleClientRegistration(client *models.Client) {
 		Timestamp: time.Now(),
 	}
 
-	select {
-	case client.Send <- welcomeMsg:
-	default:
+	if !client.TrySend(welcomeMsg) {
 		eh.logger.Warn("Failed to send welcome message")
 	}
 }
@@ -271,7 +269,7 @@ func (eh *Hub) handleClientUnregistration(client *models.Client) {
 	}
 
 	// Close send channel
-	close(client.Send)
+	client.CloseSend()
 }
 
 // JoinChat handles client joining a chat with pub/sub subscription

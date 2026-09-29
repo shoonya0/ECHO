@@ -9,11 +9,14 @@ import (
 
 func CORSMiddleware() gin.HandlerFunc {
 	corsHandler := cors.New(cors.Config{
-		AllowOrigins:     []string{"*"},
-		AllowMethods:     []string{"GET", "POST", "PUT", "DELETE", "OPTIONS"},
-		AllowHeaders:     []string{"Origin", "Content-Type", "Accept", "Authorization"},
-		ExposeHeaders:    []string{"Content-Length", "Content-Type"},
-		AllowCredentials: true,
+		AllowOrigins: []string{"*"},
+		AllowMethods: []string{"GET", "POST", "PUT", "DELETE", "OPTIONS"},
+		AllowHeaders: []string{"Origin", "Content-Type", "Accept", "Authorization"},
+		ExposeHeaders: []string{"Content-Length", "Content-Type"},
+		// Auth uses Bearer tokens in the Authorization header, not cookies, so
+		// credentials mode is off. This keeps the wildcard origin CORS-valid
+		// (Access-Control-Allow-Origin: * with credentials is rejected by browsers).
+		AllowCredentials: false,
 		MaxAge:           86400,
 	})
 

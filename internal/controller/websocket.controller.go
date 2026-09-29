@@ -193,9 +193,7 @@ func handleClientRead(ctx context.Context, client *models.Client) {
 				},
 				Timestamp: time.Now(),
 			}
-			select {
-			case client.Send <- errorMsg:
-			default:
+			if !client.TrySend(errorMsg) {
 				wsLog().Printf("Cannot send error message to client %s, closing connection", client.ID)
 			}
 			continue // SAFE: connection is still valid, just skip this bad message
@@ -321,9 +319,7 @@ func handleSendMessage(ctx context.Context, client *models.Client, request model
 		Timestamp: time.Now(),
 	}
 
-	select {
-	case client.Send <- wsMessage:
-	default:
+	if !client.TrySend(wsMessage) {
 		wsLog().Printf("Client %s send channel is full, dropping message", client.ID)
 		errorResponse := models.WebSocketMessage{ // Send error response about dropped message
 			Type: models.WSMessageTypeError,
@@ -334,9 +330,7 @@ func handleSendMessage(ctx context.Context, client *models.Client, request model
 			RequestID: request.RequestID,
 			Timestamp: time.Now(),
 		}
-		select { // Try to send error, if that fails too, the client is probably unresponsive
-		case client.Send <- errorResponse:
-		default:
+		if !client.TrySend(errorResponse) { // if that fails too, the client is probably unresponsive
 			wsLog().Printf("Client %s is unresponsive, marking for cleanup", client.ID)
 		}
 	}
@@ -920,9 +914,7 @@ func sendSuccessResponse(client *models.Client, requestID string, data map[strin
 		Timestamp: time.Now(),
 	}
 
-	select {
-	case client.Send <- wsMessage:
-	default:
+	if !client.TrySend(wsMessage) {
 		wsLog().Printf("Failed to send success response to client %s: channel full", client.ID)
 	}
 }
@@ -939,9 +931,7 @@ func sendErrorResponse(client *models.Client, requestID, code, message string) {
 		Timestamp: time.Now(),
 	}
 
-	select {
-	case client.Send <- errorMsg:
-	default:
+	if !client.TrySend(errorMsg) {
 		wsLog().Printf("Failed to send error response to client %s: channel full", client.ID)
 	}
 }

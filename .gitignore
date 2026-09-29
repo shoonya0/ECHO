@@ -24,5 +24,3 @@ scripts/contract-test/*.json
 .idea
 .vscode
 
-# Separate git repository (skills library), not part of this project
-rules and skills/claude-code-skills/

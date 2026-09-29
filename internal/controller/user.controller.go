@@ -1,7 +1,6 @@
 package controller
 
 import (
-	"fmt"
 	"net/http"
 	"strconv"
 
@@ -17,7 +16,7 @@ import (
 func GetProfile(ctx *gin.Context) {
 	reqCtx, log, ok := ReduceGinContextToContext(ctx)
 	if !ok {
-		fmt.Println("error in reducing gin context to context or logger")
+		// ReduceGinContextToContext has already written the error response.
 		return
 	}
 
@@ -49,7 +48,7 @@ func GetProfile(ctx *gin.Context) {
 func UpdateProfile(ctx *gin.Context) {
 	reqCtx, log, ok := ReduceGinContextToContext(ctx)
 	if !ok {
-		fmt.Println("error in reducing gin context to context or logger")
+		// ReduceGinContextToContext has already written the error response.
 		return
 	}
 
@@ -105,7 +104,7 @@ func UpdateProfile(ctx *gin.Context) {
 func DeleteProfile(ctx *gin.Context) {
 	reqCtx, log, ok := ReduceGinContextToContext(ctx)
 	if !ok {
-		fmt.Println("error in reducing gin context to context or logger")
+		// ReduceGinContextToContext has already written the error response.
 		return
 	}
 
@@ -132,7 +131,7 @@ func DeleteProfile(ctx *gin.Context) {
 func GetUserProfile(ctx *gin.Context) {
 	reqCtx, log, ok := ReduceGinContextToContext(ctx)
 	if !ok {
-		fmt.Println("error in reducing gin context to context or logger")
+		// ReduceGinContextToContext has already written the error response.
 		return
 	}
 

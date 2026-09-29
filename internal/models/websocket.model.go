@@ -158,6 +158,35 @@ type Client struct {
 	// we have to seprate this userID[activeChats]
 	LastActivity time.Time              `json:"lastActivity"`
 	Metadata     map[string]interface{} `json:"metadata,omitempty"`
+
+	sendMu     sync.Mutex // guards sendClosed and every send/close on Send
+	sendClosed bool
+}
+
+// TrySend queues msg without blocking. It returns false if the buffer is full
+// or Send is already closed, so callers never panic on a closed channel.
+func (c *Client) TrySend(msg WebSocketMessage) bool {
+	c.sendMu.Lock()
+	defer c.sendMu.Unlock()
+	if c.sendClosed {
+		return false
+	}
+	select {
+	case c.Send <- msg:
+		return true
+	default:
+		return false
+	}
+}
+
+// CloseSend closes Send once; later calls are no-ops.
+func (c *Client) CloseSend() {
+	c.sendMu.Lock()
+	defer c.sendMu.Unlock()
+	if !c.sendClosed {
+		c.sendClosed = true
+		close(c.Send)
+	}
 }
 
 // UserDisplayInfo represents cached user display information for UI
