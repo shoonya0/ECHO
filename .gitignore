@@ -11,7 +11,7 @@
 /server
 
 # Runtime
-/logs
+logs/
 
 # Node (contract test)
 node_modules
@@ -23,3 +23,6 @@ scripts/contract-test/*.json
 .cursor
 .idea
 .vscode
+
+# Separate git repository (skills library), not part of this project
+rules and skills/claude-code-skills/

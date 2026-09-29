@@ -50,6 +50,8 @@ func Load(path string) error {
 		Cfg.LogFile = filepath.Join(envDir, Cfg.LogFile)
 	}
 
+	fmt.Println("Cfg.LogFile", Cfg.LogFile)
+
 	if Cfg.JWTSecret == "" {
 		return fmt.Errorf("JWT_SECRET is required")
 	}
