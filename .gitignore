@@ -1,12 +1,25 @@
+# Local configuration and secrets
+.env
+.env.*
+!.env.example
 
-config/envConfig/prod.env
-config/envConfig/test.env
-.cursor
-build
-test
-tmp
-logs
+# Build output and binaries
+/build
+/bin
+/tmp
+*.exe
+/server
+
+# Runtime
+/logs
+
+# Node (contract test)
 node_modules
-test-all-apis.js
-test-group-chat.html
-test-websocket-chat.html
+scripts/contract-test/*.json
+!scripts/contract-test/package.json
+!scripts/contract-test/package-lock.json
+
+# Editors / tools
+.cursor
+.idea
+.vscode

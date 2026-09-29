@@ -2,11 +2,12 @@ package controller
 
 import (
 	"fmt"
-	"gin/internal/models"
-	"gin/internal/services"
-	"gin/internal/utils"
 	"net/http"
 	"strconv"
+
+	"github.com/shoonya0/ECHO/internal/models"
+	"github.com/shoonya0/ECHO/internal/services"
+	"github.com/shoonya0/ECHO/internal/utils"
 
 	"github.com/gin-gonic/gin"
 	"go.mongodb.org/mongo-driver/v2/bson"

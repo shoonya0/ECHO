@@ -3,9 +3,11 @@ package services
 import (
 	"context"
 	"fmt"
-	"gin/internal/models"
-	"gin/objects"
 	"time"
+
+	"github.com/shoonya0/ECHO/internal/constants"
+	"github.com/shoonya0/ECHO/internal/database"
+	"github.com/shoonya0/ECHO/internal/models"
 
 	"go.mongodb.org/mongo-driver/v2/bson"
 	"go.mongodb.org/mongo-driver/v2/mongo"
@@ -16,31 +18,31 @@ import (
 // Contact-list projection fields per status
 // ---------------------------------------------------------------------------
 
-var contactFieldsByStatus = map[objects.ContactStatus]struct {
+var contactFieldsByStatus = map[constants.ContactStatus]struct {
 	projection bson.M
 	ids        func(models.ContactInfoEmbed) []bson.ObjectID
 }{
-	objects.StatusAccepted: {
+	constants.StatusAccepted: {
 		projection: bson.M{"_id": 1, "updatedAt": 1, "contactInfo.contacts": 1, "contactInfo.favorites": 1},
 		ids:        func(c models.ContactInfoEmbed) []bson.ObjectID { return c.Contacts },
 	},
-	objects.StatusPendingIn: {
+	constants.StatusPendingIn: {
 		projection: bson.M{"_id": 1, "updatedAt": 1, "contactInfo.pendingIn": 1},
 		ids:        func(c models.ContactInfoEmbed) []bson.ObjectID { return c.PendingIn },
 	},
-	objects.StatusPendingOut: {
+	constants.StatusPendingOut: {
 		projection: bson.M{"_id": 1, "updatedAt": 1, "contactInfo.pendingOut": 1},
 		ids:        func(c models.ContactInfoEmbed) []bson.ObjectID { return c.PendingOut },
 	},
-	objects.StatusFavorite: {
+	constants.StatusFavorite: {
 		projection: bson.M{"_id": 1, "updatedAt": 1, "contactInfo.favorites": 1},
 		ids:        func(c models.ContactInfoEmbed) []bson.ObjectID { return c.Favorites },
 	},
-	objects.StatusBlocked: {
+	constants.StatusBlocked: {
 		projection: bson.M{"_id": 1, "updatedAt": 1, "contactInfo.blockedChats": 1},
 		ids:        func(c models.ContactInfoEmbed) []bson.ObjectID { return c.BlockedChats },
 	},
-	objects.StatusContact: {
+	constants.StatusContact: {
 		projection: bson.M{
 			"_id":                      1,
 			"updatedAt":                1,
@@ -75,7 +77,7 @@ var userProjection = bson.M{
 // ============ CONTACTS & FRIENDS MANAGEMENT ============
 
 // GetContacts returns contacts/groups filtered by status for the given user.
-func GetContacts(ctx context.Context, userID bson.ObjectID, contactStatus objects.ContactStatus, limit int) ([]models.ContactInfo, error) {
+func GetContacts(ctx context.Context, userID bson.ObjectID, contactStatus constants.ContactStatus, limit int) ([]models.ContactInfo, error) {
 	cfg, ok := contactFieldsByStatus[contactStatus]
 	if !ok {
 		return []models.ContactInfo{}, fmt.Errorf("unknown contact status: %s", contactStatus)
@@ -83,7 +85,7 @@ func GetContacts(ctx context.Context, userID bson.ObjectID, contactStatus object
 
 	var contact models.ContactRequest
 	opts := options.FindOne().SetProjection(cfg.projection)
-	err := objects.DB.Collection(string(objects.UserColl)).FindOne(ctx, bson.M{"_id": userID}, opts).Decode(&contact)
+	err := database.DB.Collection(string(constants.UserColl)).FindOne(ctx, bson.M{"_id": userID}, opts).Decode(&contact)
 	if err != nil {
 		if err == mongo.ErrNoDocuments {
 			return []models.ContactInfo{}, nil
@@ -96,7 +98,7 @@ func GetContacts(ctx context.Context, userID bson.ObjectID, contactStatus object
 		return []models.ContactInfo{}, nil
 	}
 
-	cursor, err := objects.DB.Collection(string(objects.UserColl)).Find(
+	cursor, err := database.DB.Collection(string(constants.UserColl)).Find(
 		ctx,
 		bson.M{"_id": bson.M{"$in": contactIDs}},
 		options.Find().SetProjection(userProjection),
@@ -114,9 +116,9 @@ func GetContacts(ctx context.Context, userID bson.ObjectID, contactStatus object
 		}
 
 		// Normalize presence: offline users show neither activity nor lastSeen.
-		if user.Presence.Status != string(objects.UserStatusOnline) {
+		if user.Presence.Status != string(constants.UserStatusOnline) {
 			user.Presence.IsOnline = false
-			if user.Presence.Status != string(objects.UserStatusOffline) {
+			if user.Presence.Status != string(constants.UserStatusOffline) {
 				user.Presence.LastActivity = time.Time{}
 				user.Presence.LastSeen = time.Time{}
 			}
@@ -149,7 +151,7 @@ func fetchUserContact(ctx context.Context, userID bson.ObjectID) (*models.User, 
 	var user models.User
 	filter := bson.M{"_id": userID}
 	opts := options.FindOne().SetProjection(userContactProjection())
-	if err := objects.DB.Collection(string(objects.UserColl)).FindOne(ctx, filter, opts).Decode(&user); err != nil {
+	if err := database.DB.Collection(string(constants.UserColl)).FindOne(ctx, filter, opts).Decode(&user); err != nil {
 		if err == mongo.ErrNoDocuments {
 			return nil, fmt.Errorf("%w: %w", ErrUserNotFound, err)
 		}
@@ -195,7 +197,7 @@ func SendContactRequest(ctx context.Context, userID, targetUserID bson.ObjectID)
 	}
 
 	now := time.Now()
-	coll := objects.DB.Collection(string(objects.UserColl))
+	coll := database.DB.Collection(string(constants.UserColl))
 
 	if _, err := UpdateOne(ctx, coll, bson.M{"_id": userID}, bson.M{
 		"$push": bson.M{"contactInfo.pendingOut": targetUserID},
@@ -223,7 +225,7 @@ func AcceptOrDeclineContactRequest(ctx context.Context, userID, targetRequestID 
 	userFilter := bson.M{"_id": userID, "contactInfo.pendingIn": bson.M{"$in": []bson.ObjectID{targetRequestID}}}
 	targetFilter := bson.M{"_id": targetRequestID, "contactInfo.pendingOut": bson.M{"$in": []bson.ObjectID{userID}}}
 
-	coll := objects.DB.Collection(string(objects.UserColl))
+	coll := database.DB.Collection(string(constants.UserColl))
 
 	count, err := coll.CountDocuments(ctx, userFilter)
 	if err != nil {
@@ -244,8 +246,8 @@ func AcceptOrDeclineContactRequest(ctx context.Context, userID, targetRequestID 
 	now := time.Now()
 	var userUpdate, targetUpdate bson.M
 
-	switch objects.ContactStatus(action) {
-	case objects.StatusAccepted:
+	switch constants.ContactStatus(action) {
+	case constants.StatusAccepted:
 		userUpdate = bson.M{
 			"$pull": bson.M{"contactInfo.pendingIn": targetRequestID},
 			"$push": bson.M{"contactInfo.contacts": targetRequestID},
@@ -256,7 +258,7 @@ func AcceptOrDeclineContactRequest(ctx context.Context, userID, targetRequestID 
 			"$push": bson.M{"contactInfo.contacts": userID},
 			"$set":  bson.M{"contactInfo.updatedAt": now},
 		}
-	case objects.StatusDeclined:
+	case constants.StatusDeclined:
 		userUpdate = bson.M{
 			"$pull": bson.M{"contactInfo.pendingIn": targetRequestID},
 		}
@@ -287,7 +289,7 @@ func RemoveContact(ctx context.Context, userID, targetUserID bson.ObjectID) erro
 	}
 
 	now := time.Now()
-	coll := objects.DB.Collection(string(objects.UserColl))
+	coll := database.DB.Collection(string(constants.UserColl))
 
 	if _, err := UpdateOne(ctx, coll, bson.M{"_id": userID}, bson.M{
 		"$pull": bson.M{
@@ -327,10 +329,10 @@ func BlockUnblockUser(ctx context.Context, userID, targetUserID bson.ObjectID, a
 	}
 
 	now := time.Now()
-	coll := objects.DB.Collection(string(objects.UserColl))
+	coll := database.DB.Collection(string(constants.UserColl))
 
-	switch objects.ContactStatus(action) {
-	case objects.StatusBlocked:
+	switch constants.ContactStatus(action) {
+	case constants.StatusBlocked:
 		// Push into blockedChats and pull the target from every positive list
 		// on both sides so the block completely severs the relationship.
 		pullAll := bson.M{
@@ -362,7 +364,7 @@ func BlockUnblockUser(ctx context.Context, userID, targetUserID bson.ObjectID, a
 			return fmt.Errorf("failed to update target user: %w", err)
 		}
 
-	case objects.StatusUnblocked:
+	case constants.StatusUnblocked:
 		if _, err := UpdateOne(ctx, coll, bson.M{"_id": userID}, bson.M{
 			"$pull": bson.M{"contactInfo.blockedChats": targetUserID},
 			"$set":  bson.M{"contactInfo.updatedAt": now},
@@ -402,7 +404,7 @@ func AddToFavorites(ctx context.Context, userID, targetUserID bson.ObjectID) err
 	}
 
 	now := time.Now()
-	_, err = UpdateOne(ctx, objects.DB.Collection(string(objects.UserColl)), bson.M{"_id": userID}, bson.M{
+	_, err = UpdateOne(ctx, database.DB.Collection(string(constants.UserColl)), bson.M{"_id": userID}, bson.M{
 		"$push": bson.M{"contactInfo.favorites": targetUserID},
 		"$set":  bson.M{"contactInfo.updatedAt": now},
 	})
@@ -425,7 +427,7 @@ func RemoveFromFavorites(ctx context.Context, userID, targetUserID bson.ObjectID
 	}
 
 	now := time.Now()
-	_, err = UpdateOne(ctx, objects.DB.Collection(string(objects.UserColl)), bson.M{"_id": userID}, bson.M{
+	_, err = UpdateOne(ctx, database.DB.Collection(string(constants.UserColl)), bson.M{"_id": userID}, bson.M{
 		"$pull": bson.M{"contactInfo.favorites": targetUserID},
 		"$set":  bson.M{"contactInfo.updatedAt": now},
 	})

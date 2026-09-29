@@ -6,10 +6,11 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"fmt"
-	"gin/internal/models"
-	"gin/objects"
 	"io"
 	"time"
+
+	"github.com/shoonya0/ECHO/internal/constants"
+	"github.com/shoonya0/ECHO/internal/models"
 
 	"go.mongodb.org/mongo-driver/v2/bson"
 )
@@ -36,7 +37,7 @@ func NewUserWithDefaults(id bson.ObjectID, email, username, passwordHash string)
 
 		// Initialize Presence with defaults
 		Presence: models.PresenceEmbed{
-			Status:       string(objects.UserStatusOnline),
+			Status:       string(constants.UserStatusOnline),
 			IsOnline:     false,
 			LastSeen:     now,
 			LastActivity: now,

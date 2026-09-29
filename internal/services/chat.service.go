@@ -4,12 +4,14 @@ import (
 	"context"
 	"encoding/hex"
 	"fmt"
-	"gin/internal/models"
-	"gin/internal/utils"
-	"gin/logger"
-	"gin/objects"
 	"strings"
 	"time"
+
+	"github.com/shoonya0/ECHO/internal/constants"
+	"github.com/shoonya0/ECHO/internal/database"
+	"github.com/shoonya0/ECHO/internal/logger"
+	"github.com/shoonya0/ECHO/internal/models"
+	"github.com/shoonya0/ECHO/internal/utils"
 
 	"go.mongodb.org/mongo-driver/v2/bson"
 	"go.mongodb.org/mongo-driver/v2/mongo"
@@ -27,7 +29,7 @@ func GetUserChats(ctx context.Context, userID bson.ObjectID) ([]bson.ObjectID, e
 		"chats": 1,
 	}
 
-	user, err := FindByID[models.User](ctx, objects.DB.Collection(string(objects.UserColl)), userFilter, userProjection)
+	user, err := FindByID[models.User](ctx, database.DB.Collection(string(constants.UserColl)), userFilter, userProjection)
 	if err != nil {
 		if err == mongo.ErrNoDocuments {
 			log.WithField("user_id", userID.Hex()).Error("User have no contacts")
@@ -61,7 +63,7 @@ func GetChat(ctx context.Context, chatInfo models.ChatInfo) (models.Chat, error)
 
 	var chat models.Chat
 
-	err := objects.DB.Collection(string(objects.ChatColl)).FindOne(ctx, chatFilter, options.FindOne().SetProjection(chatProjection)).Decode(&chat)
+	err := database.DB.Collection(string(constants.ChatColl)).FindOne(ctx, chatFilter, options.FindOne().SetProjection(chatProjection)).Decode(&chat)
 	if err != nil {
 		return chat, fmt.Errorf("failed to get chat: %w", err)
 	}
@@ -92,7 +94,7 @@ func GetChatMessages(ctx context.Context, chatID bson.ObjectID, limit int, offse
 		SetSkip(int64(offset)).
 		SetLimit(int64(limit))
 
-	cursor, err := objects.DB.Collection(string(objects.MessageColl)).Find(ctx, messageFilter, findOpts)
+	cursor, err := database.DB.Collection(string(constants.MessageColl)).Find(ctx, messageFilter, findOpts)
 	if err != nil {
 		return nil, fmt.Errorf("failed to query messages: %w", err)
 	}
@@ -115,7 +117,7 @@ func GetChatMessages(ctx context.Context, chatID bson.ObjectID, limit int, offse
 
 // ============ CHAT MANAGEMENT ============
 func CreateDirectChat(ctx context.Context, targetUserID bson.ObjectID) (*models.Chat, error) {
-	user := ctx.Value(objects.UserDataKey).(models.LoginUserResponse)
+	user := ctx.Value(constants.UserDataKey).(models.LoginUserResponse)
 	if user == (models.LoginUserResponse{}) {
 		return nil, fmt.Errorf("invalid user data")
 	}
@@ -136,7 +138,7 @@ func CreateDirectChat(ctx context.Context, targetUserID bson.ObjectID) (*models.
 
 	existingChat := models.Chat{}
 
-	err := objects.DB.Collection(string(objects.ChatColl)).FindOne(ctx, filter, options.FindOne().SetProjection(chatProjection)).Decode(&existingChat)
+	err := database.DB.Collection(string(constants.ChatColl)).FindOne(ctx, filter, options.FindOne().SetProjection(chatProjection)).Decode(&existingChat)
 	if err != nil {
 		if err == mongo.ErrNoDocuments {
 			targetUser, err := GetUserByID(ctx, targetUserID)
@@ -146,7 +148,7 @@ func CreateDirectChat(ctx context.Context, targetUserID bson.ObjectID) (*models.
 
 			chat := utils.NewChatWithDefaults(user.ID, "direct")
 			chat.Participants[user.ID] = models.ParticipantEmbed{
-				Role: string(objects.ChatRoleMember),
+				Role: string(constants.ChatRoleMember),
 				UserInfo: models.ContactUserInfo{
 					UserID:      user.ID,
 					DisplayName: user.Profile.DisplayName,
@@ -155,7 +157,7 @@ func CreateDirectChat(ctx context.Context, targetUserID bson.ObjectID) (*models.
 				},
 			}
 			chat.Participants[targetUserID] = models.ParticipantEmbed{
-				Role: string(objects.ChatRoleMember),
+				Role: string(constants.ChatRoleMember),
 				UserInfo: models.ContactUserInfo{
 					UserID:      targetUserID,
 					DisplayName: targetUser.Profile.DisplayName,
@@ -164,7 +166,7 @@ func CreateDirectChat(ctx context.Context, targetUserID bson.ObjectID) (*models.
 				},
 			}
 
-			_, err = objects.DB.Collection(string(objects.ChatColl)).InsertOne(ctx, chat)
+			_, err = database.DB.Collection(string(constants.ChatColl)).InsertOne(ctx, chat)
 			if err != nil {
 				return nil, fmt.Errorf("failed to insert chat: %w", err)
 			}
@@ -181,7 +183,7 @@ func CreateDirectChat(ctx context.Context, targetUserID bson.ObjectID) (*models.
 				},
 			}
 
-			_, err = objects.DB.Collection(string(objects.UserColl)).UpdateMany(ctx, userUpdateFilter, userUpdate)
+			_, err = database.DB.Collection(string(constants.UserColl)).UpdateMany(ctx, userUpdateFilter, userUpdate)
 			if err != nil {
 				return nil, fmt.Errorf("failed to update user: %w", err)
 			}
@@ -195,14 +197,14 @@ func CreateDirectChat(ctx context.Context, targetUserID bson.ObjectID) (*models.
 }
 
 func CreateGroupChat(ctx context.Context, chatName, description string, participantIDs []bson.ObjectID) (*models.Chat, error) {
-	creator := ctx.Value(objects.UserDataKey).(models.LoginUserResponse)
+	creator := ctx.Value(constants.UserDataKey).(models.LoginUserResponse)
 	if creator == (models.LoginUserResponse{}) {
 		return nil, fmt.Errorf("invalid user data")
 	}
 
 	participants := make(map[bson.ObjectID]models.ParticipantEmbed)
 
-	participants[creator.ID] = utils.NewParticipantWithDefaults(string(objects.StatusAccepted), string(objects.UserStatusOffline), creator.ID, []string{string(objects.ChatPermissionRead), string(objects.ChatPermissionWrite)}, models.ContactUserInfo{
+	participants[creator.ID] = utils.NewParticipantWithDefaults(string(constants.StatusAccepted), string(constants.UserStatusOffline), creator.ID, []string{string(constants.ChatPermissionRead), string(constants.ChatPermissionWrite)}, models.ContactUserInfo{
 		UserID:      creator.ID,
 		DisplayName: creator.Profile.DisplayName,
 		Username:    creator.Username,
@@ -215,7 +217,7 @@ func CreateGroupChat(ctx context.Context, chatName, description string, particip
 	}
 
 	for _, u := range users {
-		participants[u.ID] = utils.NewParticipantWithDefaults(string(objects.StatusPending), string(objects.UserStatusOffline), creator.ID, []string{string(objects.ChatPermissionRead), string(objects.ChatPermissionWrite)}, models.ContactUserInfo{
+		participants[u.ID] = utils.NewParticipantWithDefaults(string(constants.StatusPending), string(constants.UserStatusOffline), creator.ID, []string{string(constants.ChatPermissionRead), string(constants.ChatPermissionWrite)}, models.ContactUserInfo{
 			UserID:      u.ID,
 			DisplayName: u.Profile.DisplayName,
 			Username:    u.Username,
@@ -223,7 +225,7 @@ func CreateGroupChat(ctx context.Context, chatName, description string, particip
 		})
 	}
 
-	chat := utils.NewChatWithDefaults(creator.ID, string(objects.ChatTypeGroup))
+	chat := utils.NewChatWithDefaults(creator.ID, string(constants.ChatTypeGroup))
 	chat.Participants = participants
 	chat.Name = chatName
 	chat.Description = description
@@ -237,13 +239,13 @@ func CreateGroupChat(ctx context.Context, chatName, description string, particip
 	}
 	chat.InviteCode = append(chat.InviteCode, invite)
 
-	_, err = objects.DB.Collection(string(objects.ChatColl)).InsertOne(ctx, chat)
+	_, err = database.DB.Collection(string(constants.ChatColl)).InsertOne(ctx, chat)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create group chat: %w", err)
 	}
 
 	// Add chat ref to creator
-	_, _ = objects.DB.Collection(string(objects.UserColl)).UpdateOne(ctx,
+	_, _ = database.DB.Collection(string(constants.UserColl)).UpdateOne(ctx,
 		bson.M{"_id": creator.ID},
 		bson.M{"$set": bson.M{"chats." + chat.ChatID.Hex(): 0}},
 	)
@@ -317,7 +319,7 @@ func SendMessage(ctx context.Context, chatID, senderID bson.ObjectID, content, m
 	}
 
 	// Insert message to database
-	result, err := objects.DB.Collection(string(objects.MessageColl)).InsertOne(ctx, message)
+	result, err := database.DB.Collection(string(constants.MessageColl)).InsertOne(ctx, message)
 	if err != nil {
 		return nil, fmt.Errorf("failed to save message: %w", err)
 	}
@@ -383,7 +385,7 @@ func MarkMessagesAsRead(chatID, userID bson.ObjectID, messageIDs []bson.ObjectID
 		},
 	}
 
-	_, err := objects.DB.Collection(string(objects.MessageColl)).UpdateMany(ctx, filter, update)
+	_, err := database.DB.Collection(string(constants.MessageColl)).UpdateMany(ctx, filter, update)
 	if err != nil {
 		return fmt.Errorf("failed to update read receipts: %w", err)
 	}
@@ -399,19 +401,24 @@ func MarkMessagesAsRead(chatID, userID bson.ObjectID, messageIDs []bson.ObjectID
 
 // ============ BROADCASTING FUNCTIONS ============
 
+// Broadcaster delivers a WebSocket event to every client in a chat.
+// The realtime hub registers itself via SetBroadcaster at startup; services
+// cannot import the hub directly because the hub depends on services.
+type Broadcaster interface {
+	PublishToChat(chatID string, message *models.WebSocketMessage) error
+}
+
+var broadcaster Broadcaster
+
+// SetBroadcaster wires the realtime hub into the service layer.
+func SetBroadcaster(b Broadcaster) { broadcaster = b }
+
 // BroadcastToChat broadcasts a WebSocket message to all clients in a chat
 func BroadcastToChat(chatID string, message models.WebSocketMessage) error {
-	hub := GetHubInstance()
-	if hub == nil {
+	if broadcaster == nil {
 		return fmt.Errorf("websocket hub not initialized")
 	}
-
-	// Use the enhanced hub's pub/sub manager to publish the message
-	if hub.pubSubManager != nil {
-		return hub.pubSubManager.PublishToChat(chatID, &message)
-	}
-
-	return nil
+	return broadcaster.PublishToChat(chatID, &message)
 }
 
 // ============ HELPER FUNCTIONS ============
@@ -431,7 +438,7 @@ func updateChatLastMessage(chatID, messageID bson.ObjectID, timestamp time.Time)
 		},
 	}
 
-	objects.DB.Collection(string(objects.ChatColl)).UpdateOne(ctx, filter, update)
+	database.DB.Collection(string(constants.ChatColl)).UpdateOne(ctx, filter, update)
 }
 
 // updateChatTypingStatus updates typing status in chat document
@@ -445,7 +452,7 @@ func updateChatTypingStatus(chatID, userID bson.ObjectID, timestamp time.Time) {
 		},
 	}
 
-	objects.DB.Collection(string(objects.ChatColl)).UpdateOne(ctx, filter, update)
+	database.DB.Collection(string(constants.ChatColl)).UpdateOne(ctx, filter, update)
 
 	// Remove typing status after 10 seconds
 	time.AfterFunc(10*time.Second, func() {
@@ -455,7 +462,7 @@ func updateChatTypingStatus(chatID, userID bson.ObjectID, timestamp time.Time) {
 				"typingUsers." + userID.Hex(): "",
 			},
 		}
-		objects.DB.Collection(string(objects.ChatColl)).UpdateOne(context.Background(), removeFilter, removeUpdate)
+		database.DB.Collection(string(constants.ChatColl)).UpdateOne(context.Background(), removeFilter, removeUpdate)
 	})
 }
 
@@ -470,7 +477,7 @@ func updateChatReadReceipts(chatID, userID bson.ObjectID, timestamp time.Time) {
 		},
 	}
 
-	objects.DB.Collection(string(objects.ChatColl)).UpdateOne(ctx, filter, update)
+	database.DB.Collection(string(constants.ChatColl)).UpdateOne(ctx, filter, update)
 }
 
 // broadcastNewMessage broadcasts a new message to chat participants
@@ -544,7 +551,7 @@ func AddMessageReaction(chatID, messageID, userID bson.ObjectID, emoji string) e
 		},
 	}
 
-	result, err := objects.DB.Collection(string(objects.MessageColl)).UpdateOne(ctx, filter, update)
+	result, err := database.DB.Collection(string(constants.MessageColl)).UpdateOne(ctx, filter, update)
 	if err != nil {
 		return fmt.Errorf("failed to add reaction: %w", err)
 	}
@@ -581,7 +588,7 @@ func RemoveMessageReaction(chatID, messageID, userID bson.ObjectID, emoji string
 		},
 	}
 
-	result, err := objects.DB.Collection(string(objects.MessageColl)).UpdateOne(ctx, filter, update)
+	result, err := database.DB.Collection(string(constants.MessageColl)).UpdateOne(ctx, filter, update)
 	if err != nil {
 		return fmt.Errorf("failed to remove reaction: %w", err)
 	}
@@ -611,16 +618,16 @@ func cleanupEmptyReaction(messageID bson.ObjectID, emoji string) {
 		},
 	}
 
-	objects.DB.Collection(string(objects.MessageColl)).UpdateOne(ctx, filter, update)
+	database.DB.Collection(string(constants.MessageColl)).UpdateOne(ctx, filter, update)
 }
 
 func AddGroupMember(ctx context.Context, userID bson.ObjectID, chatID bson.ObjectID, participantIDs []bson.ObjectID) error {
 	filter := bson.M{
 		"_id":      chatID,
-		"chatType": string(objects.ChatTypeGroup),
+		"chatType": string(constants.ChatTypeGroup),
 	}
 
-	count, err := objects.DB.Collection(string(objects.ChatColl)).CountDocuments(ctx, filter)
+	count, err := database.DB.Collection(string(constants.ChatColl)).CountDocuments(ctx, filter)
 	if err != nil {
 		return fmt.Errorf("failed to get chat: %w", err)
 	}
@@ -637,10 +644,10 @@ func AddGroupMember(ctx context.Context, userID bson.ObjectID, chatID bson.Objec
 	setEntries := bson.M{"updatedAt": time.Now()}
 	for _, u := range users {
 		setEntries["participants."+u.ID.Hex()] = utils.NewParticipantWithDefaults(
-			string(objects.StatusPending),
-			string(objects.UserStatusOffline),
+			string(constants.StatusPending),
+			string(constants.UserStatusOffline),
 			userID,
-			[]string{string(objects.ChatPermissionRead), string(objects.ChatPermissionWrite)},
+			[]string{string(constants.ChatPermissionRead), string(constants.ChatPermissionWrite)},
 			models.ContactUserInfo{
 				UserID:      u.ID,
 				DisplayName: u.Profile.DisplayName,
@@ -650,7 +657,7 @@ func AddGroupMember(ctx context.Context, userID bson.ObjectID, chatID bson.Objec
 		)
 	}
 
-	_, err = objects.DB.Collection(string(objects.ChatColl)).UpdateOne(ctx, filter, bson.M{"$set": setEntries})
+	_, err = database.DB.Collection(string(constants.ChatColl)).UpdateOne(ctx, filter, bson.M{"$set": setEntries})
 	if err != nil {
 		return fmt.Errorf("failed to update chat: %w", err)
 	}
@@ -665,11 +672,11 @@ func RemoveGroupMember(ctx context.Context, actingUserID bson.ObjectID, chatID b
 	// Verify chat exists and is a group
 	chatFilter := bson.M{
 		"_id":      chatID,
-		"chatType": string(objects.ChatTypeGroup),
+		"chatType": string(constants.ChatTypeGroup),
 	}
 
 	var chat models.Chat
-	err := objects.DB.Collection(string(objects.ChatColl)).FindOne(ctx, chatFilter, options.FindOne().SetProjection(bson.M{
+	err := database.DB.Collection(string(constants.ChatColl)).FindOne(ctx, chatFilter, options.FindOne().SetProjection(bson.M{
 		"participants": 1,
 		"ownerId":      1,
 		"adminIds":     1,
@@ -688,7 +695,7 @@ func RemoveGroupMember(ctx context.Context, actingUserID bson.ObjectID, chatID b
 	}
 
 	// Must be owner or admin
-	if actingParticipant.Role != string(objects.ChatRoleOwner) && actingParticipant.Role != string(objects.ChatRoleAdmin) {
+	if actingParticipant.Role != string(constants.ChatRoleOwner) && actingParticipant.Role != string(constants.ChatRoleAdmin) {
 		return fmt.Errorf("%w: only owners and admins can remove members", ErrPermissionDenied)
 	}
 
@@ -723,13 +730,13 @@ func RemoveGroupMember(ctx context.Context, actingUserID bson.ObjectID, chatID b
 		},
 	}
 
-	_, err = objects.DB.Collection(string(objects.ChatColl)).UpdateOne(ctx, bson.M{"_id": chatID}, chatUpdate)
+	_, err = database.DB.Collection(string(constants.ChatColl)).UpdateOne(ctx, bson.M{"_id": chatID}, chatUpdate)
 	if err != nil {
 		return fmt.Errorf("failed to update chat: %w", err)
 	}
 
 	// Remove chat ref from each removed user
-	_, err = objects.DB.Collection(string(objects.UserColl)).UpdateMany(ctx, userFilter, userUpdate)
+	_, err = database.DB.Collection(string(constants.UserColl)).UpdateMany(ctx, userFilter, userUpdate)
 	if err != nil {
 		return fmt.Errorf("failed to update users: %w", err)
 	}
@@ -741,13 +748,13 @@ func RemoveGroupMember(ctx context.Context, actingUserID bson.ObjectID, chatID b
 func CreateInvite(ctx context.Context, userID bson.ObjectID, chatID bson.ObjectID) (inviteCode string, err error) {
 	filter := bson.M{
 		"_id":      chatID,
-		"chatType": string(objects.ChatTypeGroup),
+		"chatType": string(constants.ChatTypeGroup),
 		"$and": []bson.M{
 			{"participants." + userID.Hex(): bson.M{"$exists": true}},
 		},
 	}
 
-	count, err := objects.DB.Collection(string(objects.ChatColl)).CountDocuments(ctx, filter)
+	count, err := database.DB.Collection(string(constants.ChatColl)).CountDocuments(ctx, filter)
 	if err != nil {
 		return "", fmt.Errorf("failed to get chat: %w", err)
 	}
@@ -755,7 +762,7 @@ func CreateInvite(ctx context.Context, userID bson.ObjectID, chatID bson.ObjectI
 		return "", fmt.Errorf("%w", ErrChatNotFound)
 	}
 
-	user, ok := ctx.Value(objects.UserDataKey).(models.LoginUserResponse)
+	user, ok := ctx.Value(constants.UserDataKey).(models.LoginUserResponse)
 	if !ok {
 		return "", fmt.Errorf("user not found")
 	}
@@ -771,7 +778,7 @@ func CreateInvite(ctx context.Context, userID bson.ObjectID, chatID bson.ObjectI
 		},
 	}
 
-	_, err = objects.DB.Collection(string(objects.ChatColl)).UpdateOne(ctx, filter, update)
+	_, err = database.DB.Collection(string(constants.ChatColl)).UpdateOne(ctx, filter, update)
 	if err != nil {
 		return "", fmt.Errorf("failed to create invite code: %w", err)
 	}
@@ -789,7 +796,7 @@ func GetGroupInvites(ctx context.Context, userID bson.ObjectID, chatID bson.Obje
 
 	chat := models.Chat{}
 
-	err := objects.DB.Collection(string(objects.ChatColl)).FindOne(ctx, filter, options.FindOne().SetProjection(bson.M{"inviteCode": 1})).Decode(&chat)
+	err := database.DB.Collection(string(constants.ChatColl)).FindOne(ctx, filter, options.FindOne().SetProjection(bson.M{"inviteCode": 1})).Decode(&chat)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get group invites: %w", err)
 	}
@@ -798,20 +805,9 @@ func GetGroupInvites(ctx context.Context, userID bson.ObjectID, chatID bson.Obje
 }
 
 func DeleteInvite(ctx context.Context, userID bson.ObjectID, inviteID string) error {
-	inviteIDBytes, err := hex.DecodeString(inviteID)
+	chatID, _, err := parseInviteCode(inviteID)
 	if err != nil {
-		return fmt.Errorf("failed to decode invite ID: %w", err)
-	}
-
-	inviteInfo, err := utils.Decrypt(inviteIDBytes)
-	if err != nil {
-		return fmt.Errorf("failed to decrypt invite ID: %w", err)
-	}
-
-	chatIDStr := strings.Split(inviteInfo, "_")[0]
-	chatID, err := bson.ObjectIDFromHex(chatIDStr)
-	if err != nil {
-		return fmt.Errorf("failed to parse chat ID from invite: %w", err)
+		return err
 	}
 
 	filter := bson.M{
@@ -828,7 +824,7 @@ func DeleteInvite(ctx context.Context, userID bson.ObjectID, inviteID string) er
 		},
 	}
 
-	_, err = objects.DB.Collection(string(objects.ChatColl)).UpdateOne(ctx, filter, update)
+	_, err = database.DB.Collection(string(constants.ChatColl)).UpdateOne(ctx, filter, update)
 	if err != nil {
 		return fmt.Errorf("failed to delete invite: %w", err)
 	}
@@ -836,46 +832,10 @@ func DeleteInvite(ctx context.Context, userID bson.ObjectID, inviteID string) er
 	return nil
 }
 
-func UpdateInviteStatus(ctx context.Context, chatID bson.ObjectID, inviteID string, status string) error {
-	log := logger.WithContext(ctx)
-
-	filter := bson.M{
-		"_id": chatID,
-		"$and": []bson.M{
-			{"inviteCode.inviteCode": inviteID},
-		},
-	}
-
-	update := bson.M{
-		"$set": bson.M{
-			"inviteCode.$.status": status,
-		},
-	}
-
-	_, err := objects.DB.Collection(string(objects.ChatColl)).UpdateOne(ctx, filter, update)
-	if err != nil {
-		log.WithError(err).Error("failed to update invite status")
-		return fmt.Errorf("failed to update invite status: %w", err)
-	}
-
-	return nil
-}
-
 func GetJoinedUsersByInvite(ctx context.Context, userID bson.ObjectID, inviteID string) ([]bson.ObjectID, error) {
-	inviteIDBytes, err := hex.DecodeString(inviteID)
+	chatID, _, err := parseInviteCode(inviteID)
 	if err != nil {
-		return nil, fmt.Errorf("failed to decode invite ID: %w", err)
-	}
-
-	inviteInfo, err := utils.Decrypt(inviteIDBytes)
-	if err != nil {
-		return nil, fmt.Errorf("failed to decrypt invite ID: %w", err)
-	}
-
-	chatIDStr := strings.Split(inviteInfo, "_")[0]
-	chatID, err := bson.ObjectIDFromHex(chatIDStr)
-	if err != nil {
-		return nil, fmt.Errorf("failed to parse chat ID from invite: %w", err)
+		return nil, err
 	}
 
 	filter := bson.M{
@@ -888,7 +848,7 @@ func GetJoinedUsersByInvite(ctx context.Context, userID bson.ObjectID, inviteID 
 
 	chat := models.Chat{}
 
-	err = objects.DB.Collection(string(objects.ChatColl)).FindOne(ctx, filter, options.FindOne().SetProjection(bson.M{"inviteCode": 1})).Decode(&chat)
+	err = database.DB.Collection(string(constants.ChatColl)).FindOne(ctx, filter, options.FindOne().SetProjection(bson.M{"inviteCode": 1})).Decode(&chat)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get joined users by invite: %w", err)
 	}
@@ -901,30 +861,13 @@ func GetJoinedUsersByInvite(ctx context.Context, userID bson.ObjectID, inviteID 
 }
 
 func SendInviteToUser(ctx context.Context, actingUserID bson.ObjectID, inviteID string, targetUserID bson.ObjectID, creatingGroup bool) error {
-	inviteIDBytes, err := hex.DecodeString(inviteID)
+	chatID, expireTime, err := parseInviteCode(inviteID)
 	if err != nil {
-		return fmt.Errorf("failed to decode invite ID: %w", err)
-	}
-
-	inviteInfo, err := utils.Decrypt(inviteIDBytes)
-	if err != nil {
-		return fmt.Errorf("failed to decrypt invite ID: %w", err)
-	}
-
-	inviteInfoSplit := strings.Split(inviteInfo, "_")
-	expireTime, err := time.Parse(time.RFC3339, inviteInfoSplit[3])
-	if err != nil {
-		return fmt.Errorf("failed to parse expire time: %w", err)
+		return err
 	}
 
 	if expireTime.Before(time.Now()) {
 		return fmt.Errorf("%w", ErrInvalidInvite)
-	}
-
-	chatIDStr := inviteInfoSplit[0]
-	chatID, err := bson.ObjectIDFromHex(chatIDStr)
-	if err != nil {
-		return fmt.Errorf("failed to parse chat ID from invite: %w", err)
 	}
 
 	filter := bson.M{
@@ -937,7 +880,7 @@ func SendInviteToUser(ctx context.Context, actingUserID bson.ObjectID, inviteID 
 	}
 
 	if !creatingGroup {
-		cntDoc, err := objects.DB.Collection(string(objects.ChatColl)).CountDocuments(ctx, filter)
+		cntDoc, err := database.DB.Collection(string(constants.ChatColl)).CountDocuments(ctx, filter)
 		if err != nil {
 			return fmt.Errorf("failed to get joined users by invite: %w", err)
 		}
@@ -956,7 +899,7 @@ func SendInviteToUser(ctx context.Context, actingUserID bson.ObjectID, inviteID 
 		},
 	}
 
-	_, err = objects.DB.Collection(string(objects.UserColl)).UpdateOne(ctx, bson.M{"_id": targetUserID}, targetUserProjection)
+	_, err = database.DB.Collection(string(constants.UserColl)).UpdateOne(ctx, bson.M{"_id": targetUserID}, targetUserProjection)
 	if err != nil {
 		return fmt.Errorf("failed to update target user: %w", err)
 	}
@@ -965,27 +908,9 @@ func SendInviteToUser(ctx context.Context, actingUserID bson.ObjectID, inviteID 
 }
 
 func JoinGroupByInvite(ctx context.Context, userID bson.ObjectID, inviteID string) error {
-	inviteIDBytes, err := hex.DecodeString(inviteID)
+	chatObjectID, expireTime, err := parseInviteCode(inviteID)
 	if err != nil {
-		return fmt.Errorf("failed to decode invite ID: %w", err)
-	}
-
-	inviteInfo, err := utils.Decrypt(inviteIDBytes)
-	if err != nil {
-		return fmt.Errorf("failed to decrypt invite ID: %w", err)
-	}
-
-	inviteInfoSplit := strings.Split(inviteInfo, "_")
-
-	chatIDStr := inviteInfoSplit[0]
-	chatObjectID, err := bson.ObjectIDFromHex(chatIDStr)
-	if err != nil {
-		return fmt.Errorf("failed to decode chat ID: %w", err)
-	}
-
-	expireTime, err := time.Parse(time.RFC3339, inviteInfoSplit[3])
-	if err != nil {
-		return fmt.Errorf("failed to parse expire time: %w", err)
+		return err
 	}
 
 	if expireTime.Before(time.Now()) || expireTime.After(time.Now().Add(24*time.Hour)) {
@@ -993,7 +918,7 @@ func JoinGroupByInvite(ctx context.Context, userID bson.ObjectID, inviteID strin
 	}
 
 	// Check if user already in chat
-	count, err := objects.DB.Collection(string(objects.ChatColl)).CountDocuments(ctx,
+	count, err := database.DB.Collection(string(constants.ChatColl)).CountDocuments(ctx,
 		bson.M{"_id": chatObjectID, "participants." + userID.Hex(): bson.M{"$exists": true}},
 	)
 	if err != nil {
@@ -1009,10 +934,10 @@ func JoinGroupByInvite(ctx context.Context, userID bson.ObjectID, inviteID strin
 	}
 
 	userParticipant := utils.NewParticipantWithDefaults(
-		string(objects.StatusAccepted),
-		string(objects.UserStatusOffline),
+		string(constants.StatusAccepted),
+		string(constants.UserStatusOffline),
 		userID,
-		[]string{string(objects.ChatPermissionRead), string(objects.ChatPermissionWrite)},
+		[]string{string(constants.ChatPermissionRead), string(constants.ChatPermissionWrite)},
 		models.ContactUserInfo{
 			UserID:      userID,
 			DisplayName: user.Profile.DisplayName,
@@ -1030,7 +955,7 @@ func JoinGroupByInvite(ctx context.Context, userID bson.ObjectID, inviteID strin
 		},
 	}
 
-	_, err = objects.DB.Collection(string(objects.ChatColl)).UpdateOne(ctx,
+	_, err = database.DB.Collection(string(constants.ChatColl)).UpdateOne(ctx,
 		bson.M{"_id": chatObjectID, "inviteCode.inviteCode": inviteID},
 		updateInviteCodeUserIDs,
 	)
@@ -1039,7 +964,7 @@ func JoinGroupByInvite(ctx context.Context, userID bson.ObjectID, inviteID strin
 	}
 
 	// Add chat ref to user
-	_, _ = objects.DB.Collection(string(objects.UserColl)).UpdateOne(ctx,
+	_, _ = database.DB.Collection(string(constants.UserColl)).UpdateOne(ctx,
 		bson.M{"_id": userID},
 		bson.M{"$set": bson.M{"chats." + chatObjectID.Hex(): 0}},
 	)
@@ -1052,7 +977,7 @@ func GetAllInvitesOfUser(ctx context.Context, userID bson.ObjectID) ([]models.Ch
 		ChatInvitations []models.ChatInvitationEmbed `bson:"chatInvitations"`
 	}
 
-	err := objects.DB.Collection(string(objects.UserColl)).FindOne(ctx,
+	err := database.DB.Collection(string(constants.UserColl)).FindOne(ctx,
 		bson.M{"_id": userID},
 		options.FindOne().SetProjection(bson.M{"chatInvitations": 1}),
 	).Decode(&result)
@@ -1064,4 +989,32 @@ func GetAllInvitesOfUser(ctx context.Context, userID bson.ObjectID) ([]models.Ch
 	}
 
 	return result.ChatInvitations, nil
+}
+
+// parseInviteCode decodes an invite code produced by utils.NewInviteCodeWithDefaults.
+// The plaintext is "<chatID>_<userID>_<displayName>_<expiry RFC3339>"; the display
+// name may itself contain underscores, so the expiry is taken after the last one.
+func parseInviteCode(inviteCode string) (bson.ObjectID, time.Time, error) {
+	raw, err := hex.DecodeString(inviteCode)
+	if err != nil {
+		return bson.ObjectID{}, time.Time{}, fmt.Errorf("failed to decode invite ID: %w", err)
+	}
+
+	info, err := utils.Decrypt(raw)
+	if err != nil {
+		return bson.ObjectID{}, time.Time{}, fmt.Errorf("failed to decrypt invite ID: %w", err)
+	}
+
+	chatIDStr, _, _ := strings.Cut(info, "_")
+	chatID, err := bson.ObjectIDFromHex(chatIDStr)
+	if err != nil {
+		return bson.ObjectID{}, time.Time{}, fmt.Errorf("failed to parse chat ID from invite: %w", err)
+	}
+
+	expiresAt, err := time.Parse(time.RFC3339, info[strings.LastIndex(info, "_")+1:])
+	if err != nil {
+		return bson.ObjectID{}, time.Time{}, fmt.Errorf("failed to parse expire time: %w", err)
+	}
+
+	return chatID, expiresAt, nil
 }

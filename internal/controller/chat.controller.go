@@ -1,11 +1,13 @@
 package controller
 
 import (
-	"gin/internal/models"
-	"gin/internal/services"
-	"gin/internal/utils"
-	"gin/objects"
 	"net/http"
+
+	"github.com/shoonya0/ECHO/internal/constants"
+	"github.com/shoonya0/ECHO/internal/models"
+	"github.com/shoonya0/ECHO/internal/realtime"
+	"github.com/shoonya0/ECHO/internal/services"
+	"github.com/shoonya0/ECHO/internal/utils"
 
 	"github.com/gin-gonic/gin"
 	"go.mongodb.org/mongo-driver/v2/bson"
@@ -129,7 +131,7 @@ func AddGroupMembersHTTP(ctx *gin.Context) {
 		userIDs = append(userIDs, userID)
 	}
 
-	user, ok := reqCtx.Value(objects.UserDataKey).(models.LoginUserResponse)
+	user, ok := reqCtx.Value(constants.UserDataKey).(models.LoginUserResponse)
 	if !ok {
 		log.Debug("user not found")
 		utils.ErrorResponse(ctx, http.StatusUnauthorized, "User not authenticated", nil)
@@ -233,7 +235,7 @@ func GetChatMessagesHTTP(ctx *gin.Context) {
 
 // GetHubStatsHTTP returns WebSocket hub statistics (for monitoring)
 func GetHubStatsHTTP(ctx *gin.Context) {
-	stats := services.GetHubInstance().GetStats()
+	stats := realtime.GetHubInstance().GetStats()
 	utils.SuccessResponse(ctx, "Hub statistics retrieved successfully", stats)
 }
 
@@ -245,7 +247,7 @@ func CreateInvite(ctx *gin.Context) {
 		return
 	}
 
-	user, ok := reqCtx.Value(objects.UserDataKey).(models.LoginUserResponse)
+	user, ok := reqCtx.Value(constants.UserDataKey).(models.LoginUserResponse)
 	if !ok {
 		log.Debug("user not found")
 		utils.ErrorResponse(ctx, http.StatusUnauthorized, "User not authenticated", nil)
@@ -284,7 +286,7 @@ func GetGroupInvites(ctx *gin.Context) {
 		return
 	}
 
-	user, ok := reqCtx.Value(objects.UserDataKey).(models.LoginUserResponse)
+	user, ok := reqCtx.Value(constants.UserDataKey).(models.LoginUserResponse)
 	if !ok {
 		log.Debug("user not found")
 		utils.ErrorResponse(ctx, http.StatusUnauthorized, "User not authenticated", nil)
@@ -323,7 +325,7 @@ func DeleteInvite(ctx *gin.Context) {
 		return
 	}
 
-	user, ok := reqCtx.Value(objects.UserDataKey).(models.LoginUserResponse)
+	user, ok := reqCtx.Value(constants.UserDataKey).(models.LoginUserResponse)
 	if !ok {
 		log.Debug("user not found")
 		utils.ErrorResponse(ctx, http.StatusUnauthorized, "User not authenticated", nil)
@@ -348,11 +350,6 @@ func DeleteInvite(ctx *gin.Context) {
 	utils.SuccessResponse(ctx, "Invite deleted successfully", nil)
 }
 
-func UpdateInviteStatus(ctx *gin.Context) {
-	// this is done internally
-	utils.SuccessResponse(ctx, "Invite status updated successfully", nil)
-}
-
 func GetJoinedUsersByInvite(ctx *gin.Context) {
 	reqCtx, log, ok := ReduceGinContextToContext(ctx)
 	if !ok {
@@ -360,7 +357,7 @@ func GetJoinedUsersByInvite(ctx *gin.Context) {
 		return
 	}
 
-	user, ok := reqCtx.Value(objects.UserDataKey).(models.LoginUserResponse)
+	user, ok := reqCtx.Value(constants.UserDataKey).(models.LoginUserResponse)
 	if !ok {
 		log.Debug("user not found")
 		utils.ErrorResponse(ctx, http.StatusUnauthorized, "User not authenticated", nil)
@@ -392,7 +389,7 @@ func SendInviteToUser(ctx *gin.Context) {
 		return
 	}
 
-	user, ok := reqCtx.Value(objects.UserDataKey).(models.LoginUserResponse)
+	user, ok := reqCtx.Value(constants.UserDataKey).(models.LoginUserResponse)
 	if !ok {
 		log.Debug("user not found")
 		utils.ErrorResponse(ctx, http.StatusUnauthorized, "User not authenticated", nil)
@@ -435,7 +432,7 @@ func JoinGroupByInvite(ctx *gin.Context) {
 		return
 	}
 
-	user, ok := reqCtx.Value(objects.UserDataKey).(models.LoginUserResponse)
+	user, ok := reqCtx.Value(constants.UserDataKey).(models.LoginUserResponse)
 	if !ok {
 		log.Debug("user not found")
 		utils.ErrorResponse(ctx, http.StatusUnauthorized, "User not authenticated", nil)
@@ -468,7 +465,7 @@ func GetAllInvitesOfUser(ctx *gin.Context) {
 		return
 	}
 
-	user, ok := reqCtx.Value(objects.UserDataKey).(models.LoginUserResponse)
+	user, ok := reqCtx.Value(constants.UserDataKey).(models.LoginUserResponse)
 	if !ok {
 		log.Debug("user not found")
 		utils.ErrorResponse(ctx, http.StatusUnauthorized, "User not authenticated", nil)

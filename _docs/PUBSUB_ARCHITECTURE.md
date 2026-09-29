@@ -5,7 +5,7 @@ This document describes the WebSocket architecture using Redis Pub/Sub for effic
 
 ## Architecture Components
 
-### 1. WebSocket Hub (`internal/services/websocket.hub.go`)
+### 1. WebSocket Hub (`internal/realtime/hub.go`)
 
 Centralized WebSocket connection hub managing all client connections.
 
@@ -18,7 +18,7 @@ Centralized WebSocket connection hub managing all client connections.
 - **Thread Safety**: sync.RWMutex for concurrent access
 - **Auto-Join**: Clients auto-join their active chats on connection
 
-### 2. PubSubManager (`internal/services/pubsub_manager.go`)
+### 2. PubSubManager (`internal/realtime/pubsub.go`)
 
 Handles all Redis pub/sub operations for cross-instance communication.
 
@@ -50,7 +50,7 @@ Handles message persistence, chat management, and integration with the hub for r
 - **Permission Validation**: Checks participant roles and permissions
 - **Real-Time Integration**: Calls `BroadcastToChat()` after message persistence
 
-### 4. Presence Service (`internal/services/presence.go`)
+### 4. Presence Service (`internal/realtime/presence.go`)
 
 Manages real-time user presence and status tracking.
 
@@ -86,12 +86,12 @@ User A → Server 1 (connect/disconnect)
 ### Hub Initialization
 
 ```go
-// In main.go or service initialization
-hub := services.GetHubInstance()
+// In cmd/server/main.go
+hub := realtime.GetHubInstance()
 hub.Start() // Launches the hub run loop with channel-based client management
 ```
 
-The hub uses a singleton pattern accessed via `services.GetHubInstance()`.
+The hub uses a singleton pattern accessed via `realtime.GetHubInstance()`.
 
 ### Connecting a Client
 
@@ -115,7 +115,7 @@ hub.UpdateUserInfoCache(user.ID.Hex(), models.UserDisplayInfo{
 hub.Register <- client
 
 // Update presence
-services.GetPresenceInstance().Set(services.UserPresence{...})
+realtime.GetPresenceInstance().Set(services.UserPresence{...})
 ```
 
 ### Sending Messages
@@ -208,7 +208,7 @@ func main() {
     // ...
     
     // Get hub instance
-    hub := services.GetHubInstance()
+    hub := realtime.GetHubInstance()
 
     // Start hub with pub/sub
     hub.Start()

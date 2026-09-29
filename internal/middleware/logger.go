@@ -1,8 +1,9 @@
 package middleware
 
 import (
-	"gin/logger"
 	"time"
+
+	"github.com/shoonya0/ECHO/internal/logger"
 
 	"github.com/gin-gonic/gin"
 )

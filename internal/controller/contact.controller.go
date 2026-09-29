@@ -1,11 +1,12 @@
 package controller
 
 import (
-	"gin/internal/services"
-	"gin/internal/utils"
-	"gin/objects"
 	"net/http"
 	"strconv"
+
+	"github.com/shoonya0/ECHO/internal/constants"
+	"github.com/shoonya0/ECHO/internal/services"
+	"github.com/shoonya0/ECHO/internal/utils"
 
 	"github.com/gin-gonic/gin"
 	"go.mongodb.org/mongo-driver/v2/bson"
@@ -50,7 +51,7 @@ func paramObjectID(ctx *gin.Context, param string) (bson.ObjectID, bool) {
 }
 
 // contactsList fetches and paginates contacts of the given status for the current user.
-func contactsList(ctx *gin.Context, status objects.ContactStatus, msgPrefix string) {
+func contactsList(ctx *gin.Context, status constants.ContactStatus, msgPrefix string) {
 	reqCtx, log, ok := ReduceGinContextToContext(ctx)
 	if !ok {
 		return
@@ -78,27 +79,27 @@ func contactsList(ctx *gin.Context, status objects.ContactStatus, msgPrefix stri
 
 // GET /echo/v1/users/contacts/
 func GetUsersContacts(ctx *gin.Context) {
-	contactsList(ctx, objects.StatusAccepted, "users contacts")
+	contactsList(ctx, constants.StatusAccepted, "users contacts")
 }
 
 // GET /echo/v1/users/contacts/requests
 func GetContactRequests(ctx *gin.Context) {
-	contactsList(ctx, objects.StatusPendingIn, "contact requests")
+	contactsList(ctx, constants.StatusPendingIn, "contact requests")
 }
 
 // GET /echo/v1/users/contacts/sent-requests
 func GetSentContactRequests(ctx *gin.Context) {
-	contactsList(ctx, objects.StatusPendingOut, "sent contact requests")
+	contactsList(ctx, constants.StatusPendingOut, "sent contact requests")
 }
 
 // GET /echo/v1/users/contacts/blocked
 func GetBlockedUsers(ctx *gin.Context) {
-	contactsList(ctx, objects.StatusBlocked, "blocked users")
+	contactsList(ctx, constants.StatusBlocked, "blocked users")
 }
 
 // GET /echo/v1/users/contacts/favorites
 func GetFavoriteContacts(ctx *gin.Context) {
-	contactsList(ctx, objects.StatusFavorite, "favorite contacts")
+	contactsList(ctx, constants.StatusFavorite, "favorite contacts")
 }
 
 // ============ CONTACT ACTIONS ============
@@ -144,7 +145,7 @@ func AcceptOrDeclineContactRequest(ctx *gin.Context) {
 	}
 
 	action := ctx.Query("action")
-	if action != string(objects.StatusAccepted) && action != string(objects.StatusDeclined) {
+	if action != string(constants.StatusAccepted) && action != string(constants.StatusDeclined) {
 		utils.ErrorResponse(ctx, http.StatusBadRequest, "action must be 'accepted' or 'declined'", nil)
 		return
 	}
@@ -211,15 +212,15 @@ func BlockUnblockUser(ctx *gin.Context) {
 
 	action := ctx.Query("action")
 	if action == "" {
-		action = string(objects.StatusBlocked) // default to block for backward compatibility
+		action = string(constants.StatusBlocked) // default to block for backward compatibility
 	}
 
 	// Normalise "block" / "unblock" aliases to their canonical status constants.
 	switch action {
-	case string(objects.StatusBlocked), "block":
-		action = string(objects.StatusBlocked)
-	case string(objects.StatusUnblocked), "unblock":
-		action = string(objects.StatusUnblocked)
+	case string(constants.StatusBlocked), "block":
+		action = string(constants.StatusBlocked)
+	case string(constants.StatusUnblocked), "unblock":
+		action = string(constants.StatusUnblocked)
 	default:
 		utils.ErrorResponse(ctx, http.StatusBadRequest, "action must be 'block'/'blocked' or 'unblock'/'unblocked'", nil)
 		return

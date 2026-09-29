@@ -3,11 +3,13 @@ package services
 import (
 	"context"
 	"fmt"
-	"gin/internal/models"
-	"gin/logger"
-	"gin/objects"
 	"strings"
 	"time"
+
+	"github.com/shoonya0/ECHO/internal/constants"
+	"github.com/shoonya0/ECHO/internal/database"
+	"github.com/shoonya0/ECHO/internal/logger"
+	"github.com/shoonya0/ECHO/internal/models"
 
 	"go.mongodb.org/mongo-driver/v2/bson"
 	"go.mongodb.org/mongo-driver/v2/mongo"
@@ -31,7 +33,7 @@ func GetUserByID(ctx context.Context, userID bson.ObjectID) (*models.User, error
 		"updatedAt":              1,
 	}
 
-	user, err := FindByID[models.User](ctx, objects.DB.Collection(string(objects.UserColl)), filter, projection)
+	user, err := FindByID[models.User](ctx, database.DB.Collection(string(constants.UserColl)), filter, projection)
 	if err != nil {
 		if err == mongo.ErrNoDocuments {
 			return nil, fmt.Errorf("%w: %w", ErrUserNotFound, err)
@@ -42,28 +44,6 @@ func GetUserByID(ctx context.Context, userID bson.ObjectID) (*models.User, error
 	return user, nil
 }
 
-func UpdateUserPresence(ctx context.Context, userID bson.ObjectID, status string) error {
-	filter := bson.M{"_id": userID}
-	now := time.Now()
-	update := bson.M{
-		"$set": bson.M{
-			"presence.status":   status,
-			"presence.lastSeen": now,
-		},
-	}
-
-	result, err := objects.DB.Collection(string(objects.UserColl)).UpdateOne(ctx, filter, update)
-	if err != nil {
-		return fmt.Errorf("failed to update user presence: %w", err)
-	}
-
-	if result.MatchedCount == 0 {
-		return fmt.Errorf("%w", ErrUserNotFound)
-	}
-
-	return nil
-}
-
 func UpdateProfile(ctx context.Context, userID bson.ObjectID, profileUpdate map[string]interface{}) error {
 	filter := bson.M{"_id": userID}
 
@@ -72,7 +52,7 @@ func UpdateProfile(ctx context.Context, userID bson.ObjectID, profileUpdate map[
 	// This protects identity/display fields (username, email, displayName)
 	// from being wiped by a partial request that omits them or sends "".
 	var existingDoc bson.M
-	err := objects.DB.Collection(string(objects.UserColl)).FindOne(ctx, filter).Decode(&existingDoc)
+	err := database.DB.Collection(string(constants.UserColl)).FindOne(ctx, filter).Decode(&existingDoc)
 	if err != nil {
 		if err == mongo.ErrNoDocuments {
 			return fmt.Errorf("%w: %w", ErrUserNotFound, err)
@@ -94,7 +74,7 @@ func UpdateProfile(ctx context.Context, userID bson.ObjectID, profileUpdate map[
 
 	update := bson.M{"$set": profileUpdate}
 
-	result, err := objects.DB.Collection(string(objects.UserColl)).UpdateOne(ctx, filter, update)
+	result, err := database.DB.Collection(string(constants.UserColl)).UpdateOne(ctx, filter, update)
 	if err != nil {
 		return fmt.Errorf("failed to update profile: %w", err)
 	}
@@ -114,7 +94,7 @@ func GetUserProfile(ctx context.Context, userID bson.ObjectID) (*models.GetUserP
 	}
 
 	var user models.GetUserProfileResponse
-	err := objects.DB.Collection(string(objects.UserColl)).FindOne(ctx, filter, options.FindOne().SetProjection(projection)).Decode(&user)
+	err := database.DB.Collection(string(constants.UserColl)).FindOne(ctx, filter, options.FindOne().SetProjection(projection)).Decode(&user)
 	if err != nil {
 		if err == mongo.ErrNoDocuments {
 			return nil, fmt.Errorf("%w: %w", ErrUserNotFound, err)
@@ -133,7 +113,7 @@ func DeleteProfile(ctx context.Context, userID string) error {
 
 	filter := bson.M{"_id": objectID}
 
-	result, err := objects.DB.Collection(string(objects.UserColl)).DeleteOne(ctx, filter)
+	result, err := database.DB.Collection(string(constants.UserColl)).DeleteOne(ctx, filter)
 	if err != nil {
 		return fmt.Errorf("failed to delete profile: %w", err)
 	}
@@ -160,7 +140,7 @@ func GetUserBasicInfo(ctx context.Context, userID bson.ObjectID) (*models.GetPro
 
 	var user models.GetProfileResponse
 
-	err := objects.DB.Collection(string(objects.UserColl)).FindOne(ctx, filter, options.FindOne().SetProjection(projection)).Decode(&user)
+	err := database.DB.Collection(string(constants.UserColl)).FindOne(ctx, filter, options.FindOne().SetProjection(projection)).Decode(&user)
 	if err != nil {
 		if err == mongo.ErrNoDocuments {
 			return nil, fmt.Errorf("%w: %w", ErrUserNotFound, err)
@@ -184,7 +164,7 @@ func GetUsersByIDs(ctx context.Context, userIDs []bson.ObjectID) ([]models.Login
 	}
 
 	var users []models.LoginUserResponse
-	cursor, err := objects.DB.Collection(string(objects.UserColl)).Find(ctx, filter, options.Find().SetProjection(projection))
+	cursor, err := database.DB.Collection(string(constants.UserColl)).Find(ctx, filter, options.Find().SetProjection(projection))
 	if err != nil {
 		return nil, fmt.Errorf("failed to get users: %w", err)
 	}
@@ -210,7 +190,7 @@ func GetUsersByIDs(ctx context.Context, userIDs []bson.ObjectID) ([]models.Login
 // and any IDs provided via excludeIDs. All users (active or inactive) are included.
 // Results are sorted by createdAt descending for stable paging.
 func GetUserSuggestions(ctx context.Context, userID bson.ObjectID, page, limit int, excludeIDs []bson.ObjectID) ([]models.UserSuggestion, int64, error) {
-	coll := objects.DB.Collection(string(objects.UserColl))
+	coll := database.DB.Collection(string(constants.UserColl))
 
 	skip := int64((page - 1) * limit)
 	limit64 := int64(limit)
@@ -281,7 +261,7 @@ func GetUserSuggestions(ctx context.Context, userID bson.ObjectID, page, limit i
 
 		// Lookup 1: paginated suggestions with sort/skip/limit/project.
 		{bson.E{Key: "$lookup", Value: bson.D{
-			bson.E{Key: "from", Value: string(objects.UserColl)},
+			bson.E{Key: "from", Value: string(constants.UserColl)},
 			bson.E{Key: "let", Value: letDoc},
 			bson.E{Key: "pipeline", Value: lookupPipeline},
 			bson.E{Key: "as", Value: "suggestions"},
@@ -289,7 +269,7 @@ func GetUserSuggestions(ctx context.Context, userID bson.ObjectID, page, limit i
 
 		// Lookup 2: true unfiltered total count (same match, just $count).
 		{bson.E{Key: "$lookup", Value: bson.D{
-			bson.E{Key: "from", Value: string(objects.UserColl)},
+			bson.E{Key: "from", Value: string(constants.UserColl)},
 			bson.E{Key: "let", Value: letDoc},
 			bson.E{Key: "pipeline", Value: countPipeline},
 			bson.E{Key: "as", Value: "totalAgg"},
@@ -354,7 +334,7 @@ func GetUserDisplayInfoFromDB(userID bson.ObjectID) (*models.UserDisplayInfo, er
 		Presence models.PresenceEmbed    `bson:"presence"`
 	}
 
-	err := objects.DB.Collection(string(objects.UserColl)).FindOne(
+	err := database.DB.Collection(string(constants.UserColl)).FindOne(
 		context.Background(),
 		filter,
 		options.FindOne().SetProjection(projection),
@@ -526,12 +506,12 @@ func LogoutUser(ctx context.Context, jti string, expiresAt time.Time) error {
 
 	blacklistKey := "auth:blacklist:" + jti
 
-	if objects.RedisClient == nil {
+	if database.Redis == nil {
 		log.Warn("Redis client is nil — cannot blacklist token")
 		return fmt.Errorf("redis client is not initialized")
 	}
 
-	if err := objects.RedisClient.Set(ctx, blacklistKey, "1", ttl).Err(); err != nil {
+	if err := database.Redis.Set(ctx, blacklistKey, "1", ttl).Err(); err != nil {
 		log.WithError(err).WithField("jti", jti).Error("Failed to blacklist token")
 		return fmt.Errorf("failed to blacklist token: %w", err)
 	}

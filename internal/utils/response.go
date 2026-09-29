@@ -33,15 +33,6 @@ func ErrorResponse(c *gin.Context, statusCode int, message string, err interface
 	})
 }
 
-// CreatedResponse sends a standardized response for resource creation
-func CreatedResponse(c *gin.Context, message string, data interface{}) {
-	c.JSON(http.StatusCreated, APIResponse{
-		Success: true,
-		Message: message,
-		Data:    data,
-	})
-}
-
 // PaginatedResponse sends a standardized paginated response
 func PaginatedResponse(c *gin.Context, message string, data interface{}, limit, total int) {
 	response := APIResponse{

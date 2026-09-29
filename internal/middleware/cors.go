@@ -1,7 +1,7 @@
 package middleware
 
 import (
-	"gin/logger"
+	"github.com/shoonya0/ECHO/internal/logger"
 
 	"github.com/gin-contrib/cors"
 	"github.com/gin-gonic/gin"

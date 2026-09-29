@@ -1,28 +1,14 @@
 package utils
 
 import (
-	"gin/internal/models"
-	"gin/objects"
-	"strings"
 	"time"
+
+	"github.com/shoonya0/ECHO/internal/config"
+	"github.com/shoonya0/ECHO/internal/models"
 
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/google/uuid"
 )
-
-func GetJWTSecret() []byte {
-	secret := objects.MainConfiguration.JwtSecret
-
-	// Trim whitespace and quotes that might come from env file
-	secret = strings.TrimSpace(secret)
-	secret = strings.Trim(secret, "\"'")
-
-	if secret == "" {
-		panic("JWT_SECRET is not set in configuration")
-	}
-
-	return []byte(secret)
-}
 
 type JwtClaims struct {
 	jwt.RegisteredClaims
@@ -40,8 +26,6 @@ type PresenceClaims struct {
 }
 
 func GetJWTToken(user models.LoginUserResponse, exp int64) (string, error) {
-
-	jwtSecret := GetJWTSecret()
 
 	// create JWT token
 	claims := JwtClaims{
@@ -65,10 +49,8 @@ func GetJWTToken(user models.LoginUserResponse, exp int64) (string, error) {
 		},
 	}
 
-	// Debug: Print secret length for verification
-
 	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
-	signed, err := token.SignedString(jwtSecret)
+	signed, err := token.SignedString([]byte(config.Cfg.JWTSecret))
 	if err != nil {
 		return "", err
 	}

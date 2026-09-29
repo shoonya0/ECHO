@@ -2,13 +2,15 @@ package middleware
 
 import (
 	"fmt"
-	"gin/internal/models"
-	"gin/internal/utils"
-	"gin/logger"
-	"gin/objects"
 	"net/http"
 	"strings"
 	"time"
+
+	"github.com/shoonya0/ECHO/internal/config"
+	"github.com/shoonya0/ECHO/internal/database"
+	"github.com/shoonya0/ECHO/internal/logger"
+	"github.com/shoonya0/ECHO/internal/models"
+	"github.com/shoonya0/ECHO/internal/utils"
 
 	"github.com/gin-gonic/gin"
 	"github.com/golang-jwt/jwt/v5"
@@ -82,7 +84,7 @@ func verifyToken(tokenString string) (utils.JwtClaims, error) {
 		if token.Method.Alg() != jwt.SigningMethodHS256.Alg() {
 			return nil, fmt.Errorf("unexpected signing method: %v", token.Header["alg"])
 		}
-		return []byte(objects.MainConfiguration.JwtSecret), nil
+		return []byte(config.Cfg.JWTSecret), nil
 	})
 
 	if err != nil {
@@ -187,9 +189,9 @@ func AuthMiddleware(ctx *gin.Context) {
 	ctx.Set("jwtClaims", claims)
 
 	// Check token blacklist (for server-side logout).
-	if objects.RedisClient != nil {
+	if database.Redis != nil {
 		blacklistKey := "auth:blacklist:" + claims.RegisteredClaims.ID
-		exists, err := objects.RedisClient.Exists(ctx.Request.Context(), blacklistKey).Result()
+		exists, err := database.Redis.Exists(ctx.Request.Context(), blacklistKey).Result()
 		if err != nil {
 			log.WithError(err).Warn("Redis blacklist lookup failed — failing open to avoid lockout")
 		} else if exists > 0 {

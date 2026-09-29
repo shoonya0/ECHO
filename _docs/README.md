@@ -37,7 +37,7 @@ A powerful, scalable real-time chat system built with Go, featuring WebSocket su
 
 ### Core Components
 
-1. **WebSocket Hub** (`internal/services/websocket.hub.go`)
+1. **WebSocket Hub** (`internal/realtime/hub.go`)
    - Centralized connection management with channel-based registration
    - Real-time message broadcasting via `BroadcastToChat()`
    - Client lifecycle handling (Register/Unregister channels)
@@ -56,7 +56,7 @@ A powerful, scalable real-time chat system built with Go, featuring WebSocket su
    - 5-minute TTL cache
    - Automatic cache invalidation
 
-4. **PubSub Manager** (`internal/services/pubsub_manager.go`)
+4. **PubSub Manager** (`internal/realtime/pubsub.go`)
    - Redis Pub/Sub for cross-instance messaging
    - Channel management (user:, chat:, presence:global, system:global)
    - Multi-instance coordination
