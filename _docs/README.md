@@ -26,12 +26,40 @@ A powerful, scalable real-time chat system built with Go, featuring WebSocket su
 
 ### Performance & Scalability
 
-- **Efficient WebSocket Hub** for connection management
-- **User Info Caching** with 5-minute TTL
-- **Batch Operations** for user data lookups
-- **Thread-Safe Operations** with proper mutex usage
-- **Automatic Cleanup** of inactive connections
-- **Redis Pub/Sub** for cross-instance scaling
+Measured against a single server instance with the load harness in
+[`scripts/load-test`](../scripts/load-test) (see that folder's README for how to
+reproduce):
+
+| Metric                                   | Result                    |
+| ---------------------------------------- | ------------------------- |
+| Concurrent WebSocket connections         | 14,000 held, 0 failed (hub-confirmed) |
+| Connection registration throughput       | ~1,750 registrations/s    |
+| Connection setup time (p95)              | ~85–195 ms                |
+| Message round-trip — send → persisted → server ack (p50) | ~12 ms    |
+| Message round-trip (p95)                 | ~16–50 ms                 |
+| Message round-trip (p99)                 | ~20–70 ms                 |
+| Sustained message throughput            | ~1,600–1,900 msg/s        |
+| Messages lost / dropped                  | 0 (across all runs)       |
+
+Verified at 1k / 5k / 8k / 14k concurrent connections; message-latency ranges span
+several runs at each level (the first run after start carries warmup). At 14k the hub
+registered and held every connection with zero failures and message p95 stayed ~16 ms.
+The only ceiling hit on a single box was the OS ephemeral-port limit — connections
+climbed to ~15,300 before the *client host* ran out of loopback ports (`ENOBUFS`), not
+any server-side failure. Registration is the ramp bottleneck, not steady state: the hub
+registers clients on a single goroutine that does one MongoDB lookup + Redis subscribe
+per connect (`hub.go`), capping the ramp at ~1,750 conn/s while established connections
+keep messaging fast.
+
+Test conditions: one server instance, Dockerized MongoDB + Redis, all over loopback on
+an Intel i5-10400F (12 threads) / 16 GB Windows 11 host. These are development-hardware
+figures for regression tracking, not a production capacity guarantee — throughput scales
+horizontally across instances via Redis pub/sub.
+
+The numbers rest on: an in-process WebSocket hub for connection management, user-info
+caching with a 5-minute TTL, batched user-data lookups, `sync.RWMutex`-guarded shared
+state, automatic cleanup of inactive connections, and Redis pub/sub for cross-instance
+fan-out.
 
 ## Architecture
 

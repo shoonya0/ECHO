@@ -1,0 +1,13 @@
+{
+  "name": "echo-load-test",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "WebSocket load test for the ECHO chat server: concurrent connections + message round-trip latency (p50/p95/p99).",
+  "scripts": {
+    "start": "node loadtest.mjs"
+  },
+  "dependencies": {
+    "ws": "^8.0.0"
+  }
+}
