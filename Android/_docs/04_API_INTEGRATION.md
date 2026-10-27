@@ -7,7 +7,7 @@
 - **Content-Type:** `application/json`
 - **Response Envelope:** `{ success: Boolean, message: String?, data: T?, error: String? }`
 - **Pagination Envelope:** `{ items: [...], pagination: { limit, total, total_pages } }`
-- **Message Pagination:** `{ chat: String, messages: [...], pagination: { limit, offset, count, totalCount, page, totalPages } }`
+- **Message Pagination:** `{ chat: String, messages: [...], pagination: { limit, count, hasMore, nextCursor } }` (cursor-based: send `nextCursor` back as `before`)
 
 ## All Endpoints
 
@@ -62,7 +62,7 @@
 
 | Method | Path | Query | Response |
 |---|---|---|---|
-| `GET` | `messages/:chatID/messages` | `?limit=10&offset=0` | `MessageListResponse` |
+| `GET` | `messages/:chatID/messages` | `?limit=10&before=<messageId>` | `MessageListResponse` |
 
 ### Groups (auth required)
 
@@ -194,7 +194,7 @@ interface MessageApiService {
     suspend fun getChatMessages(
         @Path("chatId") chatId: String,
         @Query("limit") limit: Int = 50,
-        @Query("offset") offset: Int = 0,
+        @Query("before") before: String? = null, // nextCursor of the previous page
     ): ApiResponse<MessageListResponse>
 }
 ```

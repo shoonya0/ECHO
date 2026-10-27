@@ -299,11 +299,9 @@ data class MessageListResponse(
 @Serializable
 data class MessagePagination(
     val limit: Int,
-    val offset: Int,
     val count: Int,
-    val totalCount: Int,
-    val page: Int,
-    val totalPages: Int,
+    val hasMore: Boolean,
+    val nextCursor: String? = null, // pass as `before` to load older messages
 )
 
 @Serializable

@@ -231,7 +231,7 @@ Scaffold(
 - New message scroll-to-bottom button (when scrolled up)
 - Connection status indicator (top banner: "Reconnecting...")
 
-**Pagination:** Load older messages when scrolling to top (`GET /messages/:chatID/messages?offset=...`)
+**Pagination:** Load older messages when scrolling to top (`GET /messages/:chatID/messages?before=<nextCursor>`; stop when `hasMore` is false)
 
 ---
 

@@ -164,8 +164,14 @@ GET    /echo/v1/chats/hub/stats         - Get hub statistics (monitoring)
 ### Messages
 
 ```
-GET /echo/v1/messages/:chatID/messages   - Get chat messages with pagination
+GET /echo/v1/messages/:chatID/messages   - Get chat messages (cursor pagination)
 ```
+
+Messages come newest first. Query params: `limit` (1-100, default 50) and
+`before` (a message ID; omit it for the newest page). The response's
+`pagination` is `{ limit, count, hasMore, nextCursor }`: to load older
+messages, pass `nextCursor` back as `before`. `nextCursor` is `null` on the
+last page. Cursors stay stable while new messages arrive, unlike offsets.
 
 ### Group Management
 
