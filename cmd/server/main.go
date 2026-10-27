@@ -46,6 +46,11 @@ func main() {
 	if err := database.ConnectMongo(ctx); err != nil {
 		log.WithError(err).Fatal("Failed to connect to MongoDB")
 	}
+	// A failure here is usually duplicate emails blocking the unique index;
+	// the server still works without the indexes, just slower.
+	if err := database.EnsureIndexes(ctx); err != nil {
+		log.WithError(err).Error("Failed to ensure MongoDB indexes")
+	}
 	// Redis backs token revocation and WebSocket pub/sub, so it is required.
 	if err := database.ConnectRedis(ctx); err != nil {
 		log.WithError(err).Fatal("Failed to connect to Redis")
