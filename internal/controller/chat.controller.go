@@ -178,6 +178,14 @@ func GetChatMessagesHTTP(ctx *gin.Context) {
 		}
 	}
 
+	// Offset paging was removed; reject it so old clients don't silently get
+	// the newest page back on every request.
+	if ctx.Query("offset") != "" {
+		log.Debug("offset pagination is no longer supported")
+		utils.ErrorResponse(ctx, http.StatusBadRequest, "offset is no longer supported; page with ?before=<nextCursor>", nil)
+		return
+	}
+
 	// before is the cursor: the ID of the oldest message the client already has.
 	var before *bson.ObjectID
 	if beforeStr := ctx.Query("before"); beforeStr != "" {
