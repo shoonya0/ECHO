@@ -66,6 +66,13 @@ func Signup(c *gin.Context) {
 	user := utils.NewUserWithDefaults(req.ID, req.Email, req.Username, string(hash))
 
 	if _, err := database.DB.Collection(string(constants.UserColl)).InsertOne(c.Request.Context(), user); err != nil {
+		// A concurrent signup with the same email can pass the count check
+		// above; the unique email index rejects the second insert.
+		if mongo.IsDuplicateKeyError(err) {
+			log.Debug("email already registered")
+			utils.ErrorResponse(c, http.StatusConflict, "email already registered", nil)
+			return
+		}
 		log.WithError(err).Error("failed to create user")
 		utils.ErrorResponse(c, http.StatusInternalServerError, "failed to create user", err.Error())
 		return
