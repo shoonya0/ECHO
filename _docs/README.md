@@ -280,10 +280,11 @@ Response:
    `database.EnsureIndexes` (`internal/database/indexes.go`):
    - `messages {chatId: 1, _id: -1}`: message history and its cursor
    - `users {email: 1}` (unique): login and signup
-   - `users {createdAt: -1}`: user suggestions
 
-   Creating them is idempotent; a failure (for example duplicate emails blocking the
-   unique index) is logged and the server keeps running.
+   They build in the background (10-minute timeout), so startup isn't blocked. Creating
+   them is idempotent; a failure on one collection doesn't stop the others, and is
+   logged while the server keeps running (for example duplicate emails blocking the
+   unique index). A concurrent duplicate signup returns `409`, not `500`.
 3. **Cursor Pagination** — Message history pages by `_id < before` on the index above,
    so every page costs O(limit) and pages don't shift as new messages arrive
 4. **WebSocket Optimizations** — Efficient connection pooling, automatic cleanup of inactive connections, thread-safe operations
