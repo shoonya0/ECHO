@@ -276,8 +276,17 @@ Response:
 ## Performance Optimizations
 
 1. **Caching Layer** — User information cached with 5-minute TTL
-2. **Database Efficiency** — Optimized queries with proper indexing, minimal embedded data
-3. **WebSocket Optimizations** — Efficient connection pooling, automatic cleanup of inactive connections, thread-safe operations
+2. **Database Efficiency** — Minimal embedded data, and indexes created on startup by
+   `database.EnsureIndexes` (`internal/database/indexes.go`):
+   - `messages {chatId: 1, _id: -1}`: message history and its cursor
+   - `users {email: 1}` (unique): login and signup
+   - `users {createdAt: -1}`: user suggestions
+
+   Creating them is idempotent; a failure (for example duplicate emails blocking the
+   unique index) is logged and the server keeps running.
+3. **Cursor Pagination** — Message history pages by `_id < before` on the index above,
+   so every page costs O(limit) and pages don't shift as new messages arrive
+4. **WebSocket Optimizations** — Efficient connection pooling, automatic cleanup of inactive connections, thread-safe operations
 
 ## Development Guidelines
 
