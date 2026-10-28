@@ -90,11 +90,25 @@ func trimMessagePage(messages []models.Message, limit int) ([]models.Message, bo
 	return messages, false
 }
 
+// chatMemberFilter matches the chat only when userID is one of its participants.
+func chatMemberFilter(chatID, userID bson.ObjectID) bson.M {
+	return bson.M{"_id": chatID, "participants." + userID.Hex(): bson.M{"$exists": true}}
+}
+
 // GetChatMessages returns up to limit messages of a chat, newest first,
 // starting just before the before cursor (a message ID; nil for the newest
 // page). hasMore reports whether older messages exist; pass the last
-// returned message's ID as before to fetch them.
-func GetChatMessages(ctx context.Context, chatID bson.ObjectID, limit int, before *bson.ObjectID) (messages []models.Message, hasMore bool, err error) {
+// returned message's ID as before to fetch them. It returns ErrChatNotFound
+// when userID is not a participant, so chat IDs can't be probed.
+func GetChatMessages(ctx context.Context, userID bson.ObjectID, chatID bson.ObjectID, limit int, before *bson.ObjectID) (messages []models.Message, hasMore bool, err error) {
+	count, err := database.DB.Collection(string(constants.ChatColl)).CountDocuments(ctx, chatMemberFilter(chatID, userID))
+	if err != nil {
+		return nil, false, fmt.Errorf("failed to check chat membership: %w", err)
+	}
+	if count == 0 {
+		return nil, false, fmt.Errorf("%w", ErrChatNotFound)
+	}
+
 	messageFilter := messagePageFilter(chatID, before)
 
 	messageProjection := bson.M{
