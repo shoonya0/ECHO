@@ -156,6 +156,13 @@ func GetChatMessagesHTTP(ctx *gin.Context) {
 		return
 	}
 
+	user, ok := reqCtx.Value(constants.UserDataKey).(models.LoginUserResponse)
+	if !ok {
+		log.Debug("user not found")
+		utils.ErrorResponse(ctx, http.StatusUnauthorized, "User not authenticated", nil)
+		return
+	}
+
 	chatIDStr := ctx.Param("chatID")
 	if chatIDStr == "" {
 		log.Debug("chat ID is required")
@@ -198,7 +205,7 @@ func GetChatMessagesHTTP(ctx *gin.Context) {
 		before = &beforeID
 	}
 
-	messages, hasMore, err := services.GetChatMessages(reqCtx, chatID, limit, before)
+	messages, hasMore, err := services.GetChatMessages(reqCtx, user.ID, chatID, limit, before)
 	if err != nil {
 		log.Debug("failed to get chat messages: " + err.Error())
 		statusCode, msg := MapServiceErrorToHTTP(err)
