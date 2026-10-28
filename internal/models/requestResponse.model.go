@@ -8,7 +8,7 @@ import (
 type LoginUserResponse struct {
 	ID            bson.ObjectID      `json:"_id" bson:"_id"`
 	Email         string             `json:"email" bson:"email"`
-	PasswordHash  string             `json:"passwordHash" bson:"passwordHash"`
+	PasswordHash  string             `json:"-" bson:"passwordHash"` // never sent to clients
 	Username      string             `json:"username" bson:"username"`
 	Profile       UserProfileEmbed   `json:"profile" bson:"profile"`
 	AccountStatus AccountStatusEmbed `json:"accountStatus" bson:"accountStatus"`

@@ -47,7 +47,7 @@ func Signup(c *gin.Context) {
 	count, err := database.DB.Collection(string(constants.UserColl)).CountDocuments(c.Request.Context(), bson.M{"email": req.Email})
 	if err != nil {
 		log.WithError(err).Error("failed to check email")
-		utils.ErrorResponse(c, http.StatusInternalServerError, "failed to check email", err.Error())
+		utils.ErrorResponse(c, http.StatusInternalServerError, "failed to check email", nil)
 		return
 	}
 	if count > 0 {
@@ -59,7 +59,7 @@ func Signup(c *gin.Context) {
 	hash, err := bcrypt.GenerateFromPassword([]byte(req.Password), bcrypt.DefaultCost)
 	if err != nil {
 		log.WithError(err).Debug("could not hash password")
-		utils.ErrorResponse(c, http.StatusInternalServerError, "could not hash password", err.Error())
+		utils.ErrorResponse(c, http.StatusInternalServerError, "could not hash password", nil)
 		return
 	}
 
@@ -74,7 +74,7 @@ func Signup(c *gin.Context) {
 			return
 		}
 		log.WithError(err).Error("failed to create user")
-		utils.ErrorResponse(c, http.StatusInternalServerError, "failed to create user", err.Error())
+		utils.ErrorResponse(c, http.StatusInternalServerError, "failed to create user", nil)
 		return
 	}
 
@@ -121,7 +121,7 @@ func Login(c *gin.Context) {
 		return
 	} else if err != nil {
 		log.WithError(err).Error("failed to find user")
-		utils.ErrorResponse(c, http.StatusInternalServerError, "failed to find user", err.Error())
+		utils.ErrorResponse(c, http.StatusInternalServerError, "failed to find user", nil)
 		return
 	}
 
@@ -140,7 +140,7 @@ func Login(c *gin.Context) {
 	bsonBytes, _ := bson.Marshal(rawDoc)
 	if err := bson.Unmarshal(bsonBytes, &user); err != nil {
 		log.WithError(err).Error("failed to decode user document")
-		utils.ErrorResponse(c, http.StatusInternalServerError, "failed to decode user", err.Error())
+		utils.ErrorResponse(c, http.StatusInternalServerError, "failed to decode user", nil)
 		return
 	}
 
@@ -186,7 +186,7 @@ func Login(c *gin.Context) {
 	token, err := utils.GetJWTToken(newUser, time.Now().Add(7*24*time.Hour).Unix())
 	if err != nil {
 		log.WithError(err).Debug("could not generate token")
-		utils.ErrorResponse(c, http.StatusInternalServerError, "could not generate token", err.Error())
+		utils.ErrorResponse(c, http.StatusInternalServerError, "could not generate token", nil)
 		return
 	}
 
