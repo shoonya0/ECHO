@@ -171,7 +171,6 @@ func GetChatMessagesHTTP(ctx *gin.Context) {
 	}
 
 	limit := 50 // Default limit
-	offset := 0 // Default offset
 
 	if limitStr := ctx.Query("limit"); limitStr != "" {
 		if parsedLimit := utils.ParseInt(limitStr, 50); parsedLimit > 0 && parsedLimit <= 100 {
@@ -179,13 +178,27 @@ func GetChatMessagesHTTP(ctx *gin.Context) {
 		}
 	}
 
-	if offsetStr := ctx.Query("offset"); offsetStr != "" {
-		if parsedOffset := utils.ParseInt(offsetStr, 0); parsedOffset >= 0 {
-			offset = parsedOffset
-		}
+	// Offset paging was removed; reject it so old clients don't silently get
+	// the newest page back on every request.
+	if ctx.Query("offset") != "" {
+		log.Debug("offset pagination is no longer supported")
+		utils.ErrorResponse(ctx, http.StatusBadRequest, "offset is no longer supported; page with ?before=<nextCursor>", nil)
+		return
 	}
 
-	messages, err := services.GetChatMessages(reqCtx, chatID, limit, offset)
+	// before is the cursor: the ID of the oldest message the client already has.
+	var before *bson.ObjectID
+	if beforeStr := ctx.Query("before"); beforeStr != "" {
+		beforeID, err := bson.ObjectIDFromHex(beforeStr)
+		if err != nil {
+			log.Debug("invalid before cursor")
+			utils.ErrorResponse(ctx, http.StatusBadRequest, "Invalid before cursor", nil)
+			return
+		}
+		before = &beforeID
+	}
+
+	messages, hasMore, err := services.GetChatMessages(reqCtx, chatID, limit, before)
 	if err != nil {
 		log.Debug("failed to get chat messages: " + err.Error())
 		statusCode, msg := MapServiceErrorToHTTP(err)
@@ -193,22 +206,17 @@ func GetChatMessagesHTTP(ctx *gin.Context) {
 		return
 	}
 
-	totalPages := (len(messages) + limit - 1) / limit
-	if len(messages) == 0 {
-		totalPages = 0
-	}
-	currentPage := 1
-	if limit > 0 {
-		currentPage = offset/limit + 1
+	var nextCursor *string
+	if hasMore {
+		cursor := messages[len(messages)-1].ID.Hex()
+		nextCursor = &cursor
 	}
 
 	type PaginationResponse struct {
-		Limit      int `json:"limit"`
-		Offset     int `json:"offset"`
-		Count      int `json:"count"`
-		TotalCount int `json:"totalCount"`
-		Page       int `json:"page"`
-		TotalPages int `json:"totalPages"`
+		Limit      int     `json:"limit"`
+		Count      int     `json:"count"`
+		HasMore    bool    `json:"hasMore"`
+		NextCursor *string `json:"nextCursor"` // pass as ?before= for the next (older) page
 	}
 
 	type ChatMessagesResponse struct {
@@ -222,11 +230,9 @@ func GetChatMessagesHTTP(ctx *gin.Context) {
 		Messages: messages,
 		Pagination: PaginationResponse{
 			Limit:      limit,
-			Offset:     offset,
 			Count:      len(messages),
-			TotalCount: len(messages),
-			Page:       currentPage,
-			TotalPages: totalPages,
+			HasMore:    hasMore,
+			NextCursor: nextCursor,
 		},
 	}
 

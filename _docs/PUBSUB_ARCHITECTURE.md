@@ -229,7 +229,7 @@ func main() {
 ### 2. Message Size
 
 - Keep messages under 1MB
-- Use pagination for message history
+- Load message history over REST with cursor pagination (`?before=<nextCursor>`), not over the socket
 - Compress large payloads if needed
 
 ### 3. Subscription Management

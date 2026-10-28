@@ -71,8 +71,31 @@ func GetChat(ctx context.Context, chatInfo models.ChatInfo) (models.Chat, error)
 	return chat, nil
 }
 
-func GetChatMessages(ctx context.Context, chatID bson.ObjectID, limit int, offset int) ([]models.Message, error) {
-	messageFilter := bson.M{"chatId": chatID}
+// messagePageFilter matches a chat's messages older than the before cursor,
+// or its newest messages when before is nil.
+func messagePageFilter(chatID bson.ObjectID, before *bson.ObjectID) bson.M {
+	filter := bson.M{"chatId": chatID}
+	if before != nil {
+		filter["_id"] = bson.M{"$lt": *before}
+	}
+	return filter
+}
+
+// trimMessagePage cuts a result fetched with limit+1 down to limit and
+// reports whether older messages remain.
+func trimMessagePage(messages []models.Message, limit int) ([]models.Message, bool) {
+	if len(messages) > limit {
+		return messages[:limit], true
+	}
+	return messages, false
+}
+
+// GetChatMessages returns up to limit messages of a chat, newest first,
+// starting just before the before cursor (a message ID; nil for the newest
+// page). hasMore reports whether older messages exist; pass the last
+// returned message's ID as before to fetch them.
+func GetChatMessages(ctx context.Context, chatID bson.ObjectID, limit int, before *bson.ObjectID) (messages []models.Message, hasMore bool, err error) {
+	messageFilter := messagePageFilter(chatID, before)
 
 	messageProjection := bson.M{
 		"_id":             1,
@@ -91,28 +114,28 @@ func GetChatMessages(ctx context.Context, chatID bson.ObjectID, limit int, offse
 	findOpts := options.Find().
 		SetProjection(messageProjection).
 		SetSort(bson.M{"_id": -1}).
-		SetSkip(int64(offset)).
-		SetLimit(int64(limit))
+		SetLimit(int64(limit) + 1) // one extra row tells us whether more remain
 
 	cursor, err := database.DB.Collection(string(constants.MessageColl)).Find(ctx, messageFilter, findOpts)
 	if err != nil {
-		return nil, fmt.Errorf("failed to query messages: %w", err)
+		return nil, false, fmt.Errorf("failed to query messages: %w", err)
 	}
 	defer cursor.Close(ctx)
 
-	messages := make([]models.Message, 0)
+	messages = make([]models.Message, 0, limit+1)
 	for cursor.Next(ctx) {
 		var msg models.Message
 		if err := cursor.Decode(&msg); err != nil {
-			return nil, fmt.Errorf("failed to decode message: %w", err)
+			return nil, false, fmt.Errorf("failed to decode message: %w", err)
 		}
 		messages = append(messages, msg)
 	}
 	if err := cursor.Err(); err != nil {
-		return nil, fmt.Errorf("cursor error: %w", err)
+		return nil, false, fmt.Errorf("cursor error: %w", err)
 	}
 
-	return messages, nil
+	messages, hasMore = trimMessagePage(messages, limit)
+	return messages, hasMore, nil
 }
 
 // ============ CHAT MANAGEMENT ============

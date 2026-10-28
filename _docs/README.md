@@ -164,8 +164,14 @@ GET    /echo/v1/chats/hub/stats         - Get hub statistics (monitoring)
 ### Messages
 
 ```
-GET /echo/v1/messages/:chatID/messages   - Get chat messages with pagination
+GET /echo/v1/messages/:chatID/messages   - Get chat messages (cursor pagination)
 ```
+
+Messages come newest first. Query params: `limit` (1-100, default 50) and
+`before` (a message ID; omit it for the newest page). The response's
+`pagination` is `{ limit, count, hasMore, nextCursor }`: to load older
+messages, pass `nextCursor` back as `before`. `nextCursor` is `null` on the
+last page. Cursors stay stable while new messages arrive, unlike offsets.
 
 ### Group Management
 
@@ -270,8 +276,18 @@ Response:
 ## Performance Optimizations
 
 1. **Caching Layer** — User information cached with 5-minute TTL
-2. **Database Efficiency** — Optimized queries with proper indexing, minimal embedded data
-3. **WebSocket Optimizations** — Efficient connection pooling, automatic cleanup of inactive connections, thread-safe operations
+2. **Database Efficiency** — Minimal embedded data, and indexes created on startup by
+   `database.EnsureIndexes` (`internal/database/indexes.go`):
+   - `messages {chatId: 1, _id: -1}`: message history and its cursor
+   - `users {email: 1}` (unique): login and signup
+
+   They build in the background (10-minute timeout), so startup isn't blocked. Creating
+   them is idempotent; a failure on one collection doesn't stop the others, and is
+   logged while the server keeps running (for example duplicate emails blocking the
+   unique index). A concurrent duplicate signup returns `409`, not `500`.
+3. **Cursor Pagination** — Message history pages by `_id < before` on the index above,
+   so every page costs O(limit) and pages don't shift as new messages arrive
+4. **WebSocket Optimizations** — Efficient connection pooling, automatic cleanup of inactive connections, thread-safe operations
 
 ## Development Guidelines
 
