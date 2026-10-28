@@ -172,6 +172,8 @@ Messages come newest first. Query params: `limit` (1-100, default 50) and
 `pagination` is `{ limit, count, hasMore, nextCursor }`: to load older
 messages, pass `nextCursor` back as `before`. `nextCursor` is `null` on the
 last page. Cursors stay stable while new messages arrive, unlike offsets.
+Only participants of the chat can read it; anyone else gets `404 Chat not found`,
+the same as for a chat that doesn't exist.
 
 ### Group Management
 
