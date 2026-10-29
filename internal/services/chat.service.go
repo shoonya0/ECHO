@@ -658,28 +658,67 @@ func cleanupEmptyReaction(messageID bson.ObjectID, emoji string) {
 	database.DB.Collection(string(constants.MessageColl)).UpdateOne(ctx, filter, update)
 }
 
+// AddGroupMember adds users to a group chat as pending members. The acting
+// user must be an owner or admin of the chat. Users who are already
+// participants are left untouched, so their role and status are kept.
 func AddGroupMember(ctx context.Context, userID bson.ObjectID, chatID bson.ObjectID, participantIDs []bson.ObjectID) error {
 	filter := bson.M{
 		"_id":      chatID,
 		"chatType": string(constants.ChatTypeGroup),
 	}
 
-	count, err := database.DB.Collection(string(constants.ChatColl)).CountDocuments(ctx, filter)
+	var chat models.Chat
+	err := database.DB.Collection(string(constants.ChatColl)).FindOne(ctx, filter, options.FindOne().SetProjection(bson.M{
+		"participants": 1,
+	})).Decode(&chat)
 	if err != nil {
+		if err == mongo.ErrNoDocuments {
+			return fmt.Errorf("%w", ErrChatNotFound)
+		}
 		return fmt.Errorf("failed to get chat: %w", err)
 	}
-	if count == 0 {
-		return fmt.Errorf("%w", ErrChatNotFound)
+
+	actingParticipant, ok := chat.Participants[userID]
+	if !ok {
+		return fmt.Errorf("%w", ErrNotParticipant)
+	}
+	if actingParticipant.Role != string(constants.ChatRoleOwner) && actingParticipant.Role != string(constants.ChatRoleAdmin) {
+		return fmt.Errorf("%w: only owners and admins can add members", ErrPermissionDenied)
 	}
 
-	users, err := GetUsersByIDs(ctx, participantIDs)
+	var newIDs []bson.ObjectID
+	for _, id := range participantIDs {
+		if _, exists := chat.Participants[id]; !exists {
+			newIDs = append(newIDs, id)
+		}
+	}
+	if len(newIDs) == 0 {
+		return fmt.Errorf("%w", ErrAlreadyParticipant)
+	}
+
+	users, err := GetUsersByIDs(ctx, newIDs)
 	if err != nil {
 		return fmt.Errorf("failed to get users: %w", err)
+	}
+	if len(users) == 0 {
+		return fmt.Errorf("%w", ErrUserNotFound)
+	}
+
+	// Re-check the acting user's role and the targets' absence in the update
+	// itself, so a concurrent demotion or add between the read and the write
+	// can't be overridden.
+	updateFilter := bson.M{
+		"_id":      chatID,
+		"chatType": string(constants.ChatTypeGroup),
+		"participants." + userID.Hex() + ".role": bson.M{"$in": []string{
+			string(constants.ChatRoleOwner), string(constants.ChatRoleAdmin),
+		}},
 	}
 
 	// Build per-participant $set entries (merge, not replace)
 	setEntries := bson.M{"updatedAt": time.Now()}
 	for _, u := range users {
+		updateFilter["participants."+u.ID.Hex()] = bson.M{"$exists": false}
 		setEntries["participants."+u.ID.Hex()] = utils.NewParticipantWithDefaults(
 			string(constants.StatusPending),
 			string(constants.UserStatusOffline),
@@ -694,9 +733,12 @@ func AddGroupMember(ctx context.Context, userID bson.ObjectID, chatID bson.Objec
 		)
 	}
 
-	_, err = database.DB.Collection(string(constants.ChatColl)).UpdateOne(ctx, filter, bson.M{"$set": setEntries})
+	res, err := database.DB.Collection(string(constants.ChatColl)).UpdateOne(ctx, updateFilter, bson.M{"$set": setEntries})
 	if err != nil {
 		return fmt.Errorf("failed to update chat: %w", err)
+	}
+	if res.MatchedCount == 0 {
+		return fmt.Errorf("%w: chat changed while adding members", ErrPermissionDenied)
 	}
 
 	return nil

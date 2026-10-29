@@ -22,4 +22,5 @@ var (
 	ErrNoValidParticipants    = errors.New("no valid participants to remove")
 	ErrNotParticipant         = errors.New("you are not a participant of this chat")
 	ErrPermissionDenied       = errors.New("permission denied")
+	ErrAlreadyParticipant     = errors.New("users are already in the chat")
 )
