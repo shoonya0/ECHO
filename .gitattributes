@@ -1,0 +1,2 @@
+# Go tooling (gofmt, go vet) expects LF; keep it on Windows checkouts too.
+*.go text eol=lf
