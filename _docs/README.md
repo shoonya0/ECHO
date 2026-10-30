@@ -78,18 +78,18 @@ fan-out.
    - Permission handling per chat type
    - Real-time broadcasting integration
 
-3. **User Lookup Service** (`internal/services/user_lookup.service.go`) — NEW
-   - Efficient user display info caching
-   - Batch lookup operations
-   - 5-minute TTL cache
-   - Automatic cache invalidation
+3. **User & Contact Services** (`internal/services/user.service.go`, `contact.service.go`)
+   - Profiles, user suggestions and batched user lookups (`GetUsersByIDs`)
+   - Contact requests, favorites and blocking
+   - JWT revocation on logout (Redis blacklist with the token's remaining lifetime)
+   - The 5-minute user display-info cache lives in the hub (`UserInfoCache`)
 
 4. **PubSub Manager** (`internal/realtime/pubsub.go`)
    - Redis Pub/Sub for cross-instance messaging
    - Channel management (user:, chat:, presence:global, system:global)
    - Multi-instance coordination
 
-5. **Presence Service**
+5. **Presence Service** (`internal/realtime/presence.go`)
    - Real-time user status tracking
    - Activity monitoring
    - Automatic cleanup of inactive users
@@ -104,53 +104,127 @@ See also:
 
 - Go 1.24.3 or higher
 - MongoDB
-- Redis (optional, for enhanced presence and pub/sub features)
+- Redis (required: it backs token revocation on logout and WebSocket pub/sub;
+  the server exits at startup if it can't connect)
+- Docker (optional, to run MongoDB and Redis locally)
 
 ### Installation
 
 1. **Clone the Repository**
 
    ```bash
-   git clone <repository-url>
-   cd Echo
+   git clone https://github.com/shoonya0/ECHO.git
+   cd ECHO
    ```
 
-2. **Build the Application**
+2. **Start MongoDB and Redis**
 
    ```bash
-   go build -o build/echo-chat .
+   docker compose -f docker/docker-compose.yml up -d
    ```
+
+   This starts `echo-mongodb` (user/password `echo`/`echo`) on 27017 and `echo-redis`
+   on 6379.
 
 3. **Configure Environment**
 
    ```bash
-   # Required Environment Variables
-   PORT=8080
-   DB_URI=mongodb://localhost:27017
-   JWT_SECRET=your-secret-key
-   REDIS_URI=redis://localhost:6379  # Optional
+   cp .env.example .env
    ```
+
+   | Variable     | Default (`.env.example`)              | Notes                                  |
+   | ------------ | ------------------------------------- | -------------------------------------- |
+   | `PORT`       | `8080`                                |                                        |
+   | `DB_URI`     | `mongodb://echo:echo@localhost:27017` | Matches the docker-compose credentials |
+   | `REDIS_URI`  | `localhost:6379`                      | `host:port` or a `redis://`/`rediss://` URL |
+   | `REDIS_PASS` | empty                                 |                                        |
+   | `JWT_SECRET` | `echo-dev-secret`                     | Use a long random value outside local dev |
+   | `LOG_FILE`   | `cmd/server/logs/server.log`          | Leave empty to log to stdout           |
+   | `LOG_LEVEL`  | `debug`                               | `info` for deployment                  |
+
+   Real environment variables override `.env`.
 
 4. **Run the Server**
+
    ```bash
-   ./build/echo-chat
+   go run ./cmd/server
+   # or build a binary
+   go build -o build/echo-server ./cmd/server && ./build/echo-server
    ```
 
+   MongoDB indexes are created in the background on startup (see
+   [Performance Optimizations](#performance-optimizations)).
+
+5. **Reset local data (optional)**
+
+   ```bash
+   go run ./cmd/cleandb -dry-run   # show what would be wiped
+   go run ./cmd/cleandb            # wipe every MongoDB collection and flush Redis
+   ```
+
+   Local development only.
+
+### Deployment
+
+`Dockerfile` builds the server image, and `render.yaml` is a Render Blueprint (web service
+plus Render Key Value for Redis; MongoDB on Atlas). The health check is `GET /health`.
+
 ## API Endpoints
+
+Every route except `login`, `signup` and `/health` requires
+`Authorization: Bearer <jwt>`.
 
 ### Authentication
 
 ```
-POST /echo/v1/auth/login    - User login
-POST /echo/v1/auth/signup   - User registration
+POST /echo/v1/signup        - User registration (409 if the email is taken)
+POST /echo/v1/login         - User login, returns a 7-day JWT
+POST /echo/v1/auth/logout   - Revoke the current JWT (Redis blacklist)
+```
+
+### Health
+
+```
+GET /health                 - Liveness check, returns {"status":"ok"} (no auth)
 ```
 
 ### WebSocket (Real-Time Chat)
 
 ```
-GET /echo/v1/websocket/chat    - Main WebSocket endpoint (JWT via Authorization header)
-GET /echo/v1/websocket/notifications   - Notifications WebSocket (planned)
-GET /echo/v1/websocket/presence        - Presence WebSocket (planned)
+GET /echo/v1/ws/chat        - Main WebSocket endpoint (JWT via Authorization header)
+```
+
+### Profile
+
+```
+GET    /echo/v1/profile/         - Current user's profile
+PUT    /echo/v1/profile/         - Update current user's profile (whitelisted fields only)
+DELETE /echo/v1/profile/delete   - Delete current user's profile
+```
+
+### User Discovery
+
+```
+GET /echo/v1/users/suggestions   - User suggestions (paginated)
+GET /echo/v1/users/nearby        - Nearby users (stub, needs location)
+GET /echo/v1/users/popular       - Popular users (stub)
+GET /echo/v1/users/:id           - A user's public profile
+```
+
+### Contacts
+
+```
+GET    /echo/v1/users/contacts/                     - Contact list
+GET    /echo/v1/users/contacts/requests             - Incoming contact requests
+GET    /echo/v1/users/contacts/sent-requests        - Sent contact requests
+GET    /echo/v1/users/contacts/blocked              - Blocked users
+GET    /echo/v1/users/contacts/favorites            - Favorite contacts
+POST   /echo/v1/users/contacts/:targetUserId        - Send contact request
+PUT    /echo/v1/users/contacts/:requestId?action=accepted|declined - Answer a request
+DELETE /echo/v1/users/contacts/:contactId           - Remove contact
+POST   /echo/v1/users/contacts/blockUnblock/:userId - Block or unblock a user
+POST   /echo/v1/users/contacts/favorite/:userId     - Add to favorites
+DELETE /echo/v1/users/contacts/favorite/:userId     - Remove from favorites
 ```
 
 ### Chat Management
@@ -178,15 +252,30 @@ the same as for a chat that doesn't exist.
 ### Group Management
 
 ```
-POST   /echo/v1/groups/:groupID/add-members   - Add group members (admin)
+POST   /echo/v1/groups/:groupID/add-members   - Add group members (owner/admin)
 POST   /echo/v1/groups/:groupID/invites       - Create invite code
 GET    /echo/v1/groups/:groupID/invites       - List invite codes
-DELETE /echo/v1/groups/invites/:inviteID/     - Delete invite code
+DELETE /echo/v1/groups/invites/:inviteID      - Delete invite code
 GET    /echo/v1/groups/invites/:inviteID/joined       - Get joined users by invite
 POST   /echo/v1/groups/invites/:inviteID/:userID/send - Send invite to user
 POST   /echo/v1/groups/join/:inviteCode       - Join group via invite code
 GET    /echo/v1/groups/invites                - Get all invites of user
 ```
+
+How group membership works today:
+
+- The creator is the `owner` with `requestStatus: accepted`. Members added at creation
+  or through `add-members` / `invite_user` are stored in `participants` with
+  `requestStatus: pending` and read/write permissions.
+- `add-members` takes `{ "userIDs": ["..."] }`. The caller must be an `owner` or
+  `admin` of the group (`403` otherwise). Users already in the group are skipped,
+  so their role and status are kept. If every user is already in the group, the
+  call returns `409`.
+- Nothing reads `requestStatus` yet, and there is no endpoint to accept or decline a
+  group invite, so pending members already have full access. See
+  [Known Issues](#known-issues).
+- Invite codes expire after 24 hours. Joining by code adds the user as `accepted`;
+  it is rejected for anyone already in `participants`, including pending members.
 
 ## WebSocket Message Types (Summary)
 
@@ -200,12 +289,14 @@ For full protocol details, see [WEBSOCKET_PROTOCOL.md](./WEBSOCKET_PROTOCOL.md).
 - `mark_read` — Mark messages as read
 - `add_reaction` — Add emoji reaction
 - `remove_reaction` — Remove emoji reaction
-- `edit_message` — Edit a message (planned)
-- `delete_message` — Delete a message (planned)
-- `invite_user` — Invite user to chat (planned)
-- `remove_user` — Remove user from chat (planned)
-- `update_chat` — Update chat settings (planned)
-- `set_presence` — Set user presence
+- `invite_user` — Add users to a group (owner/admin only)
+- `remove_user` — Remove users from a group (owner/admin only)
+- `edit_message` — Edit a message (returns `NOT_IMPLEMENTED`)
+- `delete_message` — Delete a message (returns `NOT_IMPLEMENTED`)
+- `update_chat` — Update chat settings (returns `NOT_IMPLEMENTED`)
+
+`set_presence` is defined in the models but not handled; sending it returns
+`UNKNOWN_REQUEST`. Message history is loaded over REST, not the socket.
 
 ### Response Types (Server → Client)
 - `message` — New chat message
@@ -214,16 +305,24 @@ For full protocol details, see [WEBSOCKET_PROTOCOL.md](./WEBSOCKET_PROTOCOL.md).
 - `presence` — User presence update
 - `delivery` — Message delivery status
 - `reaction` — Message reaction event
+- `chat_updated` — Group membership changed (users invited or removed)
 - `response` — Request acknowledgment
 - `error` — Error notification
 
 ## Security Features
 
-- **JWT Authentication** (via Authorization header) for all connections
-- **Permission-Based Access Control** (role-based: owner, admin, member)
-- **Input Validation** for all requests (content length, type, attachments)
-- **Rate Limiting** protection
-- **CORS Support** (configurable)
+- **JWT Authentication** (HS256, `Authorization: Bearer` header) for every route except
+  login, signup and `/health`; logout revokes the token through a Redis blacklist
+- **Chat membership checks**: message history is returned only to participants
+  (non-members get `404`, so chat IDs can't be probed)
+- **Role-based group management**: owner, admin, member (see
+  [Known Issues](#known-issues) for gaps)
+- **Input Validation** for requests (content length, type, attachments; profile updates
+  limited to whitelisted fields)
+- **Passwords** hashed with bcrypt
+- **CORS**: any origin, credentials off (auth uses Bearer tokens, not cookies)
+
+There is no rate limiting.
 
 ## Error Codes
 
@@ -238,6 +337,8 @@ For full protocol details, see [WEBSOCKET_PROTOCOL.md](./WEBSOCKET_PROTOCOL.md).
 | `MESSAGE_FAILED`          | Failed to send message                |
 | `REACTION_FAILED`         | Failed to add/remove reaction         |
 | `READ_FAILED`             | Failed to mark messages as read       |
+| `INVITE_FAILED`           | Failed to add users to a group        |
+| `REMOVE_FAILED`           | Failed to remove users from a group   |
 | `NOT_IMPLEMENTED`         | Feature not yet implemented           |
 | `UNKNOWN_REQUEST`         | Unrecognized request type             |
 | `PARSE_ERROR`             | Failed to parse WebSocket message     |
@@ -245,24 +346,50 @@ For full protocol details, see [WEBSOCKET_PROTOCOL.md](./WEBSOCKET_PROTOCOL.md).
 
 ## Testing
 
-### Web Client Testing
+### Go Tests
 
-1. Open `test-websocket-chat.html` or `test-group-chat.html` in your browser
-2. Connect using your JWT token
-3. Test real-time messaging features
+```bash
+go test ./internal/... -count=1
+```
+
+Some service tests use a real MongoDB: they create a throwaway database and drop it
+afterwards. They use `TEST_DB_URI` (default: the docker-compose MongoDB) and are skipped
+when MongoDB isn't reachable.
+
+### API Contract Test
+
+`scripts/contract-test` exercises the REST and WebSocket API end to end with two
+throwaway users and records the shape of every response, so you can diff two runs:
+
+```bash
+cd scripts/contract-test && npm install
+node run.mjs http://localhost:8080 before.json
+node diff.mjs before.json after.json
+```
+
+### Load Test
+
+`scripts/load-test` is the WebSocket load harness behind the
+[performance figures](#performance--scalability); see its README.
 
 ### Manual WebSocket Testing
 
 ```bash
-wscat -c "ws://localhost:8080/echo/v1/websocket/chat" -H "Authorization: Bearer <jwt_token>"
+wscat -c "ws://localhost:8080/echo/v1/ws/chat" -H "Authorization: Bearer <jwt_token>"
 ```
 
 ## Monitoring
 
+### Health
+
+```bash
+curl http://localhost:8080/health
+```
+
 ### Hub Statistics
 
 ```bash
-curl http://localhost:8080/echo/v1/chats/hub/stats
+curl -H "Authorization: Bearer <jwt_token>" http://localhost:8080/echo/v1/chats/hub/stats
 ```
 
 Response:
@@ -290,6 +417,18 @@ Response:
 3. **Cursor Pagination** — Message history pages by `_id < before` on the index above,
    so every page costs O(limit) and pages don't shift as new messages arrive
 4. **WebSocket Optimizations** — Efficient connection pooling, automatic cleanup of inactive connections, thread-safe operations
+
+## Known Issues
+
+Open on GitHub; details are in each issue.
+
+| Issue | Summary | Status |
+| ----- | ------- | ------ |
+| [#9](https://github.com/shoonya0/ECHO/issues/9) | Invite codes aren't verified against the group before joining | Open |
+| [#5](https://github.com/shoonya0/ECHO/issues/5) | No way to accept/decline a group invite; pending members have full access | Open, blocked on #9 |
+
+Also not implemented yet: message editing/deletion, chat settings updates, the
+`set_presence` request, and the nearby/popular user lists.
 
 ## Development Guidelines
 

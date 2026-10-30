@@ -7,7 +7,7 @@ This document defines the WebSocket protocol for Echo's real-time chat system �
 ### Endpoint
 
 ```
-GET /echo/v1/websocket/chat
+GET /echo/v1/ws/chat
 ```
 
 ### Authentication
@@ -167,13 +167,49 @@ Status: Returns `NOT_IMPLEMENTED` error.
 
 Status: Returns `NOT_IMPLEMENTED` error.
 
-### 10. `invite_user` — Invite User to Chat (PLANNED)
+### 10. `invite_user` — Add Users to a Group
 
-Status: Returns `NOT_IMPLEMENTED` error.
+```json
+{
+  "type": "invite_user",
+  "chatId": "507f1f77bcf86cd799439011",
+  "metadata": { "userIds": ["user_id_1", "user_id_2"] },
+  "requestId": "unique_request_id"
+}
+```
 
-### 11. `remove_user` — Remove User from Chat (PLANNED)
+- The chat must be a group, and the caller must be its `owner` or `admin`.
+- Invalid IDs in `userIds` are skipped; at least one valid ID is required.
+- The users are added to `participants` as `pending` members with read/write
+  permissions. There is no accept step yet ([#5](https://github.com/shoonya0/ECHO/issues/5)).
+- Users who are already participants are skipped, so their role and status are
+  kept. If all of them are already in the chat, the request fails with
+  `INVITE_FAILED`.
+- The chat receives a `chat_updated` event (`data`: `chatId`, `inviterId`,
+  `inviterName`, `timestamp`). The caller gets a `response` with
+  `{ "action": "users_invited", "chatId", "invitedUsers": [...] }`.
+- Errors: `INVALID_REQUEST`, `INVALID_CHAT_ID`, `PERMISSION_DENIED`, `INVITE_FAILED`.
 
-Status: Returns `NOT_IMPLEMENTED` error.
+### 11. `remove_user` — Remove Users from a Group
+
+```json
+{
+  "type": "remove_user",
+  "chatId": "507f1f77bcf86cd799439011",
+  "metadata": { "userIds": ["user_id_1"] },
+  "requestId": "unique_request_id"
+}
+```
+
+- The caller must be an `owner` or `admin`. Users not in the chat, and the caller
+  themselves, are skipped.
+- Removed users lose the participant entry and the chat reference on their user
+  document; the participant count drops accordingly.
+- The chat receives a `chat_updated` event (`data`: `chatId`, `removedById`,
+  `removedBy`, `timestamp`). The caller gets a `response` with
+  `{ "action": "users_removed", "chatId", "removedUsers": [...] }`.
+- Errors: `INVALID_REQUEST` (also when no valid participant is left to remove),
+  `INVALID_CHAT_ID`, `PERMISSION_DENIED`, `REMOVE_FAILED`.
 
 ### 12. `update_chat` — Update Chat Settings (PLANNED)
 
@@ -303,6 +339,17 @@ Status: Returns `NOT_IMPLEMENTED` error.
 }
 ```
 
+### 8. `chat_updated` — Group Membership Changed
+
+Broadcast to the chat after `invite_user` or `remove_user`. `data` is either
+`{ chatId, inviterId, inviterName, timestamp }` or
+`{ chatId, removedById, removedBy, timestamp }`. The individual invited/removed IDs are
+in the caller's `response`, not in this event.
+
+### Unhandled request types
+
+`set_presence` is defined in the models but has no handler; it returns `UNKNOWN_REQUEST`.
+
 ## Chat Types & Permissions
 
 ### Direct Chats (`direct`)
@@ -350,6 +397,8 @@ Blocked or muted participants cannot send messages regardless of chat type.
 | `READ_FAILED`             | Failed to mark messages as read             |
 | `TYPING_FAILED`           | Failed to update typing status              |
 | `CHAT_CREATION_FAILED`    | Failed to create chat                       |
+| `INVITE_FAILED`           | Failed to add users to a group              |
+| `REMOVE_FAILED`           | Failed to remove users from a group         |
 | `NOT_IMPLEMENTED`         | Feature not yet implemented                 |
 | `UNKNOWN_REQUEST`         | Unrecognized request type                   |
 | `PARSE_ERROR`             | Failed to parse WebSocket message           |
@@ -368,11 +417,12 @@ class ChatClient {
   }
 
   connect() {
-    this.ws = new WebSocket(`ws://localhost:8080/echo/v1/websocket/chat`);
-    // Note: JWT is sent via Authorization header during HTTP upgrade,
-    // handled by the browser automatically if using cookie-based auth,
-    // or set via custom headers if the WebSocket client supports it.
-    // For manual testing, use wscat with -H flag.
+    this.ws = new WebSocket(`ws://localhost:8080/echo/v1/ws/chat`);
+    // Note: the server only accepts the JWT from the Authorization header
+    // of the upgrade request (no cookies or query parameter). The browser
+    // WebSocket API can't set that header, so this works from Node clients
+    // that accept headers (e.g. `ws`: new WebSocket(url, { headers })), the
+    // Android app (OkHttp), or wscat with -H, but not from a plain browser page.
 
     this.ws.onopen = () => console.log("Connected");
     this.ws.onmessage = (event) => this.handleMessage(JSON.parse(event.data));
