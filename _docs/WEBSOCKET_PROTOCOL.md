@@ -182,10 +182,8 @@ Status: Returns `NOT_IMPLEMENTED` error.
 - Invalid IDs in `userIds` are skipped; at least one valid ID is required.
 - The users are added to `participants` as `pending` members with read/write
   permissions. There is no accept step yet ([#5](https://github.com/shoonya0/ECHO/issues/5)).
-- On `main`, inviting someone who is already a participant resets them to a
-  pending `member`, which can demote the owner. PR
-  [#11](https://github.com/shoonya0/ECHO/pull/11) skips existing participants
-  instead; if all of them are already in the chat, the request fails with
+- Users who are already participants are skipped, so their role and status are
+  kept. If all of them are already in the chat, the request fails with
   `INVITE_FAILED`.
 - The chat receives a `chat_updated` event (`data`: `chatId`, `inviterId`,
   `inviterName`, `timestamp`). The caller gets a `response` with

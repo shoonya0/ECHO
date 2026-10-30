@@ -252,7 +252,7 @@ the same as for a chat that doesn't exist.
 ### Group Management
 
 ```
-POST   /echo/v1/groups/:groupID/add-members   - Add group members (see below)
+POST   /echo/v1/groups/:groupID/add-members   - Add group members (owner/admin)
 POST   /echo/v1/groups/:groupID/invites       - Create invite code
 GET    /echo/v1/groups/:groupID/invites       - List invite codes
 DELETE /echo/v1/groups/invites/:inviteID      - Delete invite code
@@ -267,13 +267,10 @@ How group membership works today:
 - The creator is the `owner` with `requestStatus: accepted`. Members added at creation
   or through `add-members` / `invite_user` are stored in `participants` with
   `requestStatus: pending` and read/write permissions.
-- `add-members` takes `{ "userIDs": ["..."] }`. On `main` it doesn't check the
-  caller's role, and re-adding an existing participant resets them to a pending
-  `member`, which can demote the owner
-  ([#8](https://github.com/shoonya0/ECHO/issues/8)). With the fix in PR
-  [#11](https://github.com/shoonya0/ECHO/pull/11), the caller must be an `owner`
-  or `admin` (`403` otherwise). Existing participants are skipped. If every user
-  is already in the group, the call returns `409`.
+- `add-members` takes `{ "userIDs": ["..."] }`. The caller must be an `owner` or
+  `admin` of the group (`403` otherwise). Users already in the group are skipped,
+  so their role and status are kept. If every user is already in the group, the
+  call returns `409`.
 - Nothing reads `requestStatus` yet, and there is no endpoint to accept or decline a
   group invite, so pending members already have full access. See
   [Known Issues](#known-issues).
@@ -427,10 +424,8 @@ Open on GitHub; details are in each issue.
 
 | Issue | Summary | Status |
 | ----- | ------- | ------ |
-| [#8](https://github.com/shoonya0/ECHO/issues/8) | `add-members` doesn't check that the caller is an owner/admin of the group | Fix in PR [#11](https://github.com/shoonya0/ECHO/pull/11) |
 | [#9](https://github.com/shoonya0/ECHO/issues/9) | Invite codes aren't verified against the group before joining | Open |
-| [#5](https://github.com/shoonya0/ECHO/issues/5) | No way to accept/decline a group invite; pending members have full access | Open, blocked on #8 and #9 |
-| [#4](https://github.com/shoonya0/ECHO/issues/4) | Auth `500` responses include raw internal error text | Fix in PR [#6](https://github.com/shoonya0/ECHO/pull/6) |
+| [#5](https://github.com/shoonya0/ECHO/issues/5) | No way to accept/decline a group invite; pending members have full access | Open, blocked on #9 |
 
 Also not implemented yet: message editing/deletion, chat settings updates, the
 `set_presence` request, and the nearby/popular user lists.
