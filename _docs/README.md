@@ -274,8 +274,10 @@ How group membership works today:
 - Nothing reads `requestStatus` yet, and there is no endpoint to accept or decline a
   group invite, so pending members already have full access. See
   [Known Issues](#known-issues).
-- Invite codes expire after 24 hours. Joining by code adds the user as `accepted`;
-  it is rejected for anyone already in `participants`, including pending members.
+- Invite codes expire after 24 hours. Joining by code adds the user as `accepted`.
+  The code must be one the group created and hasn't deleted or let expire;
+  anything else gets `400 Invalid invite`. Anyone already in `participants`,
+  including pending members, gets `409`.
 
 ## WebSocket Message Types (Summary)
 
@@ -424,8 +426,7 @@ Open on GitHub; details are in each issue.
 
 | Issue | Summary | Status |
 | ----- | ------- | ------ |
-| [#9](https://github.com/shoonya0/ECHO/issues/9) | Invite codes aren't verified against the group before joining | Open |
-| [#5](https://github.com/shoonya0/ECHO/issues/5) | No way to accept/decline a group invite; pending members have full access | Open, blocked on #9 |
+| [#5](https://github.com/shoonya0/ECHO/issues/5) | No way to accept/decline a group invite; pending members have full access | Open |
 
 Also not implemented yet: message editing/deletion, chat settings updates, the
 `set_presence` request, and the nearby/popular user lists.
