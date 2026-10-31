@@ -97,6 +97,8 @@ fan-out.
 See also:
 - [WebSocket Protocol Reference](./WEBSOCKET_PROTOCOL.md)
 - [Pub/Sub Architecture](./PUBSUB_ARCHITECTURE.md)
+- Change notes: [Access control fixes](./CHANGELOG/ACCESS_CONTROL_FIXES.md),
+  [Indexes and cursor pagination](./CHANGELOG/INDEXES_CURSOR_PAGINATION.md)
 
 ## Getting Started
 

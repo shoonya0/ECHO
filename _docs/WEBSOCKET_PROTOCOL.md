@@ -536,5 +536,5 @@ GET /echo/v1/chats/hub/stats
 - **Room-based broadcasting**: Messages only sent to clients subscribed to the relevant chat
 - **Channel-based hub**: Uses buffered Go channels (`Register`, `Unregister`) for thread-safe client management
 - **Auto-cleanup**: Inactive connections (no pong within 60s) are automatically removed
-- **User info caching**: 5-minute TTL cache with batch lookups via `UserLookupService`
-- **Redis Pub/Sub**: Optional cross-instance messaging via `PubSubManager` (see [PUBSUB_ARCHITECTURE.md](./PUBSUB_ARCHITECTURE.md))
+- **User info caching**: 5-minute TTL cache in the hub; misses are read from MongoDB one user at a time
+- **Redis Pub/Sub**: Required; every delivery goes through `PubSubManager`, including to clients on the same instance (see [PUBSUB_ARCHITECTURE.md](./PUBSUB_ARCHITECTURE.md))

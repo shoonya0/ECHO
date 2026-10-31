@@ -1,317 +1,181 @@
+# Real-time Architecture (WebSocket + Redis Pub/Sub)
 
 ## Overview
 
-This document describes the WebSocket architecture using Redis Pub/Sub for efficient single and group chat messaging across multiple server instances.
+Each server instance keeps its own WebSocket connections and uses Redis Pub/Sub to
+reach clients connected to other instances. A message is saved to MongoDB first, then
+published to the chat's Redis channel; every instance with members of that chat
+online delivers it to its local connections.
 
-## Architecture Components
+Redis is required: the server exits at startup if it can't connect.
 
-### 1. WebSocket Hub (`internal/realtime/hub.go`)
+## Components
 
-Centralized WebSocket connection hub managing all client connections.
+### WebSocket hub (`internal/realtime/hub.go`)
 
-#### Key Features:
+A process-wide singleton, `realtime.GetHubInstance()`, started once in
+`cmd/server/main.go` with `hub.Start()`.
 
-- **Client Management**: Maps clients by ID, chat membership, and user ID
-- **Channel-Based Registration**: Uses buffered Go channels (`Register <- client`, `Unregister <- client`) for thread-safe client lifecycle
-- **Message Broadcasting**: `BroadcastToChat()` sends messages to all clients in a chat room
-- **User Info Caching**: 5-minute TTL cache for user display information
-- **Thread Safety**: sync.RWMutex for concurrent access
-- **Auto-Join**: Clients auto-join their active chats on connection
+- **Client lifecycle**: clients are added and removed through the buffered
+  `Register` and `Unregister` channels (capacity 1000), handled by one run loop.
+- **Indexes**: `Clients` (by connection ID), `UserClients` (by user ID, so one user can
+  have several connections) and `ChatClients` (by chat ID), guarded by a
+  `sync.RWMutex`.
+- **Auto-join on connect**: the hub reads the chat IDs in the user's `chats` field
+  (`services.GetUserChats`) and subscribes to `chat:<id>` for each. See
+  [Which chats a user receives](#which-chats-a-user-receives).
+- **User info cache**: display info used in events, cached for 5 minutes.
+- **Background jobs** (every 30 seconds): write each connected user's presence to Redis,
+  and disconnect clients that have been inactive for 5 minutes.
 
-### 2. PubSubManager (`internal/realtime/pubsub.go`)
+### Pub/Sub manager (`internal/realtime/pubsub.go`)
 
-Handles all Redis pub/sub operations for cross-instance communication.
+Owns the Redis subscriptions and routes incoming Redis messages to local clients.
+Each instance subscribes to only the channels its connected clients need, and
+unsubscribes when the last client of a chat leaves.
 
-#### Key Features:
+### Presence (`internal/realtime/presence.go`)
 
-- **Channel Management**: Manages subscriptions to user, chat, and system channels
-- **Message Routing**: Routes messages based on channel type
-- **Instance Coordination**: Enables communication between server instances
-- **Presence Synchronization**: Keeps user presence consistent across instances
+An in-memory map of `realtime.UserPresence` per user for this instance, plus the
+`presence:<userID>` Redis hash written by the hub's sync job (2-minute TTL).
 
-#### Channel Types:
+### Chat service (`internal/services/chat.service.go`)
 
-```
-user:<userID>          - Direct messages to specific users
-chat:<chatID>          - Group chat messages
-presence:global        - Global presence updates
-system:global          - System-wide announcements
-instance:<instanceID>  - Instance-specific messages
-```
+Persists messages, typing state and read receipts, then calls
+`services.BroadcastToChat(chatID, msg)`. That goes through the `Broadcaster`
+interface, which `main.go` sets to the hub with `services.SetBroadcaster(hub)`, so the
+services package doesn't import `realtime`.
 
-### 3. Chat Service (`internal/services/chat.service.go`)
+## Redis channels
 
-Handles message persistence, chat management, and integration with the hub for real-time broadcasting.
+| Channel | Published by | Used for |
+| ------- | ------------ | -------- |
+| `chat:<chatID>` | `BroadcastToChat` (messages, typing, read receipts, reactions, `chat_updated`), presence fan-out | Everything delivered in real time. Direct chats use it too: a direct chat is a chat with two participants. |
+| `presence:global` | The hub, when a user connects or disconnects | The instance holding that user's connections re-publishes the update to each of their chats' `chat:<id>` channels. |
+| `user:<userID>` | Nothing yet | Subscribed per connected user. The routing to that user's connections exists, but no code publishes to it. |
+| `system:global` | Nothing yet | Subscribed by every instance; the handler only logs. |
+| `instance:<instanceID>` | Nothing yet | Subscribed by each instance for itself; the handler only logs. |
 
-#### Key Features:
+## Message flow
 
-- **Message Persistence**: Saves messages to MongoDB before broadcasting
-- **Chat Creation**: Creates direct, group, and channel chats
-- **Permission Validation**: Checks participant roles and permissions
-- **Real-Time Integration**: Calls `BroadcastToChat()` after message persistence
-
-### 4. Presence Service (`internal/realtime/presence.go`)
-
-Manages real-time user presence and status tracking.
-
-## Message Flow
-
-### Single User Chat (Direct Message)
-
-```
-User A → Server 1 → Redis (publish to user:userB)
-                    Redis → Server 2 → User B
-```
-
-If both users are on the same server, the message is delivered locally without Redis involvement.
-
-### Group Chat
+### Chat message (direct or group)
 
 ```
-User A → Server 1 → Mongo (persist) → Redis (publish to chat:chatX)
-                                       Redis → Server 1 → local clients in chatX
-                                       Redis → Server 2 → remote clients in chatX
+Client A ── send_message ──► Instance 1
+                              ├─ MongoDB: insert message, update chat's lastMessage
+                              └─ Redis PUBLISH chat:<chatID>
+                                   ├─► Instance 1 ─► local clients in ChatClients[chatID]
+                                   └─► Instance 2 ─► local clients in ChatClients[chatID]
 ```
 
-### Presence Updates
+The sender's own instance receives the message back through Redis, the same as every
+other instance; there is no separate local shortcut.
+
+### Presence
 
 ```
-User A → Server 1 (connect/disconnect)
-         Server 1 → Redis (publish presence:global)
-         Redis → All Servers → All Users (presence update)
+User A connects to Instance 1
+  └─ PUBLISH presence:global
+       └─ Instance 1 (holds A's active chats) ─► PUBLISH chat:<id> for each chat
 ```
 
-## Implementation Details
+### Liveness
 
-### Hub Initialization
+The server pings each connection every 54 seconds. A connection that sends nothing,
+not even a pong, for 60 seconds hits its read deadline and is closed. Separately, the
+hub's cleanup job removes clients with no activity for 5 minutes.
+
+### Slow clients
+
+Each connection has a send buffer of 10 messages (`Client.Send`). Delivery uses
+`Client.TrySend`, which never blocks: when the buffer is full the client is
+disconnected and unregistered instead of stalling delivery to everyone else.
+
+## Which chats a user receives
+
+On connect, a client is subscribed to the chats listed in the user's `chats` field.
+That field is written when:
+
+- a direct chat is created (both users),
+- a group is created (the creator only),
+- a user joins a group with an invite code.
+
+It is cleared for users removed from a group. Members added at group creation or with
+`add-members` / `invite_user` are stored in the chat's `participants` with
+`requestStatus: pending` but are **not** added to their own `chats` list, so they don't
+get that group's live events. They can still load its history over REST, because that
+check uses `participants`. Accepting or declining an invite is
+[#5](https://github.com/shoonya0/ECHO/issues/5).
+
+`join_chat` subscribes the client to a single chat during a session; it only ever
+creates or opens a direct chat between the caller and `senderId`.
+
+## Startup and shutdown
 
 ```go
-// In cmd/server/main.go
+// cmd/server/main.go (abridged)
+database.ConnectRedis(ctx)          // fatal on failure
 hub := realtime.GetHubInstance()
-hub.Start() // Launches the hub run loop with channel-based client management
+services.SetBroadcaster(hub)
+hub.Start()                         // fatal on failure
+// ... HTTP server runs until SIGINT/SIGTERM ...
+srv.Shutdown(shutdownCtx)           // 10s timeout
+database.CloseRedis()
+database.DisconnectMongo(shutdownCtx)
 ```
 
-The hub uses a singleton pattern accessed via `realtime.GetHubInstance()`.
+The hub has no `Stop` method; it ends with the process. Connected clients see the
+socket close and should reconnect, possibly to another instance.
 
-### Connecting a Client
-
-```go
-// When a client connects (in websocket.controller.go)
-client := &models.Client{
-    ID:         uuid.New().String(),
-    UserID:     user.ID,
-    Connection: conn,
-    Send:       make(chan models.WebSocketMessage, 10),
-}
-
-// Update user info cache
-hub.UpdateUserInfoCache(user.ID.Hex(), models.UserDisplayInfo{
-    Email:       user.Email,
-    Username:    user.Username,
-    DisplayName: user.Profile.DisplayName,
-})
-
-// Register with hub (via channel)
-hub.Register <- client
-
-// Update presence
-realtime.GetPresenceInstance().Set(services.UserPresence{...})
-```
-
-### Sending Messages
-
-```go
-// Send a message (chat.service.go calls this after persisting)
-err := services.BroadcastToChat(chatID, models.WebSocketMessage{
-    Type:      models.WSMessageTypeChat,
-    ChatID:    chatID,
-    UserID:    senderID.Hex(),
-    Data:      messageData,
-    Timestamp: time.Now(),
-})
-```
-
-### Handling Typing Indicators
-
-```go
-// Broadcast typing status
-err := services.UpdateTypingStatus(ctx, chatID, userID, isTyping)
-// This internally persists typing state and broadcasts via BroadcastToChat()
-```
-
-## Scalability Benefits
-
-### 1. Horizontal Scaling
-
-- Add more server instances without code changes
-- Load balance WebSocket connections across instances
-- Messages automatically routed to correct instances via Redis Pub/Sub
-
-### 2. Efficient Resource Usage
-
-- Only subscribe to relevant channels
-- Minimize message duplication
-- Local delivery for same-instance clients
-
-### 3. Fault Tolerance
-
-- If one instance fails, others continue operating
-- Clients can reconnect to any available instance
-- Presence updates ensure accurate online status
-
-### 4. Performance Optimizations
-
-- Batch presence updates every 30 seconds
-- Cache user display info with TTL
-- Clean up inactive connections automatically
-
-## Redis Channel Patterns
-
-### User Channels
-
-- **Purpose**: Direct messages, notifications
-- **Pattern**: `user:<userID>`
-- **Subscribers**: All instances where user has active connections
-
-### Chat Channels
-
-- **Purpose**: Group chat messages
-- **Pattern**: `chat:<chatID>`
-- **Subscribers**: All instances with clients in that chat
-
-### Global Channels
-
-- **Purpose**: System-wide events
-- **Patterns**:
-  - `presence:global` - User online/offline status
-  - `system:global` - Maintenance, announcements
-
-## Configuration
-
-### Redis Connection
-
-```go
-rdb := redis.NewClient(&redis.Options{
-    Addr:     "localhost:6379",
-    Password: "", // Set if required
-    DB:       0,
-})
-```
-
-See `internal/db/redis.go` and `config/main.config.go` for actual Redis configuration via environment variables (`REDIS_URI`, `REDIS_PASS`).
-
-### Hub Initialization
-
-```go
-func main() {
-    // Initialize Redis client
-    // ...
-    
-    // Get hub instance
-    hub := realtime.GetHubInstance()
-
-    // Start hub with pub/sub
-    hub.Start()
-
-    // Graceful shutdown
-    defer hub.Stop()
-}
-```
-
-## Best Practices
-
-### 1. Channel Naming
-
-- Use consistent prefixes (`user:`, `chat:`, etc.)
-- Include relevant IDs in channel names
-- Keep channel names short for performance
-
-### 2. Message Size
-
-- Keep messages under 1MB
-- Load message history over REST with cursor pagination (`?before=<nextCursor>`), not over the socket
-- Compress large payloads if needed
-
-### 3. Subscription Management
-
-- Subscribe only to necessary channels
-- Unsubscribe when no longer needed
-- Monitor subscription count
-
-### 4. Error Handling
-
-- Implement retry logic for failed publishes
-- Log subscription/unsubscription errors
-- Monitor Redis connection health
-
-### 5. Security
-
-- Validate channel access permissions
-- Sanitize message content
-- Implement rate limiting
+Redis is configured with `REDIS_URI` (a `host:port` or a `redis://` / `rediss://` URL,
+default `localhost:6379`) and `REDIS_PASS`; see `internal/config/config.go` and
+`internal/database/redis.go`.
 
 ## Monitoring
 
-### Key Metrics
-
-- Active connections per instance
-- Messages per second (pub/sub)
-- Channel subscription count
-- Redis memory usage
-- Message delivery latency
-
-### Health Checks
+`GET /echo/v1/chats/hub/stats` (requires a JWT) returns this instance's numbers only:
 
 ```bash
-curl http://localhost:8080/echo/v1/chats/hub/stats
+curl -H "Authorization: Bearer <jwt_token>" http://localhost:8080/echo/v1/chats/hub/stats
 ```
 
 ```json
 {
-  "totalClients": 150,
-  "totalRooms": 45,
-  "totalUsers": 120,
-  "timestamp": "2024-01-01T12:00:00Z"
+  "success": true,
+  "message": "Hub statistics retrieved successfully",
+  "data": {
+    "instanceId": "…",
+    "totalClients": 150,
+    "totalChats": 45,
+    "totalUsers": 120,
+    "cacheSize": 120,
+    "subscribedChannels": 167,
+    "channels": ["presence:global", "system:global", "instance:…", "user:…", "chat:…"],
+    "timestamp": "2026-10-31T12:00:00Z"
+  }
 }
 ```
 
 ## Troubleshooting
 
-### Common Issues
+1. **A member gets no live messages for a group.** Check that the group is in their
+   user document's `chats` field; pending members aren't
+   ([see above](#which-chats-a-user-receives)). Then check that `chat:<id>` appears in
+   `channels` from hub stats on the instance they're connected to.
+2. **Clients get disconnected under load.** A full 10-message send buffer drops the
+   client; look for `Client send channel full, disconnecting` in the logs.
+3. **Messages not delivered at all.** Check Redis connectivity; every delivery,
+   including same-instance, goes through Redis.
 
-1. **Messages not delivered**
-   - Check Redis connectivity
-   - Verify channel subscriptions
-   - Check client connection status
+## Not implemented
 
-2. **High memory usage**
-   - Monitor subscription count
-   - Check for subscription leaks
-   - Review message size and frequency
+- Rate limiting on the socket or REST API.
+- Offline delivery or push notifications: a message reaches only connected clients;
+  others load it from history.
+- Publishing to `user:<id>`, `system:global` or `instance:<id>`.
+- Message editing and deletion, and the `set_presence` request.
 
-3. **Presence not updating**
-   - Verify Redis pub/sub working
-   - Check presence sync interval
-   - Review cleanup routines
+## Related documentation
 
-## Future Enhancements
-
-1. **Message Persistence**
-   - Store messages in MongoDB before publishing (already implemented)
-   - Implement message history API (already implemented)
-   - Add offline message delivery
-
-2. **Advanced Features**
-   - Message encryption
-   - File transfer support
-   - Voice/video signaling
-
-3. **Performance Improvements**
-   - Connection pooling
-   - Message batching
-   - Compression algorithms
-
-## Related Documentation
-
-- [WebSocket Protocol Reference](./WEBSOCKET_PROTOCOL.md) — Full message types and API
-- [README](./README.md) — Project overview and getting started
+- [WebSocket Protocol Reference](./WEBSOCKET_PROTOCOL.md) — message types and payloads
+- [README](./README.md) — project overview, setup and REST API
