@@ -204,7 +204,10 @@ Status: Returns `NOT_IMPLEMENTED` error.
 - The caller must be an `owner` or `admin`. Users not in the chat, and the caller
   themselves, are skipped.
 - Removed users lose the participant entry and the chat reference on their user
-  document; the participant count drops accordingly.
+  document; the participant count drops accordingly (it isn't raised on add, so it
+  can go negative, [#16](https://github.com/shoonya0/ECHO/issues/16)).
+- A removed user who is still connected keeps receiving the chat's live messages
+  until they reconnect ([#14](https://github.com/shoonya0/ECHO/issues/14)).
 - The chat receives a `chat_updated` event (`data`: `chatId`, `removedById`,
   `removedBy`, `timestamp`). The caller gets a `response` with
   `{ "action": "users_removed", "chatId", "removedUsers": [...] }`.
@@ -536,5 +539,5 @@ GET /echo/v1/chats/hub/stats
 - **Room-based broadcasting**: Messages only sent to clients subscribed to the relevant chat
 - **Channel-based hub**: Uses buffered Go channels (`Register`, `Unregister`) for thread-safe client management
 - **Auto-cleanup**: Inactive connections (no pong within 60s) are automatically removed
-- **User info caching**: 5-minute TTL cache with batch lookups via `UserLookupService`
-- **Redis Pub/Sub**: Optional cross-instance messaging via `PubSubManager` (see [PUBSUB_ARCHITECTURE.md](./PUBSUB_ARCHITECTURE.md))
+- **User info caching**: 5-minute TTL cache in the hub; misses are read from MongoDB one user at a time
+- **Redis Pub/Sub**: Required; every delivery goes through `PubSubManager`, including to clients on the same instance (see [PUBSUB_ARCHITECTURE.md](./PUBSUB_ARCHITECTURE.md))
