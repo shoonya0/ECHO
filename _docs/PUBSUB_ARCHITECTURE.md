@@ -100,12 +100,17 @@ That field is written when:
 - a group is created (the creator only),
 - a user joins a group with an invite code.
 
-It is cleared for users removed from a group. Members added at group creation or with
-`add-members` / `invite_user` are stored in the chat's `participants` with
-`requestStatus: pending` but are **not** added to their own `chats` list, so they don't
-get that group's live events. They can still load its history over REST, because that
-check uses `participants`. Accepting or declining an invite is
-[#5](https://github.com/shoonya0/ECHO/issues/5).
+It is cleared for users removed from a group, but only in the database: a removed
+member who is still connected stays in the hub's `ChatClients` for that group and
+keeps receiving its live messages until they reconnect ([#14](https://github.com/shoonya0/ECHO/issues/14)). Subscriptions
+are also never checked against `participants`, so a bad write to `chats` alone grants
+live access.
+
+Members added at group creation or with `add-members` / `invite_user` are stored in
+the chat's `participants` with `requestStatus: pending` but are **not** added to their
+own `chats` list, so they don't get that group's live events ([#17](https://github.com/shoonya0/ECHO/issues/17)). They can
+still load its history over REST, because that check uses `participants`. Accepting or
+declining an invite is [#5](https://github.com/shoonya0/ECHO/issues/5).
 
 `join_chat` subscribes the client to a single chat during a session; it only ever
 creates or opens a direct chat between the caller and `senderId`.
@@ -160,8 +165,8 @@ curl -H "Authorization: Bearer <jwt_token>" http://localhost:8080/echo/v1/chats/
 
 1. **A member gets no live messages for a group.** Check that the group is in their
    user document's `chats` field; pending members aren't
-   ([see above](#which-chats-a-user-receives)). Then check that `chat:<id>` appears in
-   `channels` from hub stats on the instance they're connected to.
+   ([see above](#which-chats-a-user-receives), [#17](https://github.com/shoonya0/ECHO/issues/17)). Then check that
+   `chat:<id>` appears in `channels` from hub stats on the instance they're connected to.
 2. **Clients get disconnected under load.** A full 10-message send buffer drops the
    client; look for `Client send channel full, disconnecting` in the logs.
 3. **Messages not delivered at all.** Check Redis connectivity; every delivery,

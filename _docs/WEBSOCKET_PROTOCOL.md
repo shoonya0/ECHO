@@ -204,7 +204,10 @@ Status: Returns `NOT_IMPLEMENTED` error.
 - The caller must be an `owner` or `admin`. Users not in the chat, and the caller
   themselves, are skipped.
 - Removed users lose the participant entry and the chat reference on their user
-  document; the participant count drops accordingly.
+  document; the participant count drops accordingly (it isn't raised on add, so it
+  can go negative, [#16](https://github.com/shoonya0/ECHO/issues/16)).
+- A removed user who is still connected keeps receiving the chat's live messages
+  until they reconnect ([#14](https://github.com/shoonya0/ECHO/issues/14)).
 - The chat receives a `chat_updated` event (`data`: `chatId`, `removedById`,
   `removedBy`, `timestamp`). The caller gets a `response` with
   `{ "action": "users_removed", "chatId", "removedUsers": [...] }`.
