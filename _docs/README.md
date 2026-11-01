@@ -272,10 +272,19 @@ How group membership works today:
   so their role and status are kept. If every user is already in the group, the
   call returns `409`.
 - Nothing reads `requestStatus` yet, and there is no endpoint to accept or decline a
-  group invite, so pending members already have full access. See
-  [Known Issues](#known-issues).
-- Invite codes expire after 24 hours. Joining by code adds the user as `accepted`;
-  it is rejected for anyone already in `participants`, including pending members.
+  group invite ([#5](https://github.com/shoonya0/ECHO/issues/5)). Pending members can read the history over REST like
+  any member, but the group isn't added to their own `chats` list, so they get no
+  live events for it ([#17](https://github.com/shoonya0/ECHO/issues/17)).
+- Removing a member updates the database, but a removed member who is still
+  connected keeps receiving the group's live messages until they reconnect
+  ([#14](https://github.com/shoonya0/ECHO/issues/14)).
+- Invite codes expire after 24 hours. Joining by code adds the user as `accepted`.
+  The code must be one the group created and hasn't deleted or let expire;
+  anything else gets `400 Invalid invite`. Anyone already in `participants`,
+  including pending members, gets `409`.
+- Invite codes are encrypted with a key that is in this public repo, so anyone can
+  read the group ID and the creator's user ID and display name from a code
+  ([#15](https://github.com/shoonya0/ECHO/issues/15)).
 
 ## WebSocket Message Types (Summary)
 
@@ -424,8 +433,11 @@ Open on GitHub; details are in each issue.
 
 | Issue | Summary | Status |
 | ----- | ------- | ------ |
-| [#9](https://github.com/shoonya0/ECHO/issues/9) | Invite codes aren't verified against the group before joining | Open |
-| [#5](https://github.com/shoonya0/ECHO/issues/5) | No way to accept/decline a group invite; pending members have full access | Open, blocked on #9 |
+| [#14](https://github.com/shoonya0/ECHO/issues/14) | Removed group members keep receiving live messages until they reconnect | Open |
+| [#5](https://github.com/shoonya0/ECHO/issues/5) | No way to accept/decline a group invite; pending members have full access | Open |
+| [#17](https://github.com/shoonya0/ECHO/issues/17) | Pending group members never receive the group's live messages | Open, part of #5 |
+| [#15](https://github.com/shoonya0/ECHO/issues/15) | Invite codes are encrypted with a key hard-coded in the public repo | Open |
+| [#16](https://github.com/shoonya0/ECHO/issues/16) | Group `participantCount` drifts and can go negative | Open |
 
 Also not implemented yet: message editing/deletion, chat settings updates, the
 `set_presence` request, and the nearby/popular user lists.

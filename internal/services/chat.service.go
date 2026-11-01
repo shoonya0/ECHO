@@ -986,13 +986,17 @@ func SendInviteToUser(ctx context.Context, actingUserID bson.ObjectID, inviteID 
 	return nil
 }
 
+// JoinGroupByInvite adds userID to the group named in the invite code. The
+// code must be stored on that group, not deleted and not expired: decrypting
+// alone proves nothing, since anyone holding the key can mint a code.
 func JoinGroupByInvite(ctx context.Context, userID bson.ObjectID, inviteID string) error {
 	chatObjectID, expireTime, err := parseInviteCode(inviteID)
 	if err != nil {
 		return err
 	}
 
-	if expireTime.Before(time.Now()) || expireTime.After(time.Now().Add(24*time.Hour)) {
+	now := time.Now()
+	if expireTime.Before(now) || expireTime.After(now.Add(24*time.Hour)) {
 		return fmt.Errorf("%w", ErrInvalidInvite)
 	}
 
@@ -1004,7 +1008,7 @@ func JoinGroupByInvite(ctx context.Context, userID bson.ObjectID, inviteID strin
 		return fmt.Errorf("failed to check if user is in the chat: %w", err)
 	}
 	if count > 0 {
-		return fmt.Errorf("user already in the chat")
+		return fmt.Errorf("%w", ErrAlreadyParticipant)
 	}
 
 	user, err := GetUserBasicInfo(ctx, userID)
@@ -1034,19 +1038,34 @@ func JoinGroupByInvite(ctx context.Context, userID bson.ObjectID, inviteID strin
 		},
 	}
 
-	_, err = database.DB.Collection(string(constants.ChatColl)).UpdateOne(ctx,
-		bson.M{"_id": chatObjectID, "inviteCode.inviteCode": inviteID},
+	res, err := database.DB.Collection(string(constants.ChatColl)).UpdateOne(ctx,
+		bson.M{
+			"_id":                          chatObjectID,
+			"chatType":                     string(constants.ChatTypeGroup),
+			"participants." + userID.Hex(): bson.M{"$exists": false},
+			"inviteCode": bson.M{"$elemMatch": bson.M{
+				"inviteCode":  inviteID,
+				"deleted":     bson.M{"$ne": true},
+				"expiredDate": bson.M{"$gt": now},
+			}},
+		},
 		updateInviteCodeUserIDs,
 	)
 	if err != nil {
 		return fmt.Errorf("failed to update invite code user IDs: %w", err)
 	}
+	if res.MatchedCount == 0 {
+		return fmt.Errorf("%w", ErrInvalidInvite)
+	}
 
 	// Add chat ref to user
-	_, _ = database.DB.Collection(string(constants.UserColl)).UpdateOne(ctx,
+	_, err = database.DB.Collection(string(constants.UserColl)).UpdateOne(ctx,
 		bson.M{"_id": userID},
 		bson.M{"$set": bson.M{"chats." + chatObjectID.Hex(): 0}},
 	)
+	if err != nil {
+		return fmt.Errorf("failed to add chat to user: %w", err)
+	}
 
 	return nil
 }
@@ -1076,23 +1095,23 @@ func GetAllInvitesOfUser(ctx context.Context, userID bson.ObjectID) ([]models.Ch
 func parseInviteCode(inviteCode string) (bson.ObjectID, time.Time, error) {
 	raw, err := hex.DecodeString(inviteCode)
 	if err != nil {
-		return bson.ObjectID{}, time.Time{}, fmt.Errorf("failed to decode invite ID: %w", err)
+		return bson.ObjectID{}, time.Time{}, fmt.Errorf("%w: failed to decode invite ID: %v", ErrInvalidInvite, err)
 	}
 
 	info, err := utils.Decrypt(raw)
 	if err != nil {
-		return bson.ObjectID{}, time.Time{}, fmt.Errorf("failed to decrypt invite ID: %w", err)
+		return bson.ObjectID{}, time.Time{}, fmt.Errorf("%w: failed to decrypt invite ID: %v", ErrInvalidInvite, err)
 	}
 
 	chatIDStr, _, _ := strings.Cut(info, "_")
 	chatID, err := bson.ObjectIDFromHex(chatIDStr)
 	if err != nil {
-		return bson.ObjectID{}, time.Time{}, fmt.Errorf("failed to parse chat ID from invite: %w", err)
+		return bson.ObjectID{}, time.Time{}, fmt.Errorf("%w: failed to parse chat ID from invite: %v", ErrInvalidInvite, err)
 	}
 
 	expiresAt, err := time.Parse(time.RFC3339, info[strings.LastIndex(info, "_")+1:])
 	if err != nil {
-		return bson.ObjectID{}, time.Time{}, fmt.Errorf("failed to parse expire time: %w", err)
+		return bson.ObjectID{}, time.Time{}, fmt.Errorf("%w: failed to parse expire time: %v", ErrInvalidInvite, err)
 	}
 
 	return chatID, expiresAt, nil
