@@ -1,0 +1,6 @@
+#!/bin/sh
+# Fast pre-commit gate: docs-check errors, then the stack's fast checks (pre-commit.mjs).
+# Enabled once per clone with:
+#   git config core.hooksPath .githooks
+# Git for Windows runs this through its bundled sh, so it works on Windows and macOS.
+exec node "$(git rev-parse --show-toplevel)/.githooks/pre-commit.mjs"
