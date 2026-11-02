@@ -1,0 +1,123 @@
+{
+  "attribution": {
+    "commit": "",
+    "pr": "",
+    "sessionUrl": false
+  },
+  "env": {
+    "CLAUDE_VERIFY_CMD": "node scripts/verify.mjs",
+    "CLAUDE_VERIFY_MAX_BLOCKS": "3"
+  },
+  "permissions": {
+    "allow": [
+      "Bash(node scripts/verify.mjs)",
+      "Bash(node scripts/verify.mjs --full)",
+      "Bash(node scripts/docs-check.mjs)",
+      "Bash(go build ./...)",
+      "Bash(go vet ./...)",
+      "Bash(go test *)",
+      "Bash(gofmt -l *)",
+      "Bash(golangci-lint run *)",
+      "Bash(git status)",
+      "Bash(git diff *)",
+      "Bash(git log *)",
+      "Bash(gh pr checks *)",
+      "Bash(code-review-graph *)"
+    ]
+  },
+  "hooks": {
+    "SessionStart": [
+      {
+        "matcher": "",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node",
+            "args": [
+              "${CLAUDE_PROJECT_DIR}/.claude/hooks/session-context.mjs"
+            ],
+            "timeout": 10
+          }
+        ]
+      }
+    ],
+    "PreToolUse": [
+      {
+        "matcher": "Edit|Write|NotebookEdit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node",
+            "args": [
+              "${CLAUDE_PROJECT_DIR}/.claude/hooks/protect-files.mjs"
+            ],
+            "timeout": 10
+          }
+        ]
+      },
+      {
+        "matcher": "Bash|PowerShell",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node",
+            "args": [
+              "${CLAUDE_PROJECT_DIR}/.claude/hooks/guard-shell.mjs"
+            ],
+            "timeout": 10
+          },
+          {
+            "type": "command",
+            "command": "node",
+            "args": [
+              "${CLAUDE_PROJECT_DIR}/.claude/hooks/git-guard.mjs"
+            ],
+            "timeout": 10
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "Edit|Write",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node",
+            "args": [
+              "${CLAUDE_PROJECT_DIR}/.claude/hooks/format-on-edit.mjs"
+            ],
+            "timeout": 30
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "matcher": "",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node",
+            "args": [
+              "${CLAUDE_PROJECT_DIR}/.claude/hooks/stop-verify.mjs"
+            ],
+            "timeout": 900
+          },
+          {
+            "type": "command",
+            "command": "node",
+            "args": [
+              "${CLAUDE_PROJECT_DIR}/.claude/hooks/stop-state.mjs"
+            ],
+            "timeout": 60
+          }
+        ]
+      }
+    ]
+  },
+  "enabledPlugins": {
+    "context7@claude-plugins-official": true,
+    "security-guidance@claude-plugins-official": true
+  }
+}

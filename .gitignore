@@ -24,3 +24,12 @@ scripts/contract-test/*.json
 .idea
 .vscode
 
+
+# AI harness: local state
+app-setup/
+.code-review-graph/
+agent-browser.json
+.agent/
+.claude/settings.local.json
+CLAUDE.local.md
+.scaffold-tmp/
