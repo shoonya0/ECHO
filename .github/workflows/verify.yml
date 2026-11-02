@@ -1,0 +1,52 @@
+# .github/workflows/verify.yml: runs the project's full check on every push to the
+# default branch and on every pull request, on each target OS.
+#
+# Adapted for ECHO (Go): default branch main, Linux only (the server deploys to Render).
+#
+# Keep `on:` keys (push / pull_request / schedule / workflow_dispatch) at the top level.
+# A key placed under `jobs:` makes GitHub reject the workflow, and every run then has 0 jobs.
+# After the first push, confirm with: gh run list --workflow verify.yml  (expect jobs > 0)
+
+name: verify
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: verify-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    name: verify (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false # keep every OS leg running: shared vs platform-specific failures matter
+      matrix:
+        os: [ubuntu-latest] # e.g. [windows-latest, macos-latest] for desktop apps
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # docs-check --base needs the base branch and the PR's commits
+
+      # --- Docs tree (playbook 11): PRs only, once per run -----------------
+      # Fails when the PR changes a feature's code without updating its state.md / tasks.md,
+      # or adds an over-budget doc. Waive the stale check with [docs-skip] in a commit message.
+      - name: docs-check (PR)
+        if: github.event_name == 'pull_request' && strategy.job-index == 0
+        run: node scripts/docs-check.mjs --strict --base origin/${{ github.base_ref }}
+
+      # --- Go -------------------------------------------------------------
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - run: go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.14.0
+      - run: node scripts/verify.mjs --full
+
