@@ -301,8 +301,29 @@ for (const [file, entry] of info) {
 }
 
 // --base: keep size, depth and orphan-doc warnings only for files this branch changed.
+// A "too big" warning also needs the branch to have added the file or made it longer:
+// an inherited oversized doc that only gets renamed or a small edit doesn't block a PR.
 if (changed) {
-  findings = findings.filter((f) => f.level === 'error' || f.msg.startsWith('stale state') || changed.has(f.file));
+  const mergeBase = git('merge-base', BASE, 'HEAD').stdout?.trim();
+  const renamedFrom = new Map(
+    // -C --find-copies-harder: a doc moved away and replaced by a new file of the same
+    // name shows as a copy (C), not a rename (R).
+    lines(git('diff', '--name-status', '-C', '--find-copies-harder', '--relative', `${BASE}...HEAD`))
+      .map((l) => l.split('\t'))
+      .filter((p) => /^[RC]/.test(p[0]) && p.length === 3)
+      .map(([, from, to]) => [to, from]),
+  );
+  const linesAtBase = (file) => {
+    if (!mergeBase) return null;
+    const r = git('show', `${mergeBase}:${renamedFrom.get(file) || file}`);
+    return r.status === 0 ? r.stdout.split(/\r?\n/).length : null; // null: new in this branch
+  };
+  const grewHere = (file) => {
+    const before = linesAtBase(file);
+    return before === null || info.get(path.join(ROOT, file))?.lines > before;
+  };
+  findings = findings.filter((f) => f.level === 'error' || f.msg.startsWith('stale state')
+    || (changed.has(f.file) && (!f.msg.startsWith('too big') || grewHere(f.file))));
 }
 if (skipStale) process.stderr.write(`docs-check: [docs-skip] found in ${BASE}..HEAD; stale-state check waived\n`);
 
