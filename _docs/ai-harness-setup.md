@@ -69,7 +69,7 @@ other status is final.
 | H15 | Optional extras | SKIPPED | not requested |
 | V1–V5 | Restart + live checks | DONE | SessionStart hook printed Active work; guard-shell blocked a test command; graph MCP `semantic_search_nodes` answered; `claude mcp list` → code-review-graph connected |
 | V6 | Completion report | DONE | below |
-| V7 | Commit + PR | TODO | waits for the user |
+| V7 | Commit + PR | DONE | 9 commits pushed to `chore/ai-harness`; PR #44; CI `verify (ubuntu-latest)` pass after the docs-check fix `38c5b34`; merge waits for the user |
 
 ## Test baseline (EXISTING)
 

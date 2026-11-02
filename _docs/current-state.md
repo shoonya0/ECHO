@@ -1,6 +1,7 @@
-# ECHO: current state (snapshot 2026-11-01)
+# ECHO: current state (snapshot 2026-11-02)
 
-Snapshot taken at `e1291b2` on `chore/ai-harness` (branched from `main`). One page.
+Snapshot taken at `38c5b34` on `chore/ai-harness` (app code unchanged since `main` at
+`e1291b2`). One page.
 Architecture: [architecture-overview.md](./architecture-overview.md).
 
 ## Active work
@@ -9,9 +10,11 @@ Architecture: [architecture-overview.md](./architecture-overview.md).
 and with a link to exactly one feature state.md. Updated by /close-increment and
 /feature-docs update. -->
 
-- **Feature:** none yet (set by `/feature-docs start`) · AI harness setup
-- **Next step:** fix #18 (group creators get role "member"), then #19 (hub map races)
-- **Updated:** 2026-11-01 at `e1291b2`
+- **Feature:** none yet (set by `/feature-docs start`) · AI harness setup done, PR #44
+  open (CI green), waiting for the user to approve the merge
+- **Next step:** merge #44, then fix #18 (group creators get role "member"), then #19
+  (hub map races)
+- **Updated:** 2026-11-02 at `38c5b34`
 
 ## What a user can do today (VERIFIED by reading the code)
 
@@ -31,6 +34,8 @@ and with a link to exactly one feature state.md. Updated by /close-increment and
 - Run: `go run ./cmd/server` (port 8080, `GET /health`)
 - Fast check: `node scripts/verify.mjs` · Full (adds `-race`): `node scripts/verify.mjs --full`
 - DB tests run only when MongoDB is reachable; otherwise they skip (VERIFIED: 2 skips).
+- CI: `.github/workflows/verify.yml` runs `verify.mjs --full` on ubuntu-latest for PRs
+  and pushes to `main` (VERIFIED: passes on PR #44, run 41396021500).
 
 ## Test baseline (at `e1291b2`, 2026-11-01, Windows, no MongoDB/Redis)
 
