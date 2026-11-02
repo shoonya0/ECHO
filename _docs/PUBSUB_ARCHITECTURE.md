@@ -314,4 +314,4 @@ curl http://localhost:8080/echo/v1/chats/hub/stats
 ## Related Documentation
 
 - [WebSocket Protocol Reference](./WEBSOCKET_PROTOCOL.md) — Full message types and API
-- [README](./README.md) — Project overview and getting started
+- [Product overview](./product-overview.md) — Project overview and getting started
