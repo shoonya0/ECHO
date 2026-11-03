@@ -10,11 +10,11 @@ Architecture: [architecture-overview.md](./architecture-overview.md).
 and with a link to exactly one feature state.md. Updated by /close-increment and
 /feature-docs update. -->
 
-- **Feature:** none yet (set by `/feature-docs start`) · AI harness setup done, PR #44
-  open (CI green), waiting for the user to approve the merge
-- **Next step:** merge #44, then fix #18 (group creators get role "member"), then #19
-  (hub map races)
-- **Updated:** 2026-11-02 at `38c5b34`
+- **Feature:** none yet (set by `/feature-docs start`) · fixing #18 on
+  `fix/18-group-owner-role` (AI harness merged in #44)
+- **Next step:** merge the #18 PR (creators become owner; startup backfill for existing
+  groups; CI now runs the DB tests against MongoDB), then fix #19 (hub map races)
+- **Updated:** 2026-11-03 at `2fe4947` + branch `fix/18-group-owner-role`
 
 ## What a user can do today (VERIFIED by reading the code)
 
@@ -24,7 +24,8 @@ and with a link to exactly one feature state.md. Updated by /close-increment and
 - Direct chats and group chats; send messages over the WebSocket; cursor-paged history.
 - Typing, read receipts and reactions over the WebSocket.
 - Group invite codes: create, list, delete, send to a user, join.
-- **Broken:** adding/removing group members fails for everyone (#18).
+- **Broken on `main`:** adding/removing group members fails for everyone (#18; fix in
+  review on `fix/18-group-owner-role`).
 - Not implemented: edit/delete message, update chat (`NOT_IMPLEMENTED`).
 
 ## How to build, run, test
@@ -33,9 +34,11 @@ and with a link to exactly one feature state.md. Updated by /close-increment and
 - Config: `cp .env.example .env` (ASSUMED: the defaults match docker-compose)
 - Run: `go run ./cmd/server` (port 8080, `GET /health`)
 - Fast check: `node scripts/verify.mjs` · Full (adds `-race`): `node scripts/verify.mjs --full`
-- DB tests run only when MongoDB is reachable; otherwise they skip (VERIFIED: 2 skips).
+- DB tests run only when MongoDB is reachable; otherwise they skip locally. With
+  `TEST_DB_REQUIRED=1` an unreachable DB fails them instead.
 - CI: `.github/workflows/verify.yml` runs `verify.mjs --full` on ubuntu-latest for PRs
-  and pushes to `main` (VERIFIED: passes on PR #44, run 41396021500).
+  and pushes to `main`, with a MongoDB 7 service and `TEST_DB_REQUIRED=1` (added on
+  `fix/18-group-owner-role`).
 
 ## Test baseline (at `e1291b2`, 2026-11-01, Windows, no MongoDB/Redis)
 
