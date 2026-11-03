@@ -56,6 +56,13 @@ func main() {
 		if err := database.EnsureIndexes(indexCtx); err != nil {
 			log.WithError(err).Error("Failed to ensure MongoDB indexes; queries will run without them")
 		}
+		// #18: groups created before the fix have no owner role; idempotent.
+		n, err := services.BackfillGroupOwnerRoles(indexCtx)
+		if err != nil {
+			log.WithError(err).Error("Failed to backfill group owner roles")
+		} else if n > 0 {
+			log.WithField("groups", n).Info("Backfilled group owner roles")
+		}
 	}()
 	// Redis backs token revocation and WebSocket pub/sub, so it is required.
 	if err := database.ConnectRedis(ctx); err != nil {
