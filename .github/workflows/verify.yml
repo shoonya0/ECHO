@@ -31,6 +31,23 @@ jobs:
       fail-fast: false # keep every OS leg running: shared vs platform-specific failures matter
       matrix:
         os: [ubuntu-latest] # e.g. [windows-latest, macos-latest] for desktop apps
+    # MongoDB for the DB tests (internal/services/*_db_test.go). Same throwaway
+    # credentials as docker/docker-compose.yml; TEST_DB_REQUIRED makes a missing DB
+    # fail the run instead of skipping the tests.
+    services:
+      mongodb:
+        image: mongo:7
+        ports:
+          - 27017:27017
+        env:
+          MONGO_INITDB_ROOT_USERNAME: echo
+          MONGO_INITDB_ROOT_PASSWORD: echo
+        options: >-
+          --health-cmd "mongosh --quiet --eval 'db.adminCommand(\"ping\")'"
+          --health-interval 5s --health-timeout 5s --health-retries 20
+    env:
+      TEST_DB_URI: mongodb://echo:echo@localhost:27017
+      TEST_DB_REQUIRED: "1"
     steps:
       - uses: actions/checkout@v4
         with:
