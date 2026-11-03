@@ -128,7 +128,10 @@ func NewChatWithDefaults(id bson.ObjectID, chatType string) models.Chat {
 	}
 }
 
-func NewParticipantWithDefaults(requestStatus string, onlineStatus string, requestedBy bson.ObjectID, permissions []string, userInfo models.ContactUserInfo) models.ParticipantEmbed {
+// NewParticipantWithDefaults builds a chat participant. role is a constants.ChatRole
+// ("owner", "admin", "member"); callers must choose it, since the owner/admin checks in
+// AddGroupMember and RemoveGroupMember read it (#18).
+func NewParticipantWithDefaults(role string, requestStatus string, onlineStatus string, requestedBy bson.ObjectID, permissions []string, userInfo models.ContactUserInfo) models.ParticipantEmbed {
 	return models.ParticipantEmbed{
 		RequestStatus: requestStatus,
 		OnlineStatus:  onlineStatus,
@@ -138,7 +141,7 @@ func NewParticipantWithDefaults(requestStatus string, onlineStatus string, reque
 		UserInfo:      userInfo,
 		LastSeen:      time.Now(),
 		IsMuted:       false,
-		Role:          "member",
+		Role:          role,
 		CreatedAt:     time.Now(),
 		UpdatedAt:     time.Now(),
 		JoinedAt:      time.Now(),

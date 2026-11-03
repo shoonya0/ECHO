@@ -233,34 +233,46 @@ func CreateDirectChat(ctx context.Context, targetUserID bson.ObjectID) (*models.
 	return &existingChat, nil
 }
 
-func CreateGroupChat(ctx context.Context, chatName, description string, participantIDs []bson.ObjectID) (*models.Chat, error) {
-	creator := ctx.Value(constants.UserDataKey).(models.LoginUserResponse)
-	if creator == (models.LoginUserResponse{}) {
-		return nil, fmt.Errorf("invalid user data")
-	}
+// newGroupParticipants builds the participants of a new group: the creator as the
+// accepted owner, every invitee as a pending member. A creator who also lists
+// themselves as an invitee stays owner.
+func newGroupParticipants(creator models.LoginUserResponse, invitees []models.LoginUserResponse) map[bson.ObjectID]models.ParticipantEmbed {
+	perms := []string{string(constants.ChatPermissionRead), string(constants.ChatPermissionWrite)}
+	participants := make(map[bson.ObjectID]models.ParticipantEmbed, len(invitees)+1)
 
-	participants := make(map[bson.ObjectID]models.ParticipantEmbed)
-
-	participants[creator.ID] = utils.NewParticipantWithDefaults(string(constants.StatusAccepted), string(constants.UserStatusOffline), creator.ID, []string{string(constants.ChatPermissionRead), string(constants.ChatPermissionWrite)}, models.ContactUserInfo{
+	participants[creator.ID] = utils.NewParticipantWithDefaults(string(constants.ChatRoleOwner), string(constants.StatusAccepted), string(constants.UserStatusOffline), creator.ID, perms, models.ContactUserInfo{
 		UserID:      creator.ID,
 		DisplayName: creator.Profile.DisplayName,
 		Username:    creator.Username,
 		Avatar:      creator.Profile.Avatar,
 	})
 
-	users, err := GetUsersByIDs(ctx, participantIDs)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get users: %w", err)
-	}
-
-	for _, u := range users {
-		participants[u.ID] = utils.NewParticipantWithDefaults(string(constants.StatusPending), string(constants.UserStatusOffline), creator.ID, []string{string(constants.ChatPermissionRead), string(constants.ChatPermissionWrite)}, models.ContactUserInfo{
+	for _, u := range invitees {
+		if u.ID == creator.ID {
+			continue
+		}
+		participants[u.ID] = utils.NewParticipantWithDefaults(string(constants.ChatRoleMember), string(constants.StatusPending), string(constants.UserStatusOffline), creator.ID, perms, models.ContactUserInfo{
 			UserID:      u.ID,
 			DisplayName: u.Profile.DisplayName,
 			Username:    u.Username,
 			Avatar:      u.Profile.Avatar,
 		})
 	}
+	return participants
+}
+
+func CreateGroupChat(ctx context.Context, chatName, description string, participantIDs []bson.ObjectID) (*models.Chat, error) {
+	creator := ctx.Value(constants.UserDataKey).(models.LoginUserResponse)
+	if creator == (models.LoginUserResponse{}) {
+		return nil, fmt.Errorf("invalid user data")
+	}
+
+	users, err := GetUsersByIDs(ctx, participantIDs)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get users: %w", err)
+	}
+
+	participants := newGroupParticipants(creator, users)
 
 	chat := utils.NewChatWithDefaults(creator.ID, string(constants.ChatTypeGroup))
 	chat.Participants = participants
@@ -720,6 +732,7 @@ func AddGroupMember(ctx context.Context, userID bson.ObjectID, chatID bson.Objec
 	for _, u := range users {
 		updateFilter["participants."+u.ID.Hex()] = bson.M{"$exists": false}
 		setEntries["participants."+u.ID.Hex()] = utils.NewParticipantWithDefaults(
+			string(constants.ChatRoleMember),
 			string(constants.StatusPending),
 			string(constants.UserStatusOffline),
 			userID,
@@ -1013,6 +1026,7 @@ func JoinGroupByInvite(ctx context.Context, userID bson.ObjectID, inviteID strin
 	}
 
 	userParticipant := utils.NewParticipantWithDefaults(
+		string(constants.ChatRoleMember),
 		string(constants.StatusAccepted),
 		string(constants.UserStatusOffline),
 		userID,
