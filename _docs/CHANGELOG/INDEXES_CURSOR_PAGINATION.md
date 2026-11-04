@@ -1,4 +1,9 @@
-# MongoDB Indexes and Cursor Pagination
+# Change note: MongoDB indexes and cursor pagination
+
+> **In short:** MongoDB got two indexes, so common lookups are fast. Message history now
+> loads page by page from a marker instead of counting from the start, so deep pages stay
+> fast and no message is shown twice. This changed the API. Everything below still matches
+> the code.
 
 ## Indexes (`internal/database/indexes.go`)
 
