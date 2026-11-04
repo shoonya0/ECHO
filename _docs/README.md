@@ -1,21 +1,44 @@
 # ECHO: docs index
 
-Linked from CLAUDE.md. This page is a table of contents: one line per doc or feature, no
-detail. Read top-down and stop as soon as you have what the task needs.
+ECHO is the server for a real-time chat app. This page is the map of its docs. Find what
+you need, read that page, and stop when you have your answer.
 
 ## Start here
 
-| Need | Read |
+| I want to | Read |
 |---|---|
-| Where the project stands, active work, test baseline | [current-state.md](./current-state.md) |
-| Product overview: features, performance numbers, API summary | [product-overview.md](./product-overview.md) |
-| Packages, flows, data model, target layers, riskiest areas | [architecture-overview.md](./architecture-overview.md) |
-| Pub/sub and WebSocket hub internals | [PUBSUB_ARCHITECTURE.md](./PUBSUB_ARCHITECTURE.md) |
-| WebSocket request and event contract | [WEBSOCKET_PROTOCOL.md](./WEBSOCKET_PROTOCOL.md) |
-| Increment log, written by `/close-increment` (turn into a link once it exists) | `status/increments.md` |
-| How the AI harness was set up, what's deferred, playbook version | [ai-harness-setup.md](./ai-harness-setup.md) |
+| Understand what ECHO is and what works today | [product-overview.md](./product-overview.md) |
+| Run it on my computer | [getting-started.md](./getting-started.md) |
+| See where the project stands, active work, test baseline | [current-state.md](./current-state.md) |
+| Look up a word I don't know | [glossary.md](./glossary.md) |
+
+## Build a client app
+
+| I want to | Read |
+|---|---|
+| Call the REST API | [rest-api.md](./rest-api.md) |
+| Learn how the WebSocket works, with all error codes | [WEBSOCKET_PROTOCOL.md](./WEBSOCKET_PROTOCOL.md) |
+| See every request an app can send | [websocket-requests.md](./websocket-requests.md) |
+| See every event the server sends | [websocket-events.md](./websocket-events.md) |
+| Start from working code | [websocket-client-example.md](./websocket-client-example.md) |
+
+## Work on the server
+
+| I want to | Read |
+|---|---|
+| Learn the code layout, main flows, data model, target layers, riskiest areas | [architecture-overview.md](./architecture-overview.md) |
+| Learn how live messages move between servers | [PUBSUB_ARCHITECTURE.md](./PUBSUB_ARCHITECTURE.md) |
+| Read the increment log, written by `/close-increment` (turn into a link once it exists) | `status/increments.md` |
+| See how the AI tooling was set up and what's deferred | [ai-harness-setup.md](./ai-harness-setup.md) |
+
+Bugs are tracked as [GitHub issues](https://github.com/shoonya0/ECHO/issues). These docs
+describe what the code does today, bugs included, and point to the issue (for example
+`#23`). They don't describe fixes that haven't happened yet.
 
 ## Change notes
+
+Short records of past changes. They explain why something changed, and each one says what
+is no longer true.
 
 | Note | Topic |
 |---|---|
@@ -35,7 +58,9 @@ One row per feature that has its own docs folder. Status: ⏳ planned · 🟡 in
 ## Rules for these docs
 
 - One fact, one home. Other docs link to it instead of repeating it.
+- When a doc and the code disagree, the code wins. Fix the doc.
+- Write for someone new to the project: short sentences, and explain each new word.
 - Feature docs live next to the feature's code (`<folder>/_docs/`), or in
   `_docs/features/<feature>/` when the feature has no single folder.
-- Over budget (index 80, state 120, other docs 200 lines)? Split it into a folder with
-  its own `README.md` index. Run `node scripts/docs-check.mjs` after any docs change.
+- Size limits: index 80 lines, state 120, other docs 200. Over the limit? Split the doc.
+  Run `node scripts/docs-check.mjs` after any docs change.

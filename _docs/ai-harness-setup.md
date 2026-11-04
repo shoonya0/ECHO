@@ -1,8 +1,13 @@
 # AI harness setup log
 
+**In plain words:** the "AI harness" is the tooling that keeps AI-assisted work on this
+project safe and checked: hooks, the `verify` script, CI and the project skills. This page
+records how it was set up on 2026-11-01. You only need it to change that tooling. To work
+on the app itself, start at the [docs index](./README.md).
+
 This is the setup agent's record and resume point. If the setup is interrupted, start
 the agent again with the same prompt and it continues from the first `TODO` row. Every
-other status is final.
+other status is final. The rows below are a log of that time, so they aren't updated later.
 
 | Field | Value |
 |---|---|
@@ -73,7 +78,7 @@ other status is final.
 
 ## Test baseline (EXISTING)
 
-See [current-state.md](./current-state.md#test-baseline-at-e1291b2-2026-11-01-windows-no-mongodbredis).
+See [current-state.md](./current-state.md#test-baseline).
 
 ## Decisions made by the user
 

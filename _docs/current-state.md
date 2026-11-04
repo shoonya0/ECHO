@@ -1,8 +1,9 @@
-# ECHO: current state (snapshot 2026-11-02)
+# ECHO: current state
 
-Snapshot taken at `38c5b34` on `chore/ai-harness` (app code unchanged since `main` at
-`e1291b2`). One page.
-Architecture: [architecture-overview.md](./architecture-overview.md).
+A one-page snapshot of where the project stands. Last checked on 2026-11-04 at `17ec08b`
+on `main`. To learn what the product does, read
+[product-overview.md](./product-overview.md). For the code, read
+[architecture-overview.md](./architecture-overview.md).
 
 ## Active work
 
@@ -10,65 +11,82 @@ Architecture: [architecture-overview.md](./architecture-overview.md).
 and with a link to exactly one feature state.md. Updated by /close-increment and
 /feature-docs update. -->
 
-- **Feature:** none yet (set by `/feature-docs start`) · fixing #18 on
-  `fix/18-group-owner-role` (AI harness merged in #44)
-- **Next step:** merge the #18 PR (creators become owner; startup backfill for existing
-  groups; CI now runs the DB tests against MongoDB), then fix #19 (hub map races)
-- **Updated:** 2026-11-03 at `2fe4947` + branch `fix/18-group-owner-role`
+- **Feature:** none yet (set by `/feature-docs start`) · docs rewritten in plain language
+  on `docs/plain-language-rewrite`
+- **Next step:** merge the docs PR, then fix #19 (hub map races)
+- **Updated:** 2026-11-04 at `17ec08b` + branch `docs/plain-language-rewrite`
 
-## What a user can do today (VERIFIED by reading the code)
+## Where things stand
 
-- Sign up, log in (7-day JWT), log out (token blacklisted in Redis).
-- Read and update their profile; look up other users; get suggestions.
-- Contacts: send/accept/decline requests, remove, block/unblock, favorites.
-- Direct chats and group chats; send messages over the WebSocket; cursor-paged history.
-- Typing, read receipts and reactions over the WebSocket.
-- Group invite codes: create, list, delete, send to a user, join.
-- **Broken on `main`:** adding/removing group members fails for everyone (#18; fix in
-  review on `fix/18-group-owner-role`).
-- Not implemented: edit/delete message, update chat (`NOT_IMPLEMENTED`).
+The core product works: accounts, profiles, contacts, direct chats, group chats, live
+messages, message history, typing, read receipts, reactions and invite codes. Many of
+these still have open bugs. The full table is in
+[product-overview.md](./product-overview.md#what-works-today).
+
+Not built yet: editing or deleting messages, changing chat settings, and accepting or
+declining a group invite. The full list is in
+[product-overview.md](./product-overview.md#not-built-yet).
+
+## Recently finished
+
+- **#18 (PR #45):** group creators now get the `owner` role, so adding and removing group
+  members works again. Groups created before the fix are repaired when the server starts.
+  CI now runs the database tests against a real MongoDB.
+- **PR #44:** added the AI tooling, the `verify` script and CI. See
+  [ai-harness-setup.md](./ai-harness-setup.md).
 
 ## How to build, run, test
 
-- Local services: `docker compose -f docker/docker-compose.yml up -d` (MongoDB 7, Redis 7)
-- Config: `cp .env.example .env` (ASSUMED: the defaults match docker-compose)
-- Run: `go run ./cmd/server` (port 8080, `GET /health`)
-- Fast check: `node scripts/verify.mjs` · Full (adds `-race`): `node scripts/verify.mjs --full`
-- DB tests run only when MongoDB is reachable; otherwise they skip locally. With
-  `TEST_DB_REQUIRED=1` an unreachable DB fails them instead.
-- CI: `.github/workflows/verify.yml` runs `verify.mjs --full` on ubuntu-latest for PRs
-  and pushes to `main`, with a MongoDB 7 service and `TEST_DB_REQUIRED=1` (added on
-  `fix/18-group-owner-role`).
+Step-by-step commands are in [getting-started.md](./getting-started.md). The one command
+to remember is `node scripts/verify.mjs`.
 
-## Test baseline (at `e1291b2`, 2026-11-01, Windows, no MongoDB/Redis)
+## Test baseline
+
+Run on 2026-11-04 at `17ec08b`, on Windows, without MongoDB or Redis running. Compare new
+runs against this table by test name.
 
 | Command | Duration | Result | Known failures (by name) |
 |---|---|---|---|
-| `go build ./...` | 16s | pass | — |
+| `go build ./...` | 13s | pass | — |
 | `go vet ./...` | 3s | pass | — |
 | `gofmt -l cmd internal` | <1s | pass (no files) | — |
-| `go test ./...` | 2s | pass; skipped: `TestAddGroupMemberAuthorization`, `TestGetChatMessagesRequiresMembership` (no DB) | — |
-| `go test -race ./...` | 14s | pass (same skips) | — |
-| `golangci-lint run ./...` (v2.14) | 20s | **28 issues**: errcheck 21, staticcheck 7 | not blocking: verify lints only new code (`--new-from-merge-base=origin/main`) |
+| `go test ./...` | 8s | pass; skipped: `TestAddGroupMemberAuthorization`, `TestGetChatMessagesRequiresMembership`, `TestCreateGroupChatCreatorCanAddMembers`, `TestBackfillGroupOwnerRoles` (no DB) | — |
+| `go test -race ./...` | 17s | pass (same skips) | — |
+| `golangci-lint run ./...` (v2.14) | 2s (cached) | **28 issues**: errcheck 21, staticcheck 7 | not blocking: verify lints only new code (`--new-from-merge-base=origin/main`) |
 
-Compare new runs by test name. The race detector passes only because no test exercises
-the hub concurrently; #19 has a reproducer.
+- The four skipped tests need MongoDB. They ran and passed in CI at `17ec08b`.
+- The race test passes only because no test uses the hub from several places at once.
+  #19 explains how to reproduce the problem.
 
 ## Open decisions
 
+These need a choice before the linked issues can be fixed.
+
 | # | Decision needed | Options | Blocking? |
 |---|---|---|---|
-| 1 | Single source of truth for chat membership | `participants` only / keep `users.chats` in sync | #14, #17 |
-| 2 | Block model | one-sided `blocked` + `blockedBy` | #26 |
-| 3 | Account deletion | soft delete + anonymize / hard delete + cleanup | #35 |
-| 4 | Mongo transactions | require replica set (Atlas yes, local compose no) | #37 |
+| 1 | Where chat membership is stored | `participants` only / keep `users.chats` in sync | #14, #17 |
+| 2 | How blocks are stored | one-sided `blocked` + `blockedBy` | #26 |
+| 3 | What deleting an account does | soft delete + anonymize / hard delete + cleanup | #35 |
+| 4 | MongoDB transactions | require a replica set (Atlas yes, local compose no) | #37 |
 
 ## Known issues and risks
 
-Open issues: #5, #9, #14–#17 (filed earlier) and #18–#43 (code review 2026-11-01). The
-highest priority: #18, #19, #23, #26, #34. Map: [architecture-overview.md](./architecture-overview.md#riskiest-areas).
+There are 31 open issues. Fix these first: #19, #23, #26, #34. Where each risk sits in the
+code: [architecture-overview.md](./architecture-overview.md#riskiest-areas).
+
+| Area | The problem, in short | Issues |
+|---|---|---|
+| Live connections | The server can crash or leak resources under load, and missed live messages can't be detected | #19, #20, #21, #22, #43 |
+| Chat access | Typing, read receipts and reactions don't check membership; hub stats show too much | #23, #24 |
+| Groups | Members are never asked to accept, and live delivery doesn't match who is in the group | #5, #14, #16, #17, #28 |
+| Invite codes | Codes can be forged, and the invite endpoints lack permission checks | #9, #15, #29, #30 |
+| Accounts | Bans and deletions don't take effect at once; signup and delete have data problems | #33, #34, #35, #36 |
+| Contacts and blocking | Blocks can be undone by the blocked person and aren't enforced in chats | #26, #27, #38, #39 |
+| Online status and privacy | Online status is unreliable, and privacy settings aren't applied | #31, #32 |
+| Messages and data | Reaction counts drift, writes can half-finish, and some lists grow without limit | #25, #37, #42 |
+| Limits and errors | No rate or size limits on the WebSocket; some replies expose internal error text | #40, #41 |
 
 ## Next task
 
-- Fix #18 on `fix/18-group-owner-role` with a DB test that creates a group through
-  `CreateGroupChat` and adds a member as the creator.
+Fix #19: write a failing test under `go test -race` first, then protect the hub maps with
+`hub.Mutex`.
