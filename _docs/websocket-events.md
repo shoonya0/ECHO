@@ -20,7 +20,7 @@ The `response` comes in three shapes, so read them carefully.
 }
 ```
 
-**Reply to `send_message`.** Here `requestId` is only inside `data`:
+**Reply to `send_message`.** Here `requestId` is only inside `data` (#47):
 
 ```json
 {
@@ -88,7 +88,7 @@ couldn't read your message. All codes are listed in
 }
 ```
 
-- This event has no sender name, avatar or mentions. Find the sender by `senderId`.
+- This event has no sender name, avatar or mentions (#50). Find the sender by `senderId`.
   Messages loaded [over REST](./rest-api.md#messages) include a `sender` object.
 - `attachments` appears only when the message has some.
 - You also get this event for your own messages.
@@ -158,7 +158,7 @@ couldn't read your message. All codes are listed in
 }
 ```
 
-These are about live connections, not group membership. `username` is always empty today.
+These are about live connections, not group membership. `username` is always empty today (#50).
 
 ## `presence`: someone's online status changed
 

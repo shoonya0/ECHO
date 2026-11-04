@@ -1,6 +1,6 @@
 # ECHO: current state
 
-A one-page snapshot of where the project stands. Last checked on 2026-11-04 at `17ec08b`
+A one-page snapshot of where the project stands. Last checked on 2026-11-04 at `5645775`
 on `main`. To learn what the product does, read
 [product-overview.md](./product-overview.md). For the code, read
 [architecture-overview.md](./architecture-overview.md).
@@ -11,10 +11,10 @@ on `main`. To learn what the product does, read
 and with a link to exactly one feature state.md. Updated by /close-increment and
 /feature-docs update. -->
 
-- **Feature:** none yet (set by `/feature-docs start`) · docs rewritten in plain language
-  on `docs/plain-language-rewrite`
-- **Next step:** merge the docs PR, then fix #19 (hub map races)
-- **Updated:** 2026-11-04 at `17ec08b` + branch `docs/plain-language-rewrite`
+- **Feature:** none yet (set by `/feature-docs start`) · docs rewritten in plain language (#46),
+  and five new bugs filed (#47 to #51)
+- **Next step:** fix #19 (hub map races)
+- **Updated:** 2026-11-04 at `5645775`
 
 ## Where things stand
 
@@ -29,6 +29,8 @@ declining a group invite. The full list is in
 
 ## Recently finished
 
+- **PR #46:** rewrote these docs in plain language and corrected what didn't match the
+  code. Checking the docs against the code found five new bugs: #47 to #51.
 - **#18 (PR #45):** group creators now get the `owner` role, so adding and removing group
   members works again. Groups created before the fix are repaired when the server starts.
   CI now runs the database tests against a real MongoDB.
@@ -71,12 +73,12 @@ These need a choice before the linked issues can be fixed.
 
 ## Known issues and risks
 
-There are 31 open issues. Fix these first: #19, #23, #26, #34. Where each risk sits in the
+There are 36 open issues. Fix these first: #19, #23, #26, #34. Where each risk sits in the
 code: [architecture-overview.md](./architecture-overview.md#riskiest-areas).
 
 | Area | The problem, in short | Issues |
 |---|---|---|
-| Live connections | The server can crash or leak resources under load, and missed live messages can't be detected | #19, #20, #21, #22, #43 |
+| Live connections | The server can crash or leak resources under load, missed live messages can't be detected, and open connections miss new chats | #19, #20, #21, #22, #43, #49 |
 | Chat access | Typing, read receipts and reactions don't check membership; hub stats show too much | #23, #24 |
 | Groups | Members are never asked to accept, and live delivery doesn't match who is in the group | #5, #14, #16, #17, #28 |
 | Invite codes | Codes can be forged, and the invite endpoints lack permission checks | #9, #15, #29, #30 |
@@ -85,6 +87,7 @@ code: [architecture-overview.md](./architecture-overview.md#riskiest-areas).
 | Online status and privacy | Online status is unreliable, and privacy settings aren't applied | #31, #32 |
 | Messages and data | Reaction counts drift, writes can half-finish, and some lists grow without limit | #25, #37, #42 |
 | Limits and errors | No rate or size limits on the WebSocket; some replies expose internal error text | #40, #41 |
+| WebSocket replies and events | Replies and events are inconsistent or leave out details, which affects the Android plan | #47, #48, #50, #51 |
 
 ## Next task
 
