@@ -1,63 +1,95 @@
 # ECHO: architecture overview
 
-Snapshot at `e1291b2` (main). VERIFIED = read in the code or run. Target = the direction
-we want; the code doesn't follow it yet. Detail on pub/sub lives in
-[PUBSUB_ARCHITECTURE.md](./PUBSUB_ARCHITECTURE.md), the wire protocol in
-[WEBSOCKET_PROTOCOL.md](./WEBSOCKET_PROTOCOL.md).
+How the server is built, for someone reading the code for the first time. Everything here
+was checked against the code at `17ec08b` on `main`, except what is marked **Target**:
+that is where we want to go, and the code doesn't do it yet.
+
+How live messages work is in [PUBSUB_ARCHITECTURE.md](./PUBSUB_ARCHITECTURE.md). The message
+formats are in [WEBSOCKET_PROTOCOL.md](./WEBSOCKET_PROTOCOL.md).
 
 ## What it is
 
-A Go chat backend: REST (Gin) plus one WebSocket endpoint, MongoDB for persistence,
-Redis for token revocation and cross-instance pub/sub. Deployed as a Docker image to
-Render (`render.yaml`, `autoDeploy: true` from `main`). The Android client lives
-elsewhere; `Android/` holds only its planning docs.
+A Go server with a REST API (built with Gin) and one WebSocket endpoint. MongoDB stores the
+data. Redis keeps the logout list and passes live messages between servers.
 
-## Module map (VERIFIED)
+It ships as a Docker image to Render. Every merge to `main` deploys automatically
+(`render.yaml`, `autoDeploy: true`). The Android app lives elsewhere; `Android/` holds only
+its plans.
 
-| Package | Role | Depends on |
+## How a request moves through the code
+
+```mermaid
+flowchart TD
+    Client["Client app"] --> Router["router: which handler?"]
+    Router --> Middleware["middleware: token check, logging"]
+    Middleware --> Controller["controller: read the request, write the reply"]
+    Controller --> Services["services: business rules and MongoDB queries"]
+    Services --> Mongo[("MongoDB")]
+    Controller --> Realtime["realtime: hub and Redis pub/sub"]
+    Services -. "Broadcaster interface" .-> Realtime
+    Realtime --> Redis[("Redis")]
+```
+
+## Code map
+
+| Package | What it does | Depends on |
 |---|---|---|
-| `cmd/server` | Entry: config → Mongo → indexes (background) → Redis → hub → Gin → graceful shutdown | everything below |
-| `cmd/cleandb` | Dev tool: wipes Mongo collections and flushes Redis | config, database |
-| `internal/config` | Env + optional `.env` (env wins) | — |
-| `internal/router` | Route table (`/echo/v1/...`) | controller, middleware |
-| `internal/middleware` | JWT auth (+ Redis blacklist), CORS, request logging | config, database, utils |
-| `internal/controller` | HTTP + WebSocket handlers, request parsing, error mapping | services, realtime, models |
-| `internal/services` | Business logic and MongoDB access (chats, messages, users, contacts, invites) | database, models, utils |
-| `internal/realtime` | WebSocket hub, Redis pub/sub manager, in-memory presence | services, database, models |
-| `internal/models` | Structs for Mongo docs, API payloads, WS messages; `Client`/`Hub` types | — |
-| `internal/database` | Mongo/Redis clients, index specs | config |
-| `internal/utils` | JWT, response helpers, default constructors, invite-code AES | config, models |
+| `cmd/server` | Starts everything: config → logger → MongoDB → background index build and owner-role repair → Redis → hub → HTTP server. Shuts down cleanly. | everything below |
+| `cmd/cleandb` | Developer tool: wipes MongoDB and Redis | config, database |
+| `internal/config` | Reads settings from the environment and an optional `.env` file. The environment wins. | — |
+| `internal/constants` | Shared names: collections, API path, statuses, roles | — |
+| `internal/logger` | JSON logging with request IDs | — |
+| `internal/router` | The list of routes under `/echo/v1/` | controller, middleware |
+| `internal/middleware` | Token check (with the Redis logout list), CORS, request logging | config, database, models, utils |
+| `internal/controller` | HTTP and WebSocket handlers: read the request, call a service, turn errors into replies | services, realtime, models, utils, database (auth only) |
+| `internal/services` | Business rules and MongoDB queries for chats, messages, users, contacts and invites. Also startup data repairs (`migrations.go`). | database, models, utils |
+| `internal/realtime` | The WebSocket hub, Redis pub/sub and in-memory presence | database, models, services |
+| `internal/models` | Data shapes: MongoDB documents, API payloads, WebSocket messages | — |
+| `internal/database` | MongoDB and Redis connections, index definitions | config |
+| `internal/utils` | Tokens, reply helpers, default values, invite code encryption | config, models |
 
-`services` reaches the hub only through the `Broadcaster` interface set at startup
-(`services.SetBroadcaster`), which avoids an import cycle.
+`constants` and `logger` are used almost everywhere, so the table leaves them out.
 
-## Main flows (VERIFIED)
+**Why `Broadcaster` exists:** `services` must send live events, but `realtime` already
+imports `services`, and Go doesn't allow import loops. So `services` declares a small
+`Broadcaster` interface, and the hub plugs itself in at startup with
+`services.SetBroadcaster`.
 
-1. **Login:** `POST /login` → bcrypt check → 7-day HS256 JWT carrying user, profile,
-   account status and presence claims. Middleware trusts these claims (see #33).
-2. **Connect:** `GET /ws/chat` (Bearer header) → `Register` channel → hub goroutine
-   loads `users.chats` from Mongo, subscribes `user:<id>` + `chat:<id>` Redis channels,
-   adds the client to `ChatClients`.
-3. **Send message:** WS `send_message` → membership check (`GetChat`) → insert message →
-   update chat stats → publish to `chat:<id>` → every instance fans out to its local
-   clients in `ChatClients[chatID]`.
-4. **History:** `GET /messages/:chatID/messages?before=<id>` → membership check → cursor
-   page on index `chatId_1__id_-1`.
-5. **Groups and invites:** create group (creator + pending members + one AES invite
-   code), add/remove members (owner/admin), join by invite code.
+## Main flows
 
-## Data model (VERIFIED)
+1. **Log in:** `POST /login` → check the password with bcrypt → return a JWT that lasts 7
+   days. The token carries the user's details, account status and presence. The middleware
+   trusts those details without asking the database (#33).
+2. **Connect:** `GET /ws/chat` with the token → the hub reads `users.chats` from MongoDB →
+   subscribes to `user:<id>` and `chat:<id>` in Redis → adds the connection to `ChatClients`.
+3. **Send a message:** `send_message` → check membership (`GetChat`) → save the message →
+   update the chat → publish on `chat:<id>` → every server passes it to its local
+   connections in `ChatClients[chatID]`.
+4. **Load history:** `GET /messages/:chatID/messages?before=<id>` → check membership → read
+   one page using the index `chatId_1__id_-1`.
+5. **Groups and invites:** create a group (the creator as owner, others as pending members,
+   plus one invite code), add or remove members (owner or admin), join with an invite code.
 
-- `users`: profile, presence, `contactInfo` ID lists, `chats` map (chatID → unread),
-  `chatInvitations`. Unique index on `email`.
-- `chats`: `participants` map keyed by user ID (role, status, denormalized user info),
-  `inviteCode[]`, `readReceipts`, `typingUsers`, `stats`. No secondary indexes.
-- `messages`: `chatId`, sender (denormalized), content, reactions map, `readBy` map.
+## Data model
 
-Two sources of truth for membership: `chats.participants` (used by REST checks) and
-`users.chats` (used by the hub to subscribe). They drift (#14, #17, #28).
+MongoDB has three collections.
+
+- **`users`:** profile, presence, contact lists (`contactInfo`), `chats` (a map of chat ID to
+  unread count) and `chatInvitations`. Emails are unique, enforced by an index.
+- **`chats`:** `participants` (a map keyed by user ID, holding role, status and a copy of
+  the user's details), `inviteCode[]`, `readReceipts`, `typingUsers` and `stats`. No extra
+  indexes.
+- **`messages`:** `chatId`, a copy of the sender's details, content, a `reactions` map and a
+  `readBy` map.
+
+**Watch out: membership is stored in two places.** `chats.participants` decides who may send
+and read. `users.chats` decides what a connection follows live. The two can disagree, which
+causes #14, #17 and #28. Choosing one is an open decision in
+[current-state.md](./current-state.md#open-decisions).
 
 ## Target layers (not yet enforced)
+
+**Target:** each layer may only use the layers listed in its row.
 
 | Layer | May import | Must not import |
 |---|---|---|
@@ -66,20 +98,22 @@ Two sources of truth for membership: `chats.participants` (used by REST checks) 
 | realtime | services (via interfaces), models, database | controller |
 | models | stdlib, bson | everything internal |
 
-Today `controller/auth.controller.go` talks to `database` directly. Enforcement would be
-`depguard` in golangci-lint (deferred; see the setup log).
+One known exception today: `controller/auth.controller.go` uses `database` directly. Nothing
+checks these rules automatically yet. The plan is `depguard` in golangci-lint, which is
+deferred (see [ai-harness-setup.md](./ai-harness-setup.md)).
 
 ## Riskiest areas
 
-| Area | Where | Issue |
-|---|---|---|
-| Hub map concurrency | `internal/realtime/pubsub.go:283`, `hub.go:230` | #19 |
-| Disconnect cleanup leak | `internal/realtime/hub.go:242` | #20 |
-| One Redis conn per channel | `internal/realtime/pubsub.go:163` | #21 |
-| Roles never assigned | `internal/utils/defaultInitialization.go:141` | #18 |
-| WS handlers without membership checks | `internal/controller/websocket.controller.go:386-533` | #23 |
-| Block model | `internal/services/contact.service.go:321` | #26, #27 |
-| Signup `_id` + account deletion | `internal/controller/auth.controller.go:24`, `services/user.service.go:108` | #34, #35 |
-| JWT-only account status | `internal/middleware/auth.go:20` | #33 |
-| Non-transactional multi-doc writes | `services/chat.service.go`, `contact.service.go` | #37 |
-| Invite codes (hard-coded key) | `internal/utils/defaultInitialization.go:149` | #9, #15 |
+Take extra care when changing these places.
+
+| Area | Why it is risky | Where | Issue |
+|---|---|---|---|
+| Hub map concurrency | Shared maps used without a lock can crash the server | `internal/realtime/pubsub.go:283`, `hub.go:230` | #19 |
+| Disconnect cleanup | Subscriptions and old connections are left behind | `internal/realtime/hub.go:242` | #20 |
+| One Redis connection per channel | Connections grow with users and chats | `internal/realtime/pubsub.go:163` | #21 |
+| WebSocket handlers without membership checks | Non-members can act on a chat | `internal/controller/websocket.controller.go:386-533` | #23 |
+| Block model | Blocks can be undone by the blocked person and aren't enforced in chats | `internal/services/contact.service.go:321` | #26, #27 |
+| Signup `_id` and account deletion | A new account can take over a deleted user's chats | `internal/controller/auth.controller.go:24`, `services/user.service.go:108` | #34, #35 |
+| Account status only in the token | Bans and deletions don't take effect at once | `internal/middleware/auth.go:20` | #33 |
+| Writes across several documents | No transactions, so an update can half-finish | `services/chat.service.go`, `contact.service.go` | #37 |
+| Invite codes | The encryption key is in the public source code | `internal/utils/defaultInitialization.go:152` | #9, #15 |
