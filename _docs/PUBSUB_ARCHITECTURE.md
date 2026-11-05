@@ -31,8 +31,9 @@ The hub keeps four lookup tables:
 | `UserClients` | Which connections belong to this user? |
 | `UserActiveChats` | Which chats does this user follow? |
 
-These maps must only be touched while holding `hub.Mutex`. Some of the code doesn't do this
-yet, and that can crash the server (#19).
+These maps must only be touched while holding `hub.Mutex`. To use one after unlocking, copy
+what you need first. Never wait on a hub channel while holding the lock. Registration,
+`JoinChat` and `LeaveChat` still publish to Redis under it, which can slow other work.
 
 ## The path of one message
 
@@ -142,7 +143,6 @@ its connections live, though it is still in the chat history (#43).
 
 | Issue | Problem |
 |---|---|
-| #19 | Hub maps are used without a lock, which can crash the server |
 | #20 | Redis subscriptions aren't cleaned up on disconnect |
 | #21 | Each Redis channel uses its own connection, so connections grow with users and chats |
 | #22 | Slow MongoDB or Redis calls hold up all connects and disconnects |

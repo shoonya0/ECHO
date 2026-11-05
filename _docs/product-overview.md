@@ -42,7 +42,7 @@ Checked against the code at `17ec08b`. Numbers like `#33` are GitHub issues.
 | Direct chats | Start a chat with one person | Works | Someone already online gets no live messages from a new chat until they reconnect (#49). |
 | Group chats | Create a group; add and remove members | Partly works | Added members are never asked to accept (#5) and get no live messages (#17). Removed members keep getting them until they reconnect (#14). Also #16, #28. |
 | Invite codes | Create, list, delete and send codes; join with a code | Partly works | Codes can be forged (#9, #15). Also #29, #30. |
-| Live messages | Send and receive instantly | Works | The server can crash under load (#19). Missed messages can't be detected (#43). |
+| Live messages | Send and receive instantly | Works | Missed messages can't be detected (#43). |
 | Message history | Load old messages, page by page | Works | |
 | Typing, read receipts, reactions | See who is typing, who has read a message, and emoji reactions | Partly works | Not limited to chat members (#23). Reaction counts can drift (#25). |
 | Online status | See who is online | Unreliable | Often wrong (#31). Privacy settings are saved but not applied (#32). |
