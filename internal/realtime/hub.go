@@ -3,6 +3,7 @@ package realtime
 import (
 	"context"
 	"fmt"
+	"slices"
 	"sync"
 	"time"
 
@@ -202,10 +203,12 @@ func (eh *Hub) handleClientRegistration(client *models.Client) {
 func (eh *Hub) handleClientUnregistration(client *models.Client) {
 	eh.logger.WithFields(logrus.Fields{"clientID": client.ID, "userID": client.UserID.Hex()}).Info("Unregistering client")
 
+	eh.Mutex.Lock()
+
 	if _, ok := eh.Clients[client.ID]; !ok {
+		eh.Mutex.Unlock()
 		return
 	}
-	eh.Mutex.Lock()
 
 	clientID := client.ID
 	userID := client.UserID.Hex()
@@ -223,20 +226,16 @@ func (eh *Hub) handleClientUnregistration(client *models.Client) {
 
 	delete(eh.Clients, clientID)
 
-	// Remove from hub
-	eh.Mutex.Unlock()
-
 	// Remove from user mapping
+	lastConnection := false
+	var chatsToUnsubscribe []string
 	if userClients, exists := eh.UserClients[userID]; exists {
-		eh.Mutex.Lock()
-		delete(userClients, client.ID)
-		eh.Mutex.Unlock()
+		delete(userClients, clientID)
 
 		// If no more clients for this user
-		if len(eh.UserClients[userID]) == 0 {
-			eh.Mutex.Lock()
+		if len(userClients) == 0 {
+			lastConnection = true
 			delete(eh.UserClients, userID)
-			eh.Mutex.Unlock()
 
 			// Remove from active chats
 			if activeChats, exists := eh.UserActiveChats[userID]; exists {
@@ -245,26 +244,32 @@ func (eh *Hub) handleClientUnregistration(client *models.Client) {
 				}
 			}
 
-			// Get user's active chats for unsubscription
-			if activeChats, exists := eh.UserActiveChats[userID]; exists {
-				// Unsubscribe from channels
-				if err := eh.pubSubManager.UnsubscribeUserFromChannels(client.UserID, activeChats); err != nil {
-					eh.logger.WithError(err).Error("Failed to unsubscribe from channels")
-				}
-			}
+			// Copy what is left for the Redis calls below
+			chatsToUnsubscribe = slices.Clone(eh.UserActiveChats[userID])
+		}
+	}
 
-			// delete from presence
-			GetPresenceInstance().Delete(client.UserID)
+	eh.Mutex.Unlock()
 
-			// Publish presence update
-			presenceStatus := &models.WSPresenceStatus{
-				UserID:   userID,
-				Status:   string(constants.UserStatusOffline),
-				LastSeen: time.Now(),
+	// Redis calls run after unlocking, and UnsubscribeUserFromChannels takes the lock itself
+	if lastConnection {
+		if chatsToUnsubscribe != nil {
+			if err := eh.pubSubManager.UnsubscribeUserFromChannels(client.UserID, chatsToUnsubscribe); err != nil {
+				eh.logger.WithError(err).Error("Failed to unsubscribe from channels")
 			}
-			if err := eh.pubSubManager.PublishPresenceUpdate(presenceStatus); err != nil {
-				eh.logger.WithError(err).Error("Failed to publish presence update")
-			}
+		}
+
+		// delete from presence
+		GetPresenceInstance().Delete(client.UserID)
+
+		// Publish presence update
+		presenceStatus := &models.WSPresenceStatus{
+			UserID:   userID,
+			Status:   string(constants.UserStatusOffline),
+			LastSeen: time.Now(),
+		}
+		if err := eh.pubSubManager.PublishPresenceUpdate(presenceStatus); err != nil {
+			eh.logger.WithError(err).Error("Failed to publish presence update")
 		}
 	}
 
@@ -467,21 +472,15 @@ func (eh *Hub) cleanupInactiveConnections() {
 // performCleanup removes inactive clients
 func (eh *Hub) performCleanup() {
 	eh.Mutex.Lock()
-	defer eh.Mutex.Unlock()
 
 	now := time.Now()
 	inactiveThreshold := 5 * time.Minute
 	toRemove := make([]*models.Client, 0)
 
 	for _, client := range eh.Clients {
-		if now.Sub(client.LastActivity) > inactiveThreshold {
+		if now.Sub(client.LastActivity()) > inactiveThreshold {
 			toRemove = append(toRemove, client)
 		}
-	}
-
-	for _, client := range toRemove {
-		eh.logger.WithFields(logrus.Fields{"clientID": client.ID}).Info("Removing inactive client")
-		eh.Unregister <- client
 	}
 
 	// Clean expired cache entries
@@ -489,6 +488,19 @@ func (eh *Hub) performCleanup() {
 		if now.After(expiry) {
 			delete(eh.UserInfoCache, userID)
 			delete(eh.CacheExpiry, userID)
+		}
+	}
+
+	eh.Mutex.Unlock()
+
+	// Queue after unlocking: the consumer of Unregister needs the lock, so
+	// waiting on a full queue while holding it would deadlock.
+	for _, client := range toRemove {
+		eh.logger.WithFields(logrus.Fields{"clientID": client.ID}).Info("Removing inactive client")
+		select {
+		case eh.Unregister <- client:
+		case <-eh.Ctx.Done():
+			return
 		}
 	}
 }

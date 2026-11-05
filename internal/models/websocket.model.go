@@ -3,6 +3,7 @@ package models
 import (
 	"context"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/gorilla/websocket"
@@ -156,11 +157,27 @@ type Client struct {
 	Connection *websocket.Conn       `json:"-"`
 	Send       chan WebSocketMessage `json:"-"`
 	// we have to seprate this userID[activeChats]
-	LastActivity time.Time              `json:"lastActivity"`
-	Metadata     map[string]interface{} `json:"metadata,omitempty"`
+	Metadata map[string]interface{} `json:"metadata,omitempty"`
 
-	sendMu     sync.Mutex // guards sendClosed and every send/close on Send
-	sendClosed bool
+	lastActivity atomic.Pointer[time.Time] // see Touch and LastActivity
+	sendMu       sync.Mutex                // guards sendClosed and every send/close on Send
+	sendClosed   bool
+}
+
+// Touch records activity now. It is safe to call from any goroutine.
+func (c *Client) Touch() {
+	now := time.Now()
+	c.lastActivity.Store(&now)
+}
+
+// LastActivity returns the time of the last Touch, or the zero time if there
+// was none. It keeps the monotonic clock reading, so wall-clock jumps can't make
+// every client look inactive.
+func (c *Client) LastActivity() time.Time {
+	if last := c.lastActivity.Load(); last != nil {
+		return *last
+	}
+	return time.Time{}
 }
 
 // TrySend queues msg without blocking. It returns false if the buffer is full

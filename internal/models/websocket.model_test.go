@@ -3,6 +3,7 @@ package models
 import (
 	"sync"
 	"testing"
+	"time"
 )
 
 func TestTrySendFullBufferReturnsFalse(t *testing.T) {
@@ -41,4 +42,17 @@ func TestConcurrentSendAndClose(t *testing.T) {
 		go func() { defer wg.Done(); c.CloseSend() }()
 	}
 	wg.Wait()
+}
+
+func TestLastActivity(t *testing.T) {
+	c := &Client{}
+	if !c.LastActivity().IsZero() {
+		t.Fatal("a client that was never touched must report the zero time")
+	}
+
+	before := time.Now()
+	c.Touch()
+	if got := c.LastActivity(); got.Before(before) || time.Since(got) > time.Minute {
+		t.Fatalf("LastActivity = %v, want about %v", got, before)
+	}
 }
