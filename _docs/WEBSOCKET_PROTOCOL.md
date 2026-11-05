@@ -50,7 +50,7 @@ A connection follows:
 - The chats in your user's `chats` list at the moment you connect.
 - Direct chats you open with `join_chat` on that connection.
 
-So these cases get no live events until you reconnect:
+So these cases get no live events until you reconnect (#49):
 
 - Someone opens a new direct chat with you while you are online.
 - You create a group, or join one with an invite code.

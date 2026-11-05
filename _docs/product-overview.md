@@ -39,7 +39,7 @@ Checked against the code at `17ec08b`. Numbers like `#33` are GitHub issues.
 | Profiles | View, edit and delete your profile; view other people's | Works | Deleting a profile leaves old references behind (#35). |
 | Finding people | Get suggestions of people to add | Works | The "nearby" and "popular" lists are empty placeholders. |
 | Contacts | Send, accept and decline requests; remove; favorites; block and unblock | Partly works | Blocks have holes (#26, #27). Also #38, #39. |
-| Direct chats | Start a chat with one person | Works | Someone already online gets no live messages from a new chat until they reconnect. |
+| Direct chats | Start a chat with one person | Works | Someone already online gets no live messages from a new chat until they reconnect (#49). |
 | Group chats | Create a group; add and remove members | Partly works | Added members are never asked to accept (#5) and get no live messages (#17). Removed members keep getting them until they reconnect (#14). Also #16, #28. |
 | Invite codes | Create, list, delete and send codes; join with a code | Partly works | Codes can be forged (#9, #15). Also #29, #30. |
 | Live messages | Send and receive instantly | Works | The server can crash under load (#19). Missed messages can't be detected (#43). |

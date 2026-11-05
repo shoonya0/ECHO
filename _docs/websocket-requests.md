@@ -26,7 +26,7 @@ Sends a message to a chat you are in.
 | Field | Rule |
 |---|---|
 | `chatId` | Required. You must be a participant of the chat. |
-| `content` | Required, even for image or file messages. Up to 4000 bytes. Emoji and non-English letters use more than one byte each, so the limit in characters can be lower. |
+| `content` | Required, even for image or file messages. Up to 4000 bytes. Emoji and non-English letters use more than one byte each, so the limit in characters can be lower (#51). |
 | `messageType` | `text` (the default), `image`, `file`, `audio` or `video` |
 | `attachments` | Up to 10. Each needs `url` and `originalName`, and `size` can be up to 50 MB. ECHO stores these details only. The file itself must be hosted somewhere else. |
 | `mentions` | Up to 20 user IDs |
@@ -48,7 +48,7 @@ them, or creates one, and starts following it on this connection.
 ```
 
 - `senderId` is required. It is the *other* person, not you.
-- `chatId` is ignored, so you can't use this request to follow a group.
+- `chatId` is ignored, so you can't use this request to follow a group (#48).
 
 **You get:** a `join` event, and no `response`. Read the chat's ID from the event's
 `chatId`.
