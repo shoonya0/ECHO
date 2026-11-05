@@ -4,6 +4,8 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"maps"
+	"slices"
 	"sync"
 	"time"
 
@@ -283,12 +285,8 @@ func (pm *PubSubManager) routeMessage(channel string, message *models.WebSocketM
 func (pm *PubSubManager) handleChatMessage(chatID string, message *models.WebSocketMessage) {
 	// Broadcast to all clients in this chat on this instance
 	pm.hub.Mutex.RLock()
-	clients, exists := pm.hub.ChatClients[chatID]
-
+	clients := slices.Collect(maps.Values(pm.hub.ChatClients[chatID]))
 	pm.hub.Mutex.RUnlock()
-	if !exists || len(clients) == 0 {
-		return
-	}
 
 	// Send to all connected clients in this chat
 	for _, client := range clients {
@@ -302,12 +300,8 @@ func (pm *PubSubManager) handleChatMessage(chatID string, message *models.WebSoc
 func (pm *PubSubManager) handleUserMessage(userID string, message *models.WebSocketMessage) {
 	// Send to all connections of this user on this instance
 	pm.hub.Mutex.RLock()
-	clients, exists := pm.hub.UserClients[userID]
+	clients := slices.Collect(maps.Values(pm.hub.UserClients[userID]))
 	pm.hub.Mutex.RUnlock()
-
-	if !exists || len(clients) == 0 {
-		return
-	}
 
 	for _, client := range clients {
 		if client.TrySend(*message) {
@@ -334,13 +328,10 @@ func (pm *PubSubManager) dropSlowClient(client *models.Client) {
 func (pm *PubSubManager) handlePresenceMessage(message *models.WebSocketMessage) {
 	userID := message.UserID
 
+	// Copy under the lock: removeClientFromChat shifts this slice in place.
 	pm.hub.Mutex.RLock()
-	activeChats, exists := pm.hub.UserActiveChats[userID]
+	activeChats := slices.Clone(pm.hub.UserActiveChats[userID])
 	pm.hub.Mutex.RUnlock()
-
-	if !exists {
-		return
-	}
 
 	for _, chatID := range activeChats {
 		// we have to publish to the chat channel
@@ -388,20 +379,17 @@ func (pm *PubSubManager) updateUserInfoCache(userID string, user models.UserDisp
 	pm.hub.Mutex.Lock()
 	defer pm.hub.Mutex.Unlock()
 
-	if userInfo, exists := pm.hub.UserInfoCache[userID]; exists {
-		userInfo.Email = user.Email
-		userInfo.Username = user.Username
-		userInfo.DisplayName = user.DisplayName
+	// Replace the entry, never change it: GetUserInfo callers read the old
+	// pointer without the lock.
+	if _, exists := pm.hub.UserInfoCache[userID]; exists {
+		pm.hub.UserInfoCache[userID] = &user
 	}
 }
 
 // broadcastToAllClients sends a message to all connected clients
 func (pm *PubSubManager) broadcastToAllClients(message *models.WebSocketMessage) {
 	pm.hub.Mutex.RLock()
-	clients := make([]*models.Client, 0, len(pm.hub.Clients))
-	for _, client := range pm.hub.Clients {
-		clients = append(clients, client)
-	}
+	clients := slices.Collect(maps.Values(pm.hub.Clients))
 	pm.hub.Mutex.RUnlock()
 
 	for _, client := range clients {

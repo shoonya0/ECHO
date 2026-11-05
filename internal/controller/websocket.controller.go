@@ -140,7 +140,7 @@ func handleClientWrite(client *models.Client) {
 				return
 			}
 
-			client.LastActivity = time.Now() // Update client activity
+			client.Touch() // Update client activity
 		case <-ticker.C:
 			client.Connection.SetWriteDeadline(time.Now().Add(10 * time.Second))
 
@@ -165,7 +165,7 @@ func handleClientRead(ctx context.Context, client *models.Client) {
 	client.Connection.SetReadDeadline(time.Now().Add(60 * time.Second)) // Set read deadline and pong handler
 	client.Connection.SetPongHandler(func(string) error {
 		client.Connection.SetReadDeadline(time.Now().Add(60 * time.Second))
-		client.LastActivity = time.Now()
+		client.Touch()
 		return nil
 	})
 
@@ -199,7 +199,7 @@ func handleClientRead(ctx context.Context, client *models.Client) {
 			continue // SAFE: connection is still valid, just skip this bad message
 		}
 
-		client.LastActivity = time.Now() // Update client activity
+		client.Touch() // Update client activity
 
 		handleClientRequest(ctx, client, request) // Process the request
 	}
