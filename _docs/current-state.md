@@ -1,6 +1,6 @@
 # ECHO: current state
 
-A one-page snapshot of where the project stands. Last checked on 2026-11-05 at `ec2d260`
+A one-page snapshot of where the project stands. Last checked on 2026-11-05 at `8ccec3c`
 on `main`. To learn what the product does, read
 [product-overview.md](./product-overview.md). For the code, read
 [architecture-overview.md](./architecture-overview.md).
@@ -12,9 +12,9 @@ and with a link to exactly one feature state.md. Updated by /close-increment and
 /feature-docs update. -->
 
 - **Feature:** none yet (set by `/feature-docs start`) · hub data races and the cleanup deadlock
-  fixed (#19)
+  fixed (#19), and two new hub bugs filed (#54, #55)
 - **Next step:** fix #23 (membership checks in WebSocket handlers)
-- **Updated:** 2026-11-05 at `ec2d260`
+- **Updated:** 2026-11-05 at `8ccec3c`
 
 ## Where things stand
 
@@ -75,12 +75,12 @@ These need a choice before the linked issues can be fixed.
 
 ## Known issues and risks
 
-There are 35 open issues. Fix these first: #23, #26, #34. Where each risk sits in the
+There are 37 open issues. Fix these first: #23, #26, #34. Where each risk sits in the
 code: [architecture-overview.md](./architecture-overview.md#riskiest-areas).
 
 | Area | The problem, in short | Issues |
 |---|---|---|
-| Live connections | The server can leak resources or stall under load, missed live messages can't be detected, and open connections miss new chats | #20, #21, #22, #43, #49 |
+| Live connections | The server can leak resources or stall under load, missed live messages can't be detected, and open connections miss new chats | #20, #21, #22, #43, #49, #54, #55 |
 | Chat access | Typing, read receipts and reactions don't check membership; hub stats show too much | #23, #24 |
 | Groups | Members are never asked to accept, and live delivery doesn't match who is in the group | #5, #14, #16, #17, #28 |
 | Invite codes | Codes can be forged, and the invite endpoints lack permission checks | #9, #15, #29, #30 |

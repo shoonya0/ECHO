@@ -146,6 +146,8 @@ its connections live, though it is still in the chat history (#43).
 | #20 | Redis subscriptions aren't cleaned up on disconnect |
 | #21 | Each Redis channel uses its own connection, so connections grow with users and chats |
 | #22 | Slow MongoDB or Redis calls hold up all connects and disconnects |
+| #54 | A client that disconnects before it is registered stays registered until cleanup |
+| #55 | `JoinChat` can lose its Redis subscription to a disconnect at the same time; fix it with #20 |
 | #14, #17 | Who gets live messages doesn't match who is in the group |
 | #31 | Online status is unreliable |
 | #40 | No size limit or rate limit on incoming messages |
