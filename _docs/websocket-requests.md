@@ -66,7 +66,7 @@ follow it again the next time you connect.
 
 **You get:** no `response`. A `leave` event goes to the chat.
 
-**Errors:** `INVALID_REQUEST`.
+**Errors:** `INVALID_REQUEST`, `INVALID_CHAT_ID`, `PERMISSION_DENIED`, `LEAVE_FAILED`.
 
 ## `set_typing`
 
@@ -81,10 +81,10 @@ Tells the chat that you started or stopped typing.
 }
 ```
 
-**You get:** no `response`. A `typing` event goes to the chat. Membership isn't checked
-(#23), and each call writes to the database (#40).
+**You get:** no `response`. A `typing` event goes to the chat. Each call writes to the
+database (#40).
 
-**Errors:** `INVALID_REQUEST`, `INVALID_CHAT_ID`, `TYPING_FAILED`.
+**Errors:** `INVALID_REQUEST`, `INVALID_CHAT_ID`, `PERMISSION_DENIED`, `TYPING_FAILED`.
 
 ## `mark_read`
 
@@ -99,10 +99,9 @@ Marks messages as read. IDs that aren't valid are skipped, but at least one must
 }
 ```
 
-**You get:** no `response`. A `delivery` event goes to the chat. Membership isn't checked
-(#23).
+**You get:** no `response`. A `delivery` event goes to the chat.
 
-**Errors:** `INVALID_REQUEST`, `INVALID_CHAT_ID`, `READ_FAILED`.
+**Errors:** `INVALID_REQUEST`, `INVALID_CHAT_ID`, `PERMISSION_DENIED`, `READ_FAILED`.
 
 ## `add_reaction` and `remove_reaction`
 
@@ -118,10 +117,10 @@ Adds or removes an emoji reaction. Both use the same format.
 ```
 
 **You get:** a `response` with `action` set to `reaction_added` or `reaction_removed`. A
-`reaction` event goes to the chat. See #23 and #25.
+`reaction` event goes to the chat. See #25.
 
 **Errors:** `INVALID_REQUEST`, `INVALID_CHAT_ID`, `INVALID_MESSAGE_ID`,
-`MESSAGE_NOT_FOUND`, `REACTION_FAILED`.
+`PERMISSION_DENIED`, `MESSAGE_NOT_FOUND`, `REACTION_FAILED`.
 
 ## `invite_user`
 
