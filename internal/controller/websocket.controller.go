@@ -215,7 +215,7 @@ func handleClientRequest(ctx context.Context, client *models.Client, request mod
 		handleJoinChat(ctx, client, request)
 
 	case models.WSRequestTypeLeaveChat:
-		handleLeaveChat(client, request)
+		handleLeaveChat(ctx, client, request)
 
 	case models.WSRequestTypeSetTyping:
 		handleSetTyping(ctx, client, request)
@@ -371,9 +371,22 @@ func handleJoinChat(ctx context.Context, client *models.Client, request models.M
 }
 
 // handleLeaveChat processes chat leaving requests
-func handleLeaveChat(client *models.Client, request models.MessageRequest) {
+func handleLeaveChat(ctx context.Context, client *models.Client, request models.MessageRequest) {
 	if request.ChatID == "" {
 		sendErrorResponse(client, request.RequestID, "INVALID_REQUEST", "ChatID is required")
+		return
+	}
+
+	chatID, err := bson.ObjectIDFromHex(request.ChatID) // Parse chat ID
+	if err != nil {
+		sendErrorResponse(client, request.RequestID, "INVALID_CHAT_ID", "Invalid chat ID format")
+		return
+	}
+
+	// Leaving publishes a leave event to the chat, so outsiders can't do it.
+	if err := services.RequireChatMember(ctx, chatID, client.UserID); err != nil {
+		wsLog().Printf("Failed to check membership for leave: %v", err)
+		sendChatError(client, request.RequestID, err, "LEAVE_FAILED", "Failed to leave chat")
 		return
 	}
 
@@ -405,7 +418,7 @@ func handleSetTyping(ctx context.Context, client *models.Client, request models.
 	err = services.UpdateTypingStatus(ctx, chatID, client.UserID, isTyping) // Update typing status
 	if err != nil {
 		wsLog().Printf("Failed to update typing status: %v", err)
-		sendErrorResponse(client, request.RequestID, "TYPING_FAILED", "Failed to update typing status")
+		sendChatError(client, request.RequestID, err, "TYPING_FAILED", "Failed to update typing status")
 		return
 	}
 
@@ -446,7 +459,7 @@ func handleMarkRead(client *models.Client, request models.MessageRequest) {
 	err = services.MarkMessagesAsRead(chatID, client.UserID, messageIDs) // Mark messages as read
 	if err != nil {
 		wsLog().Printf("Failed to mark messages as read: %v", err)
-		sendErrorResponse(client, request.RequestID, "READ_FAILED", "Failed to mark messages as read")
+		sendChatError(client, request.RequestID, err, "READ_FAILED", "Failed to mark messages as read")
 		return
 	}
 
@@ -496,7 +509,7 @@ func handleAddReaction(client *models.Client, request models.MessageRequest) {
 			errCode = "MESSAGE_NOT_FOUND"
 			errMsg = "Message not found"
 		}
-		sendErrorResponse(client, request.RequestID, errCode, errMsg)
+		sendChatError(client, request.RequestID, err, errCode, errMsg)
 		return
 	}
 
@@ -572,7 +585,7 @@ func handleRemoveReaction(client *models.Client, request models.MessageRequest) 
 			errCode = "MESSAGE_NOT_FOUND"
 			errMsg = "Message not found"
 		}
-		sendErrorResponse(client, request.RequestID, errCode, errMsg)
+		sendChatError(client, request.RequestID, err, errCode, errMsg)
 		return
 	}
 
@@ -917,6 +930,15 @@ func sendSuccessResponse(client *models.Client, requestID string, data map[strin
 	if !client.TrySend(wsMessage) {
 		wsLog().Printf("Failed to send success response to client %s: channel full", client.ID)
 	}
+}
+
+// sendChatError reports a failed chat action. Non-members get PERMISSION_DENIED;
+// anything else gets the caller's code and message, never err's own text.
+func sendChatError(client *models.Client, requestID string, err error, code, message string) {
+	if errors.Is(err, services.ErrNotParticipant) {
+		code, message = "PERMISSION_DENIED", "You are not a participant of this chat"
+	}
+	sendErrorResponse(client, requestID, code, message)
 }
 
 // sendErrorResponse sends an error response to the client

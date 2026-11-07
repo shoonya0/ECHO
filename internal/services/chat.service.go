@@ -95,6 +95,19 @@ func chatMemberFilter(chatID, userID bson.ObjectID) bson.M {
 	return bson.M{"_id": chatID, "participants." + userID.Hex(): bson.M{"$exists": true}}
 }
 
+// RequireChatMember returns ErrNotParticipant unless userID is a participant of
+// the chat. An unknown chat gives the same error, so chat IDs can't be probed.
+func RequireChatMember(ctx context.Context, chatID, userID bson.ObjectID) error {
+	count, err := database.DB.Collection(string(constants.ChatColl)).CountDocuments(ctx, chatMemberFilter(chatID, userID))
+	if err != nil {
+		return fmt.Errorf("failed to check chat membership: %w", err)
+	}
+	if count == 0 {
+		return fmt.Errorf("%w", ErrNotParticipant)
+	}
+	return nil
+}
+
 // GetChatMessages returns up to limit messages of a chat, newest first,
 // starting just before the before cursor (a message ID; nil for the newest
 // page). hasMore reports whether older messages exist; pass the last
@@ -386,6 +399,10 @@ func SendMessage(ctx context.Context, chatID, senderID bson.ObjectID, content, m
 
 // UpdateTypingStatus updates typing indicator for a user in a chat
 func UpdateTypingStatus(ctx context.Context, chatID, userID bson.ObjectID, isTyping bool) error {
+	if err := RequireChatMember(ctx, chatID, userID); err != nil {
+		return err
+	}
+
 	// Get user details
 	user, err := GetUserByID(ctx, userID)
 	if err != nil {
@@ -421,6 +438,10 @@ func UpdateTypingStatus(ctx context.Context, chatID, userID bson.ObjectID, isTyp
 func MarkMessagesAsRead(chatID, userID bson.ObjectID, messageIDs []bson.ObjectID) error {
 	ctx := context.Background()
 	now := time.Now()
+
+	if err := RequireChatMember(ctx, chatID, userID); err != nil {
+		return err
+	}
 
 	// Update read receipts for messages
 	filter := bson.M{
@@ -581,6 +602,10 @@ func AddMessageReaction(chatID, messageID, userID bson.ObjectID, emoji string) e
 		return fmt.Errorf("invalid emoji")
 	}
 
+	if err := RequireChatMember(ctx, chatID, userID); err != nil {
+		return err
+	}
+
 	// Update message with new reaction
 	filter := bson.M{
 		"_id":    messageID,
@@ -615,6 +640,10 @@ func AddMessageReaction(chatID, messageID, userID bson.ObjectID, emoji string) e
 // RemoveMessageReaction removes a reaction from a message
 func RemoveMessageReaction(chatID, messageID, userID bson.ObjectID, emoji string) error {
 	ctx := context.Background()
+
+	if err := RequireChatMember(ctx, chatID, userID); err != nil {
+		return err
+	}
 
 	// Remove user from reaction
 	filter := bson.M{
