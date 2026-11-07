@@ -3,6 +3,7 @@ package services
 import (
 	"context"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"strings"
 	"time"
@@ -95,18 +96,30 @@ func chatMemberFilter(chatID, userID bson.ObjectID) bson.M {
 	return bson.M{"_id": chatID, "participants." + userID.Hex(): bson.M{"$exists": true}}
 }
 
+// RequireChatMember returns ErrNotParticipant unless userID is a participant of
+// the chat. An unknown chat gives the same error, so chat IDs can't be probed.
+func RequireChatMember(ctx context.Context, chatID, userID bson.ObjectID) error {
+	count, err := database.DB.Collection(string(constants.ChatColl)).CountDocuments(ctx, chatMemberFilter(chatID, userID))
+	if err != nil {
+		return fmt.Errorf("failed to check chat membership: %w", err)
+	}
+	if count == 0 {
+		return fmt.Errorf("%w", ErrNotParticipant)
+	}
+	return nil
+}
+
 // GetChatMessages returns up to limit messages of a chat, newest first,
 // starting just before the before cursor (a message ID; nil for the newest
 // page). hasMore reports whether older messages exist; pass the last
 // returned message's ID as before to fetch them. It returns ErrChatNotFound
 // when userID is not a participant, so chat IDs can't be probed.
 func GetChatMessages(ctx context.Context, userID bson.ObjectID, chatID bson.ObjectID, limit int, before *bson.ObjectID) (messages []models.Message, hasMore bool, err error) {
-	count, err := database.DB.Collection(string(constants.ChatColl)).CountDocuments(ctx, chatMemberFilter(chatID, userID))
-	if err != nil {
-		return nil, false, fmt.Errorf("failed to check chat membership: %w", err)
-	}
-	if count == 0 {
-		return nil, false, fmt.Errorf("%w", ErrChatNotFound)
+	if err := RequireChatMember(ctx, chatID, userID); err != nil {
+		if errors.Is(err, ErrNotParticipant) {
+			return nil, false, fmt.Errorf("%w", ErrChatNotFound)
+		}
+		return nil, false, err
 	}
 
 	messageFilter := messagePageFilter(chatID, before)
@@ -386,6 +399,10 @@ func SendMessage(ctx context.Context, chatID, senderID bson.ObjectID, content, m
 
 // UpdateTypingStatus updates typing indicator for a user in a chat
 func UpdateTypingStatus(ctx context.Context, chatID, userID bson.ObjectID, isTyping bool) error {
+	if err := RequireChatMember(ctx, chatID, userID); err != nil {
+		return err
+	}
+
 	// Get user details
 	user, err := GetUserByID(ctx, userID)
 	if err != nil {
@@ -417,15 +434,41 @@ func UpdateTypingStatus(ctx context.Context, chatID, userID bson.ObjectID, isTyp
 	return nil
 }
 
-// MarkMessagesAsRead marks messages as read by a user
+// MarkMessagesAsRead marks messages as read by a user. IDs that aren't messages
+// of this chat are skipped; it returns ErrMessageNotFound when none are left.
 func MarkMessagesAsRead(chatID, userID bson.ObjectID, messageIDs []bson.ObjectID) error {
 	ctx := context.Background()
 	now := time.Now()
+
+	if err := RequireChatMember(ctx, chatID, userID); err != nil {
+		return err
+	}
 
 	// Update read receipts for messages
 	filter := bson.M{
 		"_id":    bson.M{"$in": messageIDs},
 		"chatId": chatID,
+	}
+
+	messages := database.DB.Collection(string(constants.MessageColl))
+
+	cursor, err := messages.Find(ctx, filter, options.Find().SetProjection(bson.M{"_id": 1}))
+	if err != nil {
+		return fmt.Errorf("failed to find messages: %w", err)
+	}
+	var found []struct {
+		ID bson.ObjectID `bson:"_id"`
+	}
+	if err := cursor.All(ctx, &found); err != nil {
+		return fmt.Errorf("failed to read messages: %w", err)
+	}
+	if len(found) == 0 {
+		return fmt.Errorf("%w", ErrMessageNotFound)
+	}
+
+	chatMessageIDs := make([]bson.ObjectID, len(found))
+	for i, message := range found {
+		chatMessageIDs[i] = message.ID
 	}
 
 	update := bson.M{
@@ -434,8 +477,7 @@ func MarkMessagesAsRead(chatID, userID bson.ObjectID, messageIDs []bson.ObjectID
 		},
 	}
 
-	_, err := database.DB.Collection(string(constants.MessageColl)).UpdateMany(ctx, filter, update)
-	if err != nil {
+	if _, err := messages.UpdateMany(ctx, filter, update); err != nil {
 		return fmt.Errorf("failed to update read receipts: %w", err)
 	}
 
@@ -443,7 +485,7 @@ func MarkMessagesAsRead(chatID, userID bson.ObjectID, messageIDs []bson.ObjectID
 	updateChatReadReceipts(chatID, userID, now)
 
 	// Broadcast read receipts to other participants
-	broadcastReadReceipts(chatID, userID, messageIDs, now)
+	broadcastReadReceipts(chatID, userID, chatMessageIDs, now)
 
 	return nil
 }
@@ -581,6 +623,10 @@ func AddMessageReaction(chatID, messageID, userID bson.ObjectID, emoji string) e
 		return fmt.Errorf("invalid emoji")
 	}
 
+	if err := RequireChatMember(ctx, chatID, userID); err != nil {
+		return err
+	}
+
 	// Update message with new reaction
 	filter := bson.M{
 		"_id":    messageID,
@@ -615,6 +661,10 @@ func AddMessageReaction(chatID, messageID, userID bson.ObjectID, emoji string) e
 // RemoveMessageReaction removes a reaction from a message
 func RemoveMessageReaction(chatID, messageID, userID bson.ObjectID, emoji string) error {
 	ctx := context.Background()
+
+	if err := RequireChatMember(ctx, chatID, userID); err != nil {
+		return err
+	}
 
 	// Remove user from reaction
 	filter := bson.M{

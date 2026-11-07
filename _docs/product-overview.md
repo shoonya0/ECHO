@@ -44,7 +44,7 @@ Checked against the code at `17ec08b`. Numbers like `#33` are GitHub issues.
 | Invite codes | Create, list, delete and send codes; join with a code | Partly works | Codes can be forged (#9, #15). Also #29, #30. |
 | Live messages | Send and receive instantly | Works | Missed messages can't be detected (#43). |
 | Message history | Load old messages, page by page | Works | |
-| Typing, read receipts, reactions | See who is typing, who has read a message, and emoji reactions | Partly works | Not limited to chat members (#23). Reaction counts can drift (#25). |
+| Typing, read receipts, reactions | See who is typing, who has read a message, and emoji reactions | Partly works | Reaction counts can drift (#25). |
 | Online status | See who is online | Unreliable | Often wrong (#31). Privacy settings are saved but not applied (#32). |
 | Attachments | Send a link to a file, with its details | Partly works | There is no file upload. The app must store the file elsewhere and send its URL. |
 
@@ -73,7 +73,7 @@ Checked against the code at `17ec08b`. Numbers like `#33` are GitHub issues.
 - **Profile edits** are limited to an allow list of fields.
 - **Browser access (CORS)** is open to any site. No cookies are used.
 
-Open security bugs: #9, #15, #23, #24, #26, #33, #34.
+Open security bugs: #9, #15, #24, #26, #33, #34.
 
 ## Performance
 

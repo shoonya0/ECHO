@@ -1,6 +1,6 @@
 # ECHO: current state
 
-A one-page snapshot of where the project stands. Last checked on 2026-11-05 at `8ccec3c`
+A one-page snapshot of where the project stands. Last checked on 2026-11-07 at `415def3`
 on `main`. To learn what the product does, read
 [product-overview.md](./product-overview.md). For the code, read
 [architecture-overview.md](./architecture-overview.md).
@@ -11,10 +11,10 @@ on `main`. To learn what the product does, read
 and with a link to exactly one feature state.md. Updated by /close-increment and
 /feature-docs update. -->
 
-- **Feature:** none yet (set by `/feature-docs start`) · hub data races and the cleanup deadlock
-  fixed (#19), and two new hub bugs filed (#54, #55)
-- **Next step:** fix #23 (membership checks in WebSocket handlers)
-- **Updated:** 2026-11-05 at `8ccec3c`
+- **Feature:** none yet (set by `/feature-docs start`) · #23 fixed on
+  `fix/23-ws-membership-checks`, waiting for review and merge
+- **Next step:** merge the #23 PR, then fix #26 (blocked users can lift a block)
+- **Updated:** 2026-11-07 at `415def3`
 
 ## Where things stand
 
@@ -29,6 +29,9 @@ declining a group invite. The full list is in
 
 ## Recently finished
 
+- **#23:** typing, read receipts and reactions now refuse non-members with
+  `PERMISSION_DENIED`, checked in the service layer. `leave_chat` is refused unless the
+  connection is in the chat's room, and `mark_read` skips IDs from other chats.
 - **#19:** the hub now uses its shared maps safely, so concurrent connections can no longer
   crash the server that way, and inactive-client cleanup can no longer deadlock.
 - **PR #46:** rewrote these docs in plain language and corrected what didn't match the
@@ -75,13 +78,13 @@ These need a choice before the linked issues can be fixed.
 
 ## Known issues and risks
 
-There are 37 open issues. Fix these first: #23, #26, #34. Where each risk sits in the
+There are 36 open issues once #23 merges. Fix these first: #26, #34. Where each risk sits in the
 code: [architecture-overview.md](./architecture-overview.md#riskiest-areas).
 
 | Area | The problem, in short | Issues |
 |---|---|---|
 | Live connections | The server can leak resources or stall under load, missed live messages can't be detected, and open connections miss new chats | #20, #21, #22, #43, #49, #54, #55 |
-| Chat access | Typing, read receipts and reactions don't check membership; hub stats show too much | #23, #24 |
+| Chat access | Hub stats show too much | #24 |
 | Groups | Members are never asked to accept, and live delivery doesn't match who is in the group | #5, #14, #16, #17, #28 |
 | Invite codes | Codes can be forged, and the invite endpoints lack permission checks | #9, #15, #29, #30 |
 | Accounts | Bans and deletions don't take effect at once; signup and delete have data problems | #33, #34, #35, #36 |
@@ -93,5 +96,5 @@ code: [architecture-overview.md](./architecture-overview.md#riskiest-areas).
 
 ## Next task
 
-Fix #23: write a failing test first, then check membership in every WebSocket handler that
-takes a `chatId`.
+Fix #26: write a failing test first, then stop a blocked user from lifting a block. This
+needs open decision 2 (how blocks are stored).

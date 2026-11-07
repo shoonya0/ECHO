@@ -149,6 +149,7 @@ An `error` event has a `code` and a readable `message`.
 | `INVALID_CONTENT` | The message broke a content rule, such as being too long |
 | `MESSAGE_FAILED` | The message couldn't be sent |
 | `REACTION_FAILED` | The reaction couldn't be added or removed |
+| `LEAVE_FAILED` | The chat couldn't be left |
 | `READ_FAILED` | Messages couldn't be marked as read |
 | `TYPING_FAILED` | Typing status couldn't be updated |
 | `CHAT_CREATION_FAILED` | The chat couldn't be created |

@@ -7,6 +7,7 @@ import "errors"
 var (
 	ErrUserNotFound           = errors.New("user not found")
 	ErrChatNotFound           = errors.New("chat not found")
+	ErrMessageNotFound        = errors.New("message not found")
 	ErrContactNotFound        = errors.New("contact not found")
 	ErrContactRequestNotFound = errors.New("contact request not found")
 	ErrInvalidInvite          = errors.New("invalid invite")

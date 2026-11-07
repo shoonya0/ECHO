@@ -110,7 +110,6 @@ Take extra care when changing these places.
 |---|---|---|---|
 | Disconnect cleanup | Subscriptions and old connections are left behind | `internal/realtime/hub.go:242` | #20 |
 | One Redis connection per channel | Connections grow with users and chats | `internal/realtime/pubsub.go:165` | #21 |
-| WebSocket handlers without membership checks | Non-members can act on a chat | `internal/controller/websocket.controller.go:386-533` | #23 |
 | Block model | Blocks can be undone by the blocked person and aren't enforced in chats | `internal/services/contact.service.go:321` | #26, #27 |
 | Signup `_id` and account deletion | A new account can take over a deleted user's chats | `internal/controller/auth.controller.go:24`, `services/user.service.go:108` | #34, #35 |
 | Account status only in the token | Bans and deletions don't take effect at once | `internal/middleware/auth.go:20` | #33 |

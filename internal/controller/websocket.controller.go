@@ -377,7 +377,22 @@ func handleLeaveChat(client *models.Client, request models.MessageRequest) {
 		return
 	}
 
-	realtime.GetHubInstance().LeaveChat(client, request.ChatID) // Leave the chat room
+	chatID, err := bson.ObjectIDFromHex(request.ChatID) // Parse chat ID
+	if err != nil {
+		sendErrorResponse(client, request.RequestID, "INVALID_CHAT_ID", "Invalid chat ID format")
+		return
+	}
+
+	// Hex() gives the lowercase form the hub's rooms are keyed by.
+	if err := realtime.GetHubInstance().LeaveChat(client, chatID.Hex()); err != nil {
+		wsLog().Printf("Failed to leave chat: %v", err)
+		if errors.Is(err, realtime.ErrNotInChat) {
+			sendErrorResponse(client, request.RequestID, "PERMISSION_DENIED", "You are not in this chat")
+			return
+		}
+		sendErrorResponse(client, request.RequestID, "LEAVE_FAILED", "Failed to leave chat")
+		return
+	}
 
 	wsLog().Printf("Client %s left chat %s", client.ID, request.ChatID)
 }
@@ -405,7 +420,7 @@ func handleSetTyping(ctx context.Context, client *models.Client, request models.
 	err = services.UpdateTypingStatus(ctx, chatID, client.UserID, isTyping) // Update typing status
 	if err != nil {
 		wsLog().Printf("Failed to update typing status: %v", err)
-		sendErrorResponse(client, request.RequestID, "TYPING_FAILED", "Failed to update typing status")
+		sendChatError(client, request.RequestID, err, "TYPING_FAILED", "Failed to update typing status")
 		return
 	}
 
@@ -446,7 +461,7 @@ func handleMarkRead(client *models.Client, request models.MessageRequest) {
 	err = services.MarkMessagesAsRead(chatID, client.UserID, messageIDs) // Mark messages as read
 	if err != nil {
 		wsLog().Printf("Failed to mark messages as read: %v", err)
-		sendErrorResponse(client, request.RequestID, "READ_FAILED", "Failed to mark messages as read")
+		sendChatError(client, request.RequestID, err, "READ_FAILED", "Failed to mark messages as read")
 		return
 	}
 
@@ -496,7 +511,7 @@ func handleAddReaction(client *models.Client, request models.MessageRequest) {
 			errCode = "MESSAGE_NOT_FOUND"
 			errMsg = "Message not found"
 		}
-		sendErrorResponse(client, request.RequestID, errCode, errMsg)
+		sendChatError(client, request.RequestID, err, errCode, errMsg)
 		return
 	}
 
@@ -572,7 +587,7 @@ func handleRemoveReaction(client *models.Client, request models.MessageRequest) 
 			errCode = "MESSAGE_NOT_FOUND"
 			errMsg = "Message not found"
 		}
-		sendErrorResponse(client, request.RequestID, errCode, errMsg)
+		sendChatError(client, request.RequestID, err, errCode, errMsg)
 		return
 	}
 
@@ -917,6 +932,18 @@ func sendSuccessResponse(client *models.Client, requestID string, data map[strin
 	if !client.TrySend(wsMessage) {
 		wsLog().Printf("Failed to send success response to client %s: channel full", client.ID)
 	}
+}
+
+// sendChatError reports a failed chat action. Known service errors get their own
+// code; anything else gets the caller's code and message, never err's own text.
+func sendChatError(client *models.Client, requestID string, err error, code, message string) {
+	switch {
+	case errors.Is(err, services.ErrNotParticipant):
+		code, message = "PERMISSION_DENIED", "You are not a participant of this chat"
+	case errors.Is(err, services.ErrMessageNotFound):
+		code, message = "MESSAGE_NOT_FOUND", "Message not found"
+	}
+	sendErrorResponse(client, requestID, code, message)
 }
 
 // sendErrorResponse sends an error response to the client
