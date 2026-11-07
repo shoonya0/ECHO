@@ -29,8 +29,9 @@ declining a group invite. The full list is in
 
 ## Recently finished
 
-- **#23:** typing, read receipts, reactions and `leave_chat` now refuse non-members with
-  `PERMISSION_DENIED`. The check is in the service layer, so future callers get it too.
+- **#23:** typing, read receipts and reactions now refuse non-members with
+  `PERMISSION_DENIED`, checked in the service layer. `leave_chat` is refused unless the
+  connection is in the chat's room, and `mark_read` skips IDs from other chats.
 - **#19:** the hub now uses its shared maps safely, so concurrent connections can no longer
   crash the server that way, and inactive-client cleanup can no longer deadlock.
 - **PR #46:** rewrote these docs in plain language and corrected what didn't match the

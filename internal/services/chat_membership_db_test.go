@@ -55,7 +55,9 @@ func TestChatActionsRequireMembership(t *testing.T) {
 		call func(userID, chat bson.ObjectID) error
 	}{
 		{"typing", func(userID, chat bson.ObjectID) error {
-			return UpdateTypingStatus(ctx, chat, userID, true)
+			// A member sends false: true starts a 10-second cleanup timer that
+			// would outlive this test and its database.
+			return UpdateTypingStatus(ctx, chat, userID, userID != member)
 		}},
 		{"mark read", func(userID, chat bson.ObjectID) error {
 			return MarkMessagesAsRead(chat, userID, []bson.ObjectID{messageID})
@@ -92,6 +94,69 @@ func TestChatActionsRequireMembership(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestMarkMessagesAsReadCoversOnlyThisChat(t *testing.T) {
+	ctx := useTestDB(t)
+
+	rec := &recordingBroadcaster{}
+	SetBroadcaster(rec)
+	t.Cleanup(func() { SetBroadcaster(nil) })
+
+	member := bson.NewObjectID()
+	chatID, otherChatID := bson.NewObjectID(), bson.NewObjectID()
+	ownMessage, otherMessage := bson.NewObjectID(), bson.NewObjectID()
+
+	if _, err := database.DB.Collection(string(constants.ChatColl)).InsertOne(ctx, bson.M{
+		"_id":          chatID,
+		"participants": bson.M{member.Hex(): bson.M{"requestStatus": "accepted"}},
+	}); err != nil {
+		t.Fatalf("insert chat: %v", err)
+	}
+	if _, err := database.DB.Collection(string(constants.MessageColl)).InsertMany(ctx, []any{
+		bson.M{"_id": ownMessage, "chatId": chatID},
+		bson.M{"_id": otherMessage, "chatId": otherChatID},
+	}); err != nil {
+		t.Fatalf("insert messages: %v", err)
+	}
+
+	t.Run("only IDs from another chat are refused", func(t *testing.T) {
+		rec.events = nil
+		err := MarkMessagesAsRead(chatID, member, []bson.ObjectID{otherMessage, bson.NewObjectID()})
+		if !errors.Is(err, ErrMessageNotFound) {
+			t.Fatalf("err = %v, want ErrMessageNotFound", err)
+		}
+		if len(rec.events) != 0 {
+			t.Fatalf("published %d events", len(rec.events))
+		}
+		count, err := database.DB.Collection(string(constants.ChatColl)).CountDocuments(ctx, bson.M{
+			"_id": chatID, "readReceipts." + member.Hex(): bson.M{"$exists": true},
+		})
+		if err != nil {
+			t.Fatalf("check chat: %v", err)
+		}
+		if count != 0 {
+			t.Fatal("read receipt advanced with no message read")
+		}
+	})
+
+	t.Run("mixed IDs broadcast only this chat's messages", func(t *testing.T) {
+		rec.events = nil
+		if err := MarkMessagesAsRead(chatID, member, []bson.ObjectID{ownMessage, otherMessage}); err != nil {
+			t.Fatalf("MarkMessagesAsRead: %v", err)
+		}
+		if len(rec.events) != 1 {
+			t.Fatalf("published %d events, want 1", len(rec.events))
+		}
+		data, ok := rec.events[0].Data.(map[string]interface{})
+		if !ok {
+			t.Fatalf("event data = %T", rec.events[0].Data)
+		}
+		ids, ok := data["messageIds"].([]string)
+		if !ok || len(ids) != 1 || ids[0] != ownMessage.Hex() {
+			t.Fatalf("messageIds = %v, want only %s", data["messageIds"], ownMessage.Hex())
+		}
+	})
 }
 
 // assertUntouched fails if userID left any trace on the chat or the message.

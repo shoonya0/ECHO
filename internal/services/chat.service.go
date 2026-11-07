@@ -3,6 +3,7 @@ package services
 import (
 	"context"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"strings"
 	"time"
@@ -114,12 +115,11 @@ func RequireChatMember(ctx context.Context, chatID, userID bson.ObjectID) error 
 // returned message's ID as before to fetch them. It returns ErrChatNotFound
 // when userID is not a participant, so chat IDs can't be probed.
 func GetChatMessages(ctx context.Context, userID bson.ObjectID, chatID bson.ObjectID, limit int, before *bson.ObjectID) (messages []models.Message, hasMore bool, err error) {
-	count, err := database.DB.Collection(string(constants.ChatColl)).CountDocuments(ctx, chatMemberFilter(chatID, userID))
-	if err != nil {
-		return nil, false, fmt.Errorf("failed to check chat membership: %w", err)
-	}
-	if count == 0 {
-		return nil, false, fmt.Errorf("%w", ErrChatNotFound)
+	if err := RequireChatMember(ctx, chatID, userID); err != nil {
+		if errors.Is(err, ErrNotParticipant) {
+			return nil, false, fmt.Errorf("%w", ErrChatNotFound)
+		}
+		return nil, false, err
 	}
 
 	messageFilter := messagePageFilter(chatID, before)
@@ -434,7 +434,8 @@ func UpdateTypingStatus(ctx context.Context, chatID, userID bson.ObjectID, isTyp
 	return nil
 }
 
-// MarkMessagesAsRead marks messages as read by a user
+// MarkMessagesAsRead marks messages as read by a user. IDs that aren't messages
+// of this chat are skipped; it returns ErrMessageNotFound when none are left.
 func MarkMessagesAsRead(chatID, userID bson.ObjectID, messageIDs []bson.ObjectID) error {
 	ctx := context.Background()
 	now := time.Now()
@@ -449,14 +450,34 @@ func MarkMessagesAsRead(chatID, userID bson.ObjectID, messageIDs []bson.ObjectID
 		"chatId": chatID,
 	}
 
+	messages := database.DB.Collection(string(constants.MessageColl))
+
+	cursor, err := messages.Find(ctx, filter, options.Find().SetProjection(bson.M{"_id": 1}))
+	if err != nil {
+		return fmt.Errorf("failed to find messages: %w", err)
+	}
+	var found []struct {
+		ID bson.ObjectID `bson:"_id"`
+	}
+	if err := cursor.All(ctx, &found); err != nil {
+		return fmt.Errorf("failed to read messages: %w", err)
+	}
+	if len(found) == 0 {
+		return fmt.Errorf("%w", ErrMessageNotFound)
+	}
+
+	chatMessageIDs := make([]bson.ObjectID, len(found))
+	for i, message := range found {
+		chatMessageIDs[i] = message.ID
+	}
+
 	update := bson.M{
 		"$set": bson.M{
 			"readBy." + userID.Hex(): now,
 		},
 	}
 
-	_, err := database.DB.Collection(string(constants.MessageColl)).UpdateMany(ctx, filter, update)
-	if err != nil {
+	if _, err := messages.UpdateMany(ctx, filter, update); err != nil {
 		return fmt.Errorf("failed to update read receipts: %w", err)
 	}
 
@@ -464,7 +485,7 @@ func MarkMessagesAsRead(chatID, userID bson.ObjectID, messageIDs []bson.ObjectID
 	updateChatReadReceipts(chatID, userID, now)
 
 	// Broadcast read receipts to other participants
-	broadcastReadReceipts(chatID, userID, messageIDs, now)
+	broadcastReadReceipts(chatID, userID, chatMessageIDs, now)
 
 	return nil
 }

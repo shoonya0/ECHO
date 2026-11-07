@@ -64,7 +64,8 @@ follow it again the next time you connect.
 { "type": "leave_chat", "chatId": "507f1f77bcf86cd799439011", "requestId": "r3" }
 ```
 
-**You get:** no `response`. A `leave` event goes to the chat.
+**You get:** no `response`. A `leave` event goes to the chat. You get `PERMISSION_DENIED` if
+this connection isn't following the chat.
 
 **Errors:** `INVALID_REQUEST`, `INVALID_CHAT_ID`, `PERMISSION_DENIED`, `LEAVE_FAILED`.
 
@@ -88,7 +89,8 @@ database (#40).
 
 ## `mark_read`
 
-Marks messages as read. IDs that aren't valid are skipped, but at least one must be valid.
+Marks messages as read. IDs that aren't valid, or that aren't messages of this chat, are
+skipped, but at least one must be left.
 
 ```json
 {
@@ -101,7 +103,8 @@ Marks messages as read. IDs that aren't valid are skipped, but at least one must
 
 **You get:** no `response`. A `delivery` event goes to the chat.
 
-**Errors:** `INVALID_REQUEST`, `INVALID_CHAT_ID`, `PERMISSION_DENIED`, `READ_FAILED`.
+**Errors:** `INVALID_REQUEST`, `INVALID_CHAT_ID`, `PERMISSION_DENIED`, `MESSAGE_NOT_FOUND`,
+`READ_FAILED`.
 
 ## `add_reaction` and `remove_reaction`
 
