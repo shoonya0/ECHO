@@ -2,6 +2,7 @@ package realtime
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"slices"
 	"sync"
@@ -346,6 +347,13 @@ func (eh *Hub) LeaveChat(client *models.Client, chatID string) error {
 	eh.Mutex.Lock()
 	defer eh.Mutex.Unlock()
 
+	// Only a client in the room may announce a leave, so nobody can spoof one.
+	// The room is checked instead of the participant list because a member
+	// removed from a group stays in the room and must still be able to leave.
+	if _, inRoom := eh.ChatClients[chatID][client.ID]; !inRoom {
+		return ErrNotInChat
+	}
+
 	// Remove from chat
 	eh.removeClientFromChat(client, chatID)
 
@@ -364,6 +372,9 @@ func (eh *Hub) LeaveChat(client *models.Client, chatID string) error {
 
 	return eh.pubSubManager.PublishToChat(chatID, leaveMsg)
 }
+
+// ErrNotInChat means the connection isn't following the chat it tried to leave.
+var ErrNotInChat = errors.New("client is not in this chat")
 
 // removeClientFromChat removes a client from a chat (internal helper)
 func (eh *Hub) removeClientFromChat(client *models.Client, chatID string) {

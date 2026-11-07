@@ -215,7 +215,7 @@ func handleClientRequest(ctx context.Context, client *models.Client, request mod
 		handleJoinChat(ctx, client, request)
 
 	case models.WSRequestTypeLeaveChat:
-		handleLeaveChat(ctx, client, request)
+		handleLeaveChat(client, request)
 
 	case models.WSRequestTypeSetTyping:
 		handleSetTyping(ctx, client, request)
@@ -371,7 +371,7 @@ func handleJoinChat(ctx context.Context, client *models.Client, request models.M
 }
 
 // handleLeaveChat processes chat leaving requests
-func handleLeaveChat(ctx context.Context, client *models.Client, request models.MessageRequest) {
+func handleLeaveChat(client *models.Client, request models.MessageRequest) {
 	if request.ChatID == "" {
 		sendErrorResponse(client, request.RequestID, "INVALID_REQUEST", "ChatID is required")
 		return
@@ -383,14 +383,16 @@ func handleLeaveChat(ctx context.Context, client *models.Client, request models.
 		return
 	}
 
-	// Leaving publishes a leave event to the chat, so outsiders can't do it.
-	if err := services.RequireChatMember(ctx, chatID, client.UserID); err != nil {
-		wsLog().Printf("Failed to check membership for leave: %v", err)
-		sendChatError(client, request.RequestID, err, "LEAVE_FAILED", "Failed to leave chat")
+	// Hex() gives the lowercase form the hub's rooms are keyed by.
+	if err := realtime.GetHubInstance().LeaveChat(client, chatID.Hex()); err != nil {
+		wsLog().Printf("Failed to leave chat: %v", err)
+		if errors.Is(err, realtime.ErrNotInChat) {
+			sendErrorResponse(client, request.RequestID, "PERMISSION_DENIED", "You are not in this chat")
+			return
+		}
+		sendErrorResponse(client, request.RequestID, "LEAVE_FAILED", "Failed to leave chat")
 		return
 	}
-
-	realtime.GetHubInstance().LeaveChat(client, request.ChatID) // Leave the chat room
 
 	wsLog().Printf("Client %s left chat %s", client.ID, request.ChatID)
 }
@@ -932,11 +934,14 @@ func sendSuccessResponse(client *models.Client, requestID string, data map[strin
 	}
 }
 
-// sendChatError reports a failed chat action. Non-members get PERMISSION_DENIED;
-// anything else gets the caller's code and message, never err's own text.
+// sendChatError reports a failed chat action. Known service errors get their own
+// code; anything else gets the caller's code and message, never err's own text.
 func sendChatError(client *models.Client, requestID string, err error, code, message string) {
-	if errors.Is(err, services.ErrNotParticipant) {
+	switch {
+	case errors.Is(err, services.ErrNotParticipant):
 		code, message = "PERMISSION_DENIED", "You are not a participant of this chat"
+	case errors.Is(err, services.ErrMessageNotFound):
+		code, message = "MESSAGE_NOT_FOUND", "Message not found"
 	}
 	sendErrorResponse(client, requestID, code, message)
 }
