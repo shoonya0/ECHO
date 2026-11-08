@@ -39,22 +39,22 @@ var contactFieldsByStatus = map[constants.ContactStatus]struct {
 		ids:        func(c models.ContactInfoEmbed) []bson.ObjectID { return c.Favorites },
 	},
 	constants.StatusBlocked: {
-		projection: bson.M{"_id": 1, "updatedAt": 1, "contactInfo.blockedChats": 1},
-		ids:        func(c models.ContactInfoEmbed) []bson.ObjectID { return c.BlockedChats },
+		projection: bson.M{"_id": 1, "updatedAt": 1, "contactInfo.blocked": 1},
+		ids:        func(c models.ContactInfoEmbed) []bson.ObjectID { return c.Blocked },
 	},
 	constants.StatusContact: {
 		projection: bson.M{
-			"_id":                      1,
-			"updatedAt":                1,
-			"contactInfo.contacts":     1,
-			"contactInfo.favorites":    1,
-			"contactInfo.pendingIn":    1,
-			"contactInfo.pendingOut":   1,
-			"contactInfo.blockedChats": 1,
+			"_id":                    1,
+			"updatedAt":              1,
+			"contactInfo.contacts":   1,
+			"contactInfo.favorites":  1,
+			"contactInfo.pendingIn":  1,
+			"contactInfo.pendingOut": 1,
+			"contactInfo.blocked":    1,
 		},
 		ids: func(c models.ContactInfoEmbed) []bson.ObjectID {
 			return append(append(append(append(
-				c.BlockedChats,
+				c.Blocked,
 				c.PendingOut...),
 				c.PendingIn...),
 				c.Favorites...),
@@ -137,12 +137,13 @@ func GetContacts(ctx context.Context, userID bson.ObjectID, contactStatus consta
 // userContactProjection returns standard projection for contact-validation reads.
 func userContactProjection() bson.M {
 	return bson.M{
-		"_id":                      1,
-		"contactInfo.blockedChats": 1,
-		"contactInfo.pendingOut":   1,
-		"contactInfo.pendingIn":    1,
-		"contactInfo.favorites":    1,
-		"contactInfo.contacts":     1,
+		"_id":                    1,
+		"contactInfo.blocked":    1,
+		"contactInfo.blockedBy":  1,
+		"contactInfo.pendingOut": 1,
+		"contactInfo.pendingIn":  1,
+		"contactInfo.favorites":  1,
+		"contactInfo.contacts":   1,
 	}
 }
 
@@ -171,7 +172,7 @@ func checkContactRequest(user *models.User, target bson.ObjectID) error {
 		return fmt.Errorf("%w", ErrAlreadyInFavorites)
 	case contains(user.ContactInfo.Contacts, target):
 		return fmt.Errorf("%w", ErrAlreadyInContacts)
-	case contains(user.ContactInfo.BlockedChats, target):
+	case isBlockedEitherWay(user, target):
 		return fmt.Errorf("%w", ErrBlocked)
 	}
 	return nil
@@ -293,9 +294,8 @@ func RemoveContact(ctx context.Context, userID, targetUserID bson.ObjectID) erro
 
 	if _, err := UpdateOne(ctx, coll, bson.M{"_id": userID}, bson.M{
 		"$pull": bson.M{
-			"contactInfo.blockedChats": targetUserID,
-			"contactInfo.favorites":    targetUserID,
-			"contactInfo.contacts":     targetUserID,
+			"contactInfo.favorites": targetUserID,
+			"contactInfo.contacts":  targetUserID,
 		},
 		"$set": bson.M{"contactInfo.updatedAt": now},
 	}); err != nil {
@@ -304,9 +304,8 @@ func RemoveContact(ctx context.Context, userID, targetUserID bson.ObjectID) erro
 
 	if _, err := UpdateOne(ctx, coll, bson.M{"_id": targetUserID}, bson.M{
 		"$pull": bson.M{
-			"contactInfo.blockedChats": userID,
-			"contactInfo.favorites":    userID,
-			"contactInfo.contacts":     userID,
+			"contactInfo.favorites": userID,
+			"contactInfo.contacts":  userID,
 		},
 		"$set": bson.M{"contactInfo.updatedAt": now},
 	}); err != nil {
@@ -316,74 +315,97 @@ func RemoveContact(ctx context.Context, userID, targetUserID bson.ObjectID) erro
 	return nil
 }
 
-// BlockUnblockUser blocks or unblocks a user. Blocking removes the target
-// from the caller's contacts/favourites/pending lists on both sides.
+// BlockUnblockUser blocks or unblocks a user. A block is one-sided (#26): it goes in
+// the caller's contactInfo.blocked and the target's hidden contactInfo.blockedBy, so
+// only the caller can lift it. Blocking also removes the target from the
+// contacts/favourites/pending lists on both sides.
+//
+// The two writes are idempotent ($addToSet/$pull) and "already blocked/unblocked" is
+// decided from both documents, so retrying after a half-finished write repairs it.
 func BlockUnblockUser(ctx context.Context, userID, targetUserID bson.ObjectID, action string) error {
 	if userID == targetUserID {
 		return fmt.Errorf("%w", ErrSelfBlock)
 	}
 
-	// Verify the target exists.
-	if _, err := fetchUserContact(ctx, targetUserID); err != nil {
+	user, err := fetchUserContact(ctx, userID)
+	if err != nil {
 		return err
 	}
+	target, err := fetchUserContact(ctx, targetUserID)
+	if err != nil {
+		return err
+	}
+	// Both halves of the caller's own block. A block the target made is not looked at.
+	callerHalf := contains(user.ContactInfo.Blocked, targetUserID)
+	targetHalf := contains(target.ContactInfo.BlockedBy, userID)
 
 	now := time.Now()
 	coll := database.DB.Collection(string(constants.UserColl))
+	var callerUpdate, targetUpdate bson.M
 
 	switch constants.ContactStatus(action) {
 	case constants.StatusBlocked:
-		// Push into blockedChats and pull the target from every positive list
-		// on both sides so the block completely severs the relationship.
-		pullAll := bson.M{
-			"contactInfo.contacts":   targetUserID,
-			"contactInfo.favorites":  targetUserID,
-			"contactInfo.pendingIn":  targetUserID,
-			"contactInfo.pendingOut": targetUserID,
+		if callerHalf && targetHalf {
+			return fmt.Errorf("%w", ErrAlreadyBlocked)
 		}
-		pullAllReverse := bson.M{
-			"contactInfo.contacts":   userID,
-			"contactInfo.favorites":  userID,
-			"contactInfo.pendingIn":  userID,
-			"contactInfo.pendingOut": userID,
+		callerUpdate = bson.M{
+			"$addToSet": bson.M{"contactInfo.blocked": targetUserID},
+			"$pull":     relationshipLists(targetUserID),
+			"$set":      bson.M{"contactInfo.updatedAt": now},
 		}
-
-		if _, err := UpdateOne(ctx, coll, bson.M{"_id": userID}, bson.M{
-			"$push": bson.M{"contactInfo.blockedChats": targetUserID},
-			"$pull": pullAll,
-			"$set":  bson.M{"contactInfo.updatedAt": now},
-		}); err != nil {
-			return fmt.Errorf("failed to block user: %w", err)
-		}
-
-		if _, err := UpdateOne(ctx, coll, bson.M{"_id": targetUserID}, bson.M{
-			"$push": bson.M{"contactInfo.blockedChats": userID},
-			"$pull": pullAllReverse,
-			"$set":  bson.M{"contactInfo.updatedAt": now},
-		}); err != nil {
-			return fmt.Errorf("failed to update target user: %w", err)
+		targetUpdate = bson.M{
+			"$addToSet": bson.M{"contactInfo.blockedBy": userID},
+			"$pull":     relationshipLists(userID),
+			"$set":      bson.M{"contactInfo.updatedAt": now},
 		}
 
 	case constants.StatusUnblocked:
-		if _, err := UpdateOne(ctx, coll, bson.M{"_id": userID}, bson.M{
-			"$pull": bson.M{"contactInfo.blockedChats": targetUserID},
-			"$set":  bson.M{"contactInfo.updatedAt": now},
-		}); err != nil {
-			return fmt.Errorf("failed to unblock user: %w", err)
+		if !callerHalf && !targetHalf {
+			return fmt.Errorf("%w", ErrAlreadyUnblocked)
 		}
-
-		if _, err := UpdateOne(ctx, coll, bson.M{"_id": targetUserID}, bson.M{
-			"$pull": bson.M{"contactInfo.blockedChats": userID},
+		callerUpdate = bson.M{
+			"$pull": bson.M{"contactInfo.blocked": targetUserID},
 			"$set":  bson.M{"contactInfo.updatedAt": now},
-		}); err != nil {
-			return fmt.Errorf("failed to update target user: %w", err)
+		}
+		targetUpdate = bson.M{
+			"$pull": bson.M{"contactInfo.blockedBy": userID},
+			"$set":  bson.M{"contactInfo.updatedAt": now},
 		}
 
 	default:
 		return fmt.Errorf("unknown action: %s (use 'blocked' or 'unblocked')", action)
 	}
 
+	res, err := UpdateOne(ctx, coll, bson.M{"_id": userID}, callerUpdate)
+	if err != nil {
+		return fmt.Errorf("failed to %s user: %w", action, err)
+	}
+	if res.MatchedCount == 0 {
+		return fmt.Errorf("%w: caller no longer exists", ErrUserNotFound)
+	}
+	res, err = UpdateOne(ctx, coll, bson.M{"_id": targetUserID}, targetUpdate)
+	if err != nil {
+		return fmt.Errorf("failed to update %s user: %w", action, err)
+	}
+	if res.MatchedCount == 0 {
+		return fmt.Errorf("%w: target no longer exists", ErrUserNotFound)
+	}
 	return nil
+}
+
+// relationshipLists is the $pull that removes id from every contact list a block ends.
+func relationshipLists(id bson.ObjectID) bson.M {
+	return bson.M{
+		"contactInfo.contacts":   id,
+		"contactInfo.favorites":  id,
+		"contactInfo.pendingIn":  id,
+		"contactInfo.pendingOut": id,
+	}
+}
+
+// isBlockedEitherWay reports whether user blocked target or target blocked user.
+func isBlockedEitherWay(user *models.User, target bson.ObjectID) bool {
+	return contains(user.ContactInfo.Blocked, target) || contains(user.ContactInfo.BlockedBy, target)
 }
 
 // AddToFavorites adds a user to the current user's favorites.
@@ -396,7 +418,7 @@ func AddToFavorites(ctx context.Context, userID, targetUserID bson.ObjectID) err
 	if !contains(user.ContactInfo.Contacts, targetUserID) {
 		return fmt.Errorf("%w", ErrNotInContacts)
 	}
-	if contains(user.ContactInfo.BlockedChats, targetUserID) {
+	if isBlockedEitherWay(user, targetUserID) {
 		return fmt.Errorf("%w", ErrBlocked)
 	}
 	if contains(user.ContactInfo.Favorites, targetUserID) {

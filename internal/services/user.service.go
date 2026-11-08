@@ -208,6 +208,7 @@ func GetUserSuggestions(ctx context.Context, userID bson.ObjectID, page, limit i
 			bson.E{Key: "$and", Value: []bson.M{
 				{"$ne": []interface{}{"$_id", "$$selfId"}},
 				{"$not": bson.D{bson.E{Key: "$in", Value: []interface{}{"$_id", "$$blocked"}}}},
+				{"$not": bson.D{bson.E{Key: "$in", Value: []interface{}{"$_id", "$$blockedBy"}}}},
 				{"$not": bson.D{bson.E{Key: "$in", Value: []interface{}{"$_id", "$$pendingOut"}}}},
 				{"$not": bson.D{bson.E{Key: "$in", Value: []interface{}{"$_id", "$$pendingIn"}}}},
 				{"$not": bson.D{bson.E{Key: "$in", Value: []interface{}{"$_id", "$$favorites"}}}},
@@ -237,14 +238,18 @@ func GetUserSuggestions(ctx context.Context, userID bson.ObjectID, page, limit i
 	}
 	lookupPipeline = append(lookupPipeline, sortStage, skipStage, limitStage, projectStage)
 
-	// reusable "let" block for both lookups (same variables referenced by $$)
+	// reusable "let" block for both lookups (same variables referenced by $$).
+	// $in fails on a missing array, so each list defaults to empty.
+	orEmpty := func(field string) bson.M { return bson.M{"$ifNull": bson.A{field, bson.A{}}} }
 	letDoc := bson.D{
 		bson.E{Key: "selfId", Value: "$_id"},
-		bson.E{Key: "blocked", Value: "$contactInfo.blockedChats"},
-		bson.E{Key: "pendingOut", Value: "$contactInfo.pendingOut"},
-		bson.E{Key: "pendingIn", Value: "$contactInfo.pendingIn"},
-		bson.E{Key: "favorites", Value: "$contactInfo.favorites"},
-		bson.E{Key: "contacts", Value: "$contactInfo.contacts"},
+		// #26: hide a block from both sides, so the blocked person can't find the blocker.
+		bson.E{Key: "blocked", Value: orEmpty("$contactInfo.blocked")},
+		bson.E{Key: "blockedBy", Value: orEmpty("$contactInfo.blockedBy")},
+		bson.E{Key: "pendingOut", Value: orEmpty("$contactInfo.pendingOut")},
+		bson.E{Key: "pendingIn", Value: orEmpty("$contactInfo.pendingIn")},
+		bson.E{Key: "favorites", Value: orEmpty("$contactInfo.favorites")},
+		bson.E{Key: "contacts", Value: orEmpty("$contactInfo.contacts")},
 	}
 
 	// countPipeline: same match filters, but only $count (no sort/skip/limit/project)

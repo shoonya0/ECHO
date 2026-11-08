@@ -58,3 +58,65 @@ func BackfillGroupOwnerRoles(ctx context.Context) (int64, error) {
 	}
 	return updated, nil
 }
+
+// MigrateLegacyBlocks moves blocks out of the old contactInfo.blockedChats field (#26).
+// Before the fix a block was written to both users, so the field can't tell who blocked
+// whom. Each pair is kept as a mutual block: both users get the other in blocked and
+// blockedBy, so nobody is unblocked without choosing to be, and either can lift their own
+// half. Idempotent: a user is done once blockedChats is removed, and that happens last,
+// so an interrupted run is finished by the next one. Returns the number of users migrated.
+func MigrateLegacyBlocks(ctx context.Context) (int64, error) {
+	users := database.DB.Collection(string(constants.UserColl))
+	cur, err := users.Find(ctx,
+		bson.M{"contactInfo.blockedChats": bson.M{"$exists": true}},
+		options.Find().SetProjection(bson.M{"contactInfo.blockedChats": 1}),
+	)
+	if err != nil {
+		return 0, fmt.Errorf("find legacy blocks: %w", err)
+	}
+	defer func() { _ = cur.Close(ctx) }() // read-only cursor; a close error changes nothing
+
+	var migrated int64
+	for cur.Next(ctx) {
+		var u struct {
+			ID          bson.ObjectID `bson:"_id"`
+			ContactInfo struct {
+				BlockedChats []bson.ObjectID `bson:"blockedChats"`
+			} `bson:"contactInfo"`
+		}
+		if err := cur.Decode(&u); err != nil {
+			return migrated, fmt.Errorf("decode user: %w", err)
+		}
+
+		// The other side first, so the block survives if this user's update fails.
+		// A missing other user (deleted account) matches nothing, which is fine.
+		for _, other := range u.ContactInfo.BlockedChats {
+			if _, err := users.UpdateOne(ctx, bson.M{"_id": other}, bson.M{"$addToSet": bson.M{
+				"contactInfo.blocked":   u.ID,
+				"contactInfo.blockedBy": u.ID,
+			}}); err != nil {
+				return migrated, fmt.Errorf("migrate block %s -> %s: %w", other.Hex(), u.ID.Hex(), err)
+			}
+		}
+
+		ids := u.ContactInfo.BlockedChats
+		if ids == nil {
+			ids = []bson.ObjectID{}
+		}
+		res, err := users.UpdateOne(ctx, bson.M{"_id": u.ID}, bson.M{
+			"$addToSet": bson.M{
+				"contactInfo.blocked":   bson.M{"$each": ids},
+				"contactInfo.blockedBy": bson.M{"$each": ids},
+			},
+			"$unset": bson.M{"contactInfo.blockedChats": ""},
+		})
+		if err != nil {
+			return migrated, fmt.Errorf("migrate blocks of %s: %w", u.ID.Hex(), err)
+		}
+		migrated += res.ModifiedCount
+	}
+	if err := cur.Err(); err != nil {
+		return migrated, fmt.Errorf("iterate users: %w", err)
+	}
+	return migrated, nil
+}

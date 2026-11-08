@@ -63,6 +63,12 @@ func main() {
 		} else if n > 0 {
 			log.WithField("groups", n).Info("Backfilled group owner roles")
 		}
+		// #26: blocks stored on both users become one-sided fields; idempotent.
+		if n, err := services.MigrateLegacyBlocks(indexCtx); err != nil {
+			log.WithError(err).Error("Failed to migrate legacy blocks")
+		} else if n > 0 {
+			log.WithField("users", n).Info("Migrated legacy blocks")
+		}
 	}()
 	// Redis backs token revocation and WebSocket pub/sub, so it is required.
 	if err := database.ConnectRedis(ctx); err != nil {
