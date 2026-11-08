@@ -11,10 +11,10 @@ on `main`. To learn what the product does, read
 and with a link to exactly one feature state.md. Updated by /close-increment and
 /feature-docs update. -->
 
-- **Feature:** none yet (set by `/feature-docs start`) · #26 fixed on
-  `fix/26-one-sided-blocks`, waiting for review and merge
-- **Next step:** review and merge the #26 PR, then fix #34
-- **Updated:** 2026-11-08 at `65280a2`
+- **Feature:** none yet (set by `/feature-docs start`) · #26 fixed in PR #61 (CI green,
+  code-review fixes applied), waiting for merge
+- **Next step:** merge PR #61, then fix #34
+- **Updated:** 2026-11-08 at `e703f75`
 
 ## Where things stand
 
@@ -124,4 +124,4 @@ code: [architecture-overview.md](./architecture-overview.md#riskiest-areas).
 
 ## Next task
 
-Review and merge the #26 PR. Then fix #34.
+Merge PR #61 (#26). Then fix #34.
