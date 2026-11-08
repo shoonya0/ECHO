@@ -75,8 +75,9 @@ imports `services`, and Go doesn't allow import loops. So `services` declares a 
 
 MongoDB has three collections.
 
-- **`users`:** profile, presence, contact lists (`contactInfo`), `chats` (a map of chat ID to
-  unread count) and `chatInvitations`. Emails are unique, enforced by an index.
+- **`users`:** profile, presence, contact lists (`contactInfo`, including the one-sided
+  `blocked` and hidden `blockedBy` lists), `chats` (a map of chat ID to unread count) and
+  `chatInvitations`. Emails are unique, enforced by an index.
 - **`chats`:** `participants` (a map keyed by user ID, holding role, status and a copy of
   the user's details), `inviteCode[]`, `readReceipts`, `typingUsers` and `stats`. No extra
   indexes.
@@ -111,7 +112,7 @@ Take extra care when changing these places.
 |---|---|---|---|
 | Disconnect cleanup | Subscriptions and old connections are left behind | `internal/realtime/hub.go:242` | #20 |
 | One Redis connection per channel | Connections grow with users and chats | `internal/realtime/pubsub.go:165` | #21 |
-| Block model | Blocks can be undone by the blocked person and aren't enforced in chats | `internal/services/contact.service.go:321` | #26, #27 |
+| Block model | Blocks aren't enforced in chats | `internal/services/chat.service.go` | #27 |
 | Signup `_id` and account deletion | A new account can take over a deleted user's chats | `internal/controller/auth.controller.go:24`, `services/user.service.go:108` | #34, #35 |
 | Account status only in the token | Bans and deletions don't take effect at once | `internal/middleware/auth.go:20` | #33 |
 | Writes across several documents | No transactions, so an update can half-finish | `services/chat.service.go`, `contact.service.go` | #37 |

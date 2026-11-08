@@ -78,7 +78,7 @@ All of these start with `users/contacts`.
 | `POST /:targetUserId` | Sends a contact request |
 | `PUT /:requestId?action=accepted` | Accepts a request. Use `action=declined` to decline. |
 | `DELETE /:contactId` | Removes a contact |
-| `POST /blockUnblock/:userId` | Blocks or unblocks someone |
+| `POST /blockUnblock/:userId` | Blocks or unblocks someone (`action=block` or `action=unblock`; block is the default). Only the person who blocked can unblock. `409` if already blocked, or if you didn't block them. The block never appears in the blocked person's lists or suggestions, but their contact requests to you fail with `403`. |
 | `POST /favorite/:userId` | Adds to favorites |
 | `DELETE /favorite/:userId` | Removes from favorites |
 
