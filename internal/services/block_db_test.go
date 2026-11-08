@@ -127,6 +127,59 @@ func TestMutualBlocksAreIndependent(t *testing.T) {
 	}
 }
 
+// #26 review: block and unblock are two writes. If only one landed, retrying
+// must finish the job instead of reporting "already blocked/unblocked".
+func TestBlockRetryRepairsHalfWrite(t *testing.T) {
+	ctx := useTestDB(t)
+	users := database.DB.Collection(string(constants.UserColl))
+	a, b := bson.NewObjectID(), bson.NewObjectID()
+	insertTestUsers(t, ctx, a, b)
+
+	// Only the blocker's side was written.
+	if _, err := users.UpdateOne(ctx, bson.M{"_id": a}, bson.M{"$set": bson.M{"contactInfo.blocked": bson.A{b}}}); err != nil {
+		t.Fatalf("seed: %v", err)
+	}
+	if err := BlockUnblockUser(ctx, a, b, string(constants.StatusBlocked)); err != nil {
+		t.Fatalf("retry block: %v", err)
+	}
+	if got := loadBlocks(t, ctx, b); !slices.Equal(got.BlockedBy, []bson.ObjectID{a}) {
+		t.Fatalf("B.blockedBy after retry = %v, want [A]", got.BlockedBy)
+	}
+
+	// Only the blocker's side was cleared by an unblock.
+	if _, err := users.UpdateOne(ctx, bson.M{"_id": a}, bson.M{"$set": bson.M{"contactInfo.blocked": bson.A{}}}); err != nil {
+		t.Fatalf("seed: %v", err)
+	}
+	if err := BlockUnblockUser(ctx, a, b, string(constants.StatusUnblocked)); err != nil {
+		t.Fatalf("retry unblock: %v", err)
+	}
+	if got := loadBlocks(t, ctx, b); len(got.BlockedBy) != 0 {
+		t.Fatalf("B.blockedBy after retried unblock = %v, want []", got.BlockedBy)
+	}
+	// A stale blockedBy no longer stops B's requests.
+	if err := SendContactRequest(ctx, b, a); err != nil {
+		t.Fatalf("B requests A after unblock: %v", err)
+	}
+}
+
+// #26 review: favorites use the same block check as contact requests.
+func TestAddToFavoritesRefusesEitherBlockSide(t *testing.T) {
+	ctx := useTestDB(t)
+	users := database.DB.Collection(string(constants.UserColl))
+	a, b := bson.NewObjectID(), bson.NewObjectID()
+	insertTestUsers(t, ctx, a, b)
+
+	// B still has A as a contact but A blocked B (a partial write or legacy data).
+	if _, err := users.UpdateOne(ctx, bson.M{"_id": b}, bson.M{"$set": bson.M{
+		"contactInfo.contacts": bson.A{a}, "contactInfo.blockedBy": bson.A{a},
+	}}); err != nil {
+		t.Fatalf("seed: %v", err)
+	}
+	if err := AddToFavorites(ctx, b, a); !errors.Is(err, ErrBlocked) {
+		t.Fatalf("B favorites A: err = %v, want ErrBlocked", err)
+	}
+}
+
 func TestBlockUnknownUser(t *testing.T) {
 	ctx := useTestDB(t)
 	a := bson.NewObjectID()
