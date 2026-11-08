@@ -47,6 +47,7 @@ flowchart TD
 | `internal/models` | Data shapes: MongoDB documents, API payloads, WebSocket messages | — |
 | `internal/database` | MongoDB and Redis connections, index definitions | config |
 | `internal/utils` | Tokens, reply helpers, default values, invite code encryption | config, models |
+| `internal/testutil` | Test helpers shared across packages (throwaway test database) | database |
 
 `constants` and `logger` are used almost everywhere, so the table leaves them out.
 

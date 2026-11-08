@@ -120,7 +120,7 @@ Adds or removes an emoji reaction. Both use the same format.
 ```
 
 **You get:** a `response` with `action` set to `reaction_added` or `reaction_removed`. A
-`reaction` event goes to the chat. See #25.
+`reaction` event goes to the chat. See #25 and #58.
 
 **Errors:** `INVALID_REQUEST`, `INVALID_CHAT_ID`, `INVALID_MESSAGE_ID`,
 `PERMISSION_DENIED`, `MESSAGE_NOT_FOUND`, `REACTION_FAILED`.
