@@ -142,8 +142,13 @@ permission checks on these routes.
   full access (#5). They get no live messages, though (#17).
 - `add-members` returns `403` if you aren't an owner or admin. People already in the group
   are skipped, so they keep their role. If everyone is already in, it returns `409`.
-- Invite codes last 24 hours. Joining with a code makes you an `accepted` member. It fails
-  if you are already in the group, even as `pending`.
+- Invite codes last 24 hours. Joining with a code makes you an `accepted` member. The code
+  must be stored on that group, not deleted and not expired, or joining returns
+  `400 Invalid invite`. Joining fails with `409` if you are already in the group, even as
+  `pending`. If an earlier join failed halfway, retrying it finishes the join and returns
+  `409`.
+- The other invite routes return `400` only for a code that can't be decoded. For a code
+  that isn't stored, or is deleted, they reply `200` or `500` instead (#30).
 
 ## Hub statistics
 

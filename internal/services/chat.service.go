@@ -21,7 +21,10 @@ import (
 
 // ============ ENHANCED CHAT SERVICE WITH REAL-TIME SUPPORT ============
 
-// GetUserChats retrieves all chats where the user is a participant
+// GetUserChats returns the chats the hub subscribes userID to: the chats in the
+// user's chats list where the user is also a participant. The list alone isn't
+// trusted: before #9 was fixed, a forged invite code added a group to it
+// without making the user a participant, and those entries are still stored.
 func GetUserChats(ctx context.Context, userID bson.ObjectID) ([]bson.ObjectID, error) {
 	log := logger.WithContext(ctx)
 
@@ -40,12 +43,32 @@ func GetUserChats(ctx context.Context, userID bson.ObjectID) ([]bson.ObjectID, e
 		return nil, fmt.Errorf("failed to get user: %w", err)
 	}
 
-	chats := make([]bson.ObjectID, 0)
-
+	listed := make([]bson.ObjectID, 0, len(user.Chats))
 	for chatID := range user.Chats {
-		chats = append(chats, chatID)
+		listed = append(listed, chatID)
+	}
+	if len(listed) == 0 {
+		return listed, nil
 	}
 
+	cursor, err := database.DB.Collection(string(constants.ChatColl)).Find(ctx,
+		bson.M{"_id": bson.M{"$in": listed}, participantField(userID): bson.M{"$exists": true}},
+		options.Find().SetProjection(bson.M{"_id": 1}),
+	)
+	if err != nil {
+		return nil, fmt.Errorf("failed to find user chats: %w", err)
+	}
+	var found []struct {
+		ID bson.ObjectID `bson:"_id"`
+	}
+	if err := cursor.All(ctx, &found); err != nil {
+		return nil, fmt.Errorf("failed to decode user chats: %w", err)
+	}
+
+	chats := make([]bson.ObjectID, 0, len(found))
+	for _, c := range found {
+		chats = append(chats, c.ID)
+	}
 	return chats, nil
 }
 
@@ -91,9 +114,14 @@ func trimMessagePage(messages []models.Message, limit int) ([]models.Message, bo
 	return messages, false
 }
 
+// participantField is the key of userID's entry in a chat's participants map.
+func participantField(userID bson.ObjectID) string {
+	return "participants." + userID.Hex()
+}
+
 // chatMemberFilter matches the chat only when userID is one of its participants.
 func chatMemberFilter(chatID, userID bson.ObjectID) bson.M {
-	return bson.M{"_id": chatID, "participants." + userID.Hex(): bson.M{"$exists": true}}
+	return bson.M{"_id": chatID, participantField(userID): bson.M{"$exists": true}}
 }
 
 // RequireChatMember returns ErrNotParticipant unless userID is a participant of
@@ -1049,25 +1077,15 @@ func SendInviteToUser(ctx context.Context, actingUserID bson.ObjectID, inviteID 
 	return nil
 }
 
+// JoinGroupByInvite adds userID to the group named in the invite code. The
+// code must be stored on that group, not deleted and not expired: decrypting
+// alone proves nothing, since anyone holding the key can mint a code. Only the
+// stored expiry is checked. A real code carries the same expiry, and comparing
+// it with this server's clock could reject a fresh code minted on another one.
 func JoinGroupByInvite(ctx context.Context, userID bson.ObjectID, inviteID string) error {
-	chatObjectID, expireTime, err := parseInviteCode(inviteID)
+	chatObjectID, _, err := parseInviteCode(inviteID)
 	if err != nil {
 		return err
-	}
-
-	if expireTime.Before(time.Now()) || expireTime.After(time.Now().Add(24*time.Hour)) {
-		return fmt.Errorf("%w", ErrInvalidInvite)
-	}
-
-	// Check if user already in chat
-	count, err := database.DB.Collection(string(constants.ChatColl)).CountDocuments(ctx,
-		bson.M{"_id": chatObjectID, "participants." + userID.Hex(): bson.M{"$exists": true}},
-	)
-	if err != nil {
-		return fmt.Errorf("failed to check if user is in the chat: %w", err)
-	}
-	if count > 0 {
-		return fmt.Errorf("user already in the chat")
 	}
 
 	user, err := GetUserBasicInfo(ctx, userID)
@@ -1091,28 +1109,73 @@ func JoinGroupByInvite(ctx context.Context, userID bson.ObjectID, inviteID strin
 
 	updateInviteCodeUserIDs := bson.M{
 		"$set": bson.M{
-			"participants." + userID.Hex(): userParticipant,
+			participantField(userID): userParticipant,
 		},
-		"$push": bson.M{
+		"$addToSet": bson.M{
 			"inviteCode.$.userIDs": userID,
 		},
 	}
 
-	_, err = database.DB.Collection(string(constants.ChatColl)).UpdateOne(ctx,
-		bson.M{"_id": chatObjectID, "inviteCode.inviteCode": inviteID},
+	res, err := database.DB.Collection(string(constants.ChatColl)).UpdateOne(ctx,
+		bson.M{
+			"_id":                    chatObjectID,
+			"chatType":               string(constants.ChatTypeGroup),
+			participantField(userID): bson.M{"$exists": false},
+			"inviteCode": bson.M{"$elemMatch": bson.M{
+				"inviteCode":  inviteID,
+				"deleted":     bson.M{"$ne": true},
+				"expiredDate": bson.M{"$gt": time.Now()},
+			}},
+		},
 		updateInviteCodeUserIDs,
 	)
 	if err != nil {
 		return fmt.Errorf("failed to update invite code user IDs: %w", err)
 	}
+	if res.MatchedCount == 0 {
+		return joinNotApplied(ctx, chatObjectID, userID)
+	}
 
 	// Add chat ref to user
-	_, _ = database.DB.Collection(string(constants.UserColl)).UpdateOne(ctx,
+	userRes, err := database.DB.Collection(string(constants.UserColl)).UpdateOne(ctx,
 		bson.M{"_id": userID},
 		bson.M{"$set": bson.M{"chats." + chatObjectID.Hex(): 0}},
 	)
+	if err != nil {
+		return fmt.Errorf("failed to add chat to user: %w", err)
+	}
+	if userRes.MatchedCount == 0 {
+		return fmt.Errorf("add chat to user: %w", ErrUserNotFound)
+	}
 
 	return nil
+}
+
+// joinNotApplied picks the error for a join whose update matched nothing:
+// ErrAlreadyParticipant if userID is already in the chat, else ErrInvalidInvite.
+// A member can get here because an earlier join stopped after adding them to
+// participants but before adding the chat to their chats list, which the hub
+// needs to deliver live messages. A retry would never get past this point, so
+// the missing entry is added here. An existing entry keeps its unread count.
+func joinNotApplied(ctx context.Context, chatID, userID bson.ObjectID) error {
+	count, err := database.DB.Collection(string(constants.ChatColl)).CountDocuments(ctx, chatMemberFilter(chatID, userID))
+	if err != nil {
+		return fmt.Errorf("failed to check if user is in the chat: %w", err)
+	}
+	if count == 0 {
+		return fmt.Errorf("%w", ErrInvalidInvite)
+	}
+
+	chatRef := "chats." + chatID.Hex()
+	_, err = database.DB.Collection(string(constants.UserColl)).UpdateOne(ctx,
+		bson.M{"_id": userID, chatRef: bson.M{"$exists": false}},
+		bson.M{"$set": bson.M{chatRef: 0}},
+	)
+	if err != nil {
+		return fmt.Errorf("failed to restore chat ref of user: %w", err)
+	}
+
+	return fmt.Errorf("%w", ErrAlreadyParticipant)
 }
 
 func GetAllInvitesOfUser(ctx context.Context, userID bson.ObjectID) ([]models.ChatInvitationEmbed, error) {
@@ -1140,23 +1203,23 @@ func GetAllInvitesOfUser(ctx context.Context, userID bson.ObjectID) ([]models.Ch
 func parseInviteCode(inviteCode string) (bson.ObjectID, time.Time, error) {
 	raw, err := hex.DecodeString(inviteCode)
 	if err != nil {
-		return bson.ObjectID{}, time.Time{}, fmt.Errorf("failed to decode invite ID: %w", err)
+		return bson.ObjectID{}, time.Time{}, fmt.Errorf("%w: failed to decode invite ID: %v", ErrInvalidInvite, err)
 	}
 
 	info, err := utils.Decrypt(raw)
 	if err != nil {
-		return bson.ObjectID{}, time.Time{}, fmt.Errorf("failed to decrypt invite ID: %w", err)
+		return bson.ObjectID{}, time.Time{}, fmt.Errorf("%w: failed to decrypt invite ID: %v", ErrInvalidInvite, err)
 	}
 
 	chatIDStr, _, _ := strings.Cut(info, "_")
 	chatID, err := bson.ObjectIDFromHex(chatIDStr)
 	if err != nil {
-		return bson.ObjectID{}, time.Time{}, fmt.Errorf("failed to parse chat ID from invite: %w", err)
+		return bson.ObjectID{}, time.Time{}, fmt.Errorf("%w: failed to parse chat ID from invite: %v", ErrInvalidInvite, err)
 	}
 
 	expiresAt, err := time.Parse(time.RFC3339, info[strings.LastIndex(info, "_")+1:])
 	if err != nil {
-		return bson.ObjectID{}, time.Time{}, fmt.Errorf("failed to parse expire time: %w", err)
+		return bson.ObjectID{}, time.Time{}, fmt.Errorf("%w: failed to parse expire time: %v", ErrInvalidInvite, err)
 	}
 
 	return chatID, expiresAt, nil

@@ -61,8 +61,9 @@ imports `services`, and Go doesn't allow import loops. So `services` declares a 
 1. **Log in:** `POST /login` → check the password with bcrypt → return a JWT that lasts 7
    days. The token carries the user's details, account status and presence. The middleware
    trusts those details without asking the database (#33).
-2. **Connect:** `GET /ws/chat` with the token → the hub reads `users.chats` from MongoDB →
-   subscribes to `user:<id>` and `chat:<id>` in Redis → adds the connection to `ChatClients`.
+2. **Connect:** `GET /ws/chat` with the token → the hub reads `users.chats` from MongoDB and
+   keeps the chats where the user is in `participants` → subscribes to `user:<id>` and
+   `chat:<id>` in Redis → adds the connection to `ChatClients`.
 3. **Send a message:** `send_message` → check membership (`GetChat`) → save the message →
    update the chat → publish on `chat:<id>` → every server passes it to its local
    connections in `ChatClients[chatID]`.
@@ -85,7 +86,8 @@ MongoDB has three collections.
   `readBy` map.
 
 **Watch out: membership is stored in two places.** `chats.participants` decides who may send
-and read. `users.chats` decides what a connection follows live. The two can disagree, which
+and read. `users.chats` decides what a connection follows live, limited to chats that also
+list the user in `participants`. The two can still disagree, which
 causes #14, #17 and #28. Choosing one is an open decision in
 [current-state.md](./current-state.md#open-decisions).
 
@@ -116,4 +118,4 @@ Take extra care when changing these places.
 | Account deletion | Deleting an account leaves its ID behind in chats and contact lists | `internal/services/user.service.go:108` | #35 |
 | Account status only in the token | Bans and deletions don't take effect at once | `internal/middleware/auth.go:20` | #33 |
 | Writes across several documents | No transactions, so an update can half-finish | `services/chat.service.go`, `contact.service.go` | #37 |
-| Invite codes | The encryption key is in the public source code | `internal/utils/defaultInitialization.go:155` | #9, #15 |
+| Invite codes | The encryption key is in the public source code, so anyone can read a code | `internal/utils/defaultInitialization.go:155` | #15 |

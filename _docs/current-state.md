@@ -1,7 +1,7 @@
 # ECHO: current state
 
-A one-page snapshot of where the project stands. Last checked on 2026-11-09 at `a609365`
-on `fix/34-server-signup-id`. To learn what the product does, read
+A one-page snapshot of where the project stands. Last checked on 2026-11-09 at `f384c47`
+on `main`. To learn what the product does, read
 [product-overview.md](./product-overview.md). For the code, read
 [architecture-overview.md](./architecture-overview.md).
 
@@ -11,10 +11,12 @@ on `fix/34-server-signup-id`. To learn what the product does, read
 and with a link to exactly one feature state.md. Updated by /close-increment and
 /feature-docs update. -->
 
-- **Feature:** none yet (set by `/feature-docs start`) · #34 fixed in PR #64 (verify
-  `--full` passes, code-review fixes applied), waiting for merge
-- **Next step:** merge PR #64, then fix #9 (forged invite codes)
-- **Updated:** 2026-11-09 at `c84fbe8`
+- **Feature:** none yet (set by `/feature-docs start`) · #9 fixed in PR #66 (verify
+  `--full` and a live forged-code check pass). The code review's in-scope findings are
+  fixed, and the rest are proposed as issues. Waiting for merge. It supersedes PR #12. The
+  production audit for #34 hasn't been run yet
+- **Next step:** merge #9, close PR #12, then fix #24 (hub stats)
+- **Updated:** 2026-11-09 on `fix/9-stored-invite-codes`
 
 ## Where things stand
 
@@ -29,10 +31,21 @@ declining a group invite. The full list is in
 
 ## Recently finished
 
-- **#34 (PR #64):** signup now always generates the user ID on the server. An `_id` in the request
-  is ignored, so nobody can sign up with a deleted user's ID and take over their chats. The
-  reply now returns the stored ID instead of `000000000000000000000000`. Accounts that were
-  created with a chosen ID before the fix aren't found or flagged.
+- **#9 (PR #66):** joining a group needs an invite code that is stored on that group, not deleted
+  and not expired. Before, any code that decrypted worked, and the key is public (#15). A
+  connection now follows only chats that list the user in `participants`, so `chats`
+  entries planted by forged codes before the fix give no live messages. Codes that can't
+  be decoded return 400 on every invite route. Joining twice returns 409 instead of 500,
+  and retrying a join that failed halfway finishes it. The code is carried over from
+  PR #12, which branched before the docs rewrite.
+- **#34 (PR #64):** signup now always generates the user ID on the server. An `_id` in the
+  request is ignored, so nobody can sign up with a deleted user's ID and take over their
+  chats. The reply now returns the stored ID instead of `000000000000000000000000`. The
+  code review found #65. **Still to do:** accounts that took over an ID before the fix
+  aren't found automatically. Run this once on the production database. A reused ID's
+  timestamp is older than the account's `createdAt`. If it lists any accounts, file an issue
+  to clean them up:
+  `db.users.find({ $expr: { $lt: [ { $toDate: "$_id" }, { $subtract: ["$createdAt", 60000] } ] } }, { _id: 1, email: 1, createdAt: 1 })`
 - **#26 (PR #61):** blocks are one-sided. They are stored in `contactInfo.blocked` (shown to the
   blocker) and `contactInfo.blockedBy` (never sent to clients), so only the blocker can lift
   a block and the blocked person can't see it. Blocking twice, or unblocking someone you
@@ -58,17 +71,17 @@ to remember is `node scripts/verify.mjs`.
 
 ## Test baseline
 
-Run on 2026-11-09 at `a609365` (branch `fix/34-server-signup-id`), on Windows, with
+Run on 2026-11-09 at `46a6a54` (branch `fix/9-stored-invite-codes`), on Windows, with
 MongoDB running and `TEST_DB_REQUIRED=1`, through `node scripts/verify.mjs --full`. The lint
 row is from 2026-11-07 at `90b2f73`. Compare new runs against this table by test name.
 
 | Command | Duration | Result | Known failures (by name) |
 |---|---|---|---|
 | `go build ./...` | 2s | pass | — |
-| `go vet ./...` | 2s | pass | — |
+| `go vet ./...` | 1s | pass | — |
 | `gofmt -l cmd internal` | <1s | pass (no files) | — |
-| `go test ./...` | 2s | pass, none skipped | — |
-| `go test -race ./...` | 13s | pass, none skipped | — |
+| `go test ./...` | 3s | pass, none skipped | — |
+| `go test -race ./...` | 10s | pass, none skipped | — |
 | `golangci-lint run ./...` (v2.14) | 11s | **27 issues**: errcheck 20, staticcheck 7 | not blocking: verify lints only new code (`--new-from-merge-base=origin/main`) |
 
 - Tests that need MongoDB skip when it isn't running, unless `TEST_DB_REQUIRED` is set. CI
@@ -112,7 +125,7 @@ have no status, so the check must allow for that.
 
 ## Known issues and risks
 
-There are 40 open issues, and #34 closes when its fix merges. Fix these first: #9. Where
+There are 40 open issues, and #9 closes when its fix merges. Fix these first: #24. Where
 each risk sits in the
 code: [architecture-overview.md](./architecture-overview.md#riskiest-areas).
 
@@ -121,8 +134,8 @@ code: [architecture-overview.md](./architecture-overview.md#riskiest-areas).
 | Live connections | The server can leak resources or stall under load, missed live messages can't be detected, and open connections miss new chats | #20, #21, #22, #43, #49, #54, #55 |
 | Chat access | Hub stats show too much, and some replies reveal whether a chat exists | #24, #59 |
 | Groups | Members are never asked to accept, and live delivery doesn't match who is in the group | #5, #14, #16, #17, #28 |
-| Invite codes | Codes can be forged, and the invite endpoints lack permission checks | #9, #15, #29, #30 |
-| Accounts | Bans and deletions don't take effect at once, deleting an account leaves old references, emails are case-sensitive and usernames aren't unique | #33, #35, #36 |
+| Invite codes | Anyone can decrypt a code, and the invite endpoints lack permission checks | #15, #29, #30 |
+| Accounts | Bans and deletions don't take effect at once, deleting an account leaves old references, emails are case-sensitive, usernames aren't unique, and signup logs personal data | #33, #35, #36, #65 |
 | Contacts and blocking | Blocks aren't enforced in chats, your contacts list includes people you blocked, and blocks written during a deploy can be missed | #27, #38, #39, #62, #63 |
 | Online status and privacy | Online status is unreliable, and privacy settings aren't applied | #31, #32 |
 | Messages and data | Reaction counts drift, emoji values can corrupt reactions, writes can half-finish, and some lists grow without limit | #25, #37, #42, #58 |
@@ -131,5 +144,5 @@ code: [architecture-overview.md](./architecture-overview.md#riskiest-areas).
 
 ## Next task
 
-Merge PR #64 (#34). Then fix #9: forged invite codes subscribe any user to a
-group's live messages. Write a failing test first.
+Merge the #9 fix and close PR #12 as superseded. Then fix #24: `GET chats/hub/stats` shows
+any logged-in user who is online and which chats are active. Write a failing test first.
