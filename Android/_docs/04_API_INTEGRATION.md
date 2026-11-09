@@ -56,7 +56,7 @@
 |---|---|---|---|
 | `POST` | `chats/direct/:userId` | — | `ChatDto` |
 | `POST` | `chats/group` | `{ name, description, participants: [userIds] }` | `ChatDto` |
-| `GET` | `chats/hub/stats` | — | Hub statistics (monitoring) |
+| `GET` | `chats/hub/stats` | — | Operators only (needs the server's `X-Stats-Token`). The app doesn't call it. |
 
 ### Messages (auth required)
 
@@ -179,9 +179,6 @@ interface ChatApiService {
 
     @POST("chats/group")
     suspend fun createGroupChat(@Body request: CreateGroupRequest): ApiResponse<ChatDto>
-
-    @GET("chats/hub/stats")
-    suspend fun getHubStats(): ApiResponse<HubStatsDto>
 }
 ```
 
