@@ -138,7 +138,8 @@ its connections live, though it is still in the chat history (#43).
 | Memory or Redis connections keep growing | Known problems: #20, #21 |
 | Online status is wrong | Known problem: #31 |
 
-`GET /echo/v1/chats/hub/stats` shows the counts and channels for one server. See
+`GET /echo/v1/chats/hub/stats` shows the counts for one server, to operators who send the
+stats token. See
 [rest-api.md](./rest-api.md#hub-statistics).
 
 ## Known problems

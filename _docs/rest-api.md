@@ -91,7 +91,7 @@ The five lists accept `limit` (default 10). Don't send `limit=0`: it crashes the
 |---|---|
 | `POST chats/direct/:userId` | Opens a direct chat. If you already have one with this person, you get that one back. |
 | `POST chats/group` | Creates a group. Send `name`, `participants` (user IDs, at least one valid) and optionally `description`. |
-| `GET chats/hub/stats` | Live statistics (see [below](#hub-statistics)) |
+| `GET chats/hub/stats` | Live statistics, for operators only (see [below](#hub-statistics)) |
 
 There is no route that lists your chats, and none that renames a group.
 
@@ -152,8 +152,10 @@ permission checks on these routes.
 
 ## Hub statistics
 
-`GET chats/hub/stats` shows what this one server is doing. Any logged-in user can call it,
-and it shows too much (#24).
+`GET chats/hub/stats` shows what this one server is doing. It is for operators, not for
+the app. Besides the login token, the request needs an `X-Stats-Token` header that matches
+the server's `STATS_TOKEN` setting. Without it, or while `STATS_TOKEN` is unset, the reply
+is `404 Not found`. The reply has counts only, never user or chat IDs.
 
 ```json
 {
@@ -166,7 +168,6 @@ and it shows too much (#24).
     "totalUsers": 120,
     "cacheSize": 80,
     "subscribedChannels": 170,
-    "channels": ["presence:global", "chat:<chatID>"],
     "timestamp": "2026-11-04T12:00:00Z"
   }
 }

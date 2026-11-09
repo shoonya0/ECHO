@@ -59,6 +59,7 @@ All settings are environment variables; `.env` is only a local convenience.
 | `JWT_SECRET` | — (required)                         |                                               |
 | `LOG_FILE`   | — (stdout)                           | Set to a path to log to a file                |
 | `LOG_LEVEL`  | `info`                               | `debug`, `info`, `warn`, `error`              |
+| `STATS_TOKEN` | — (route off)                       | Unlocks `GET chats/hub/stats` (send it as `X-Stats-Token`) |
 
 ## API overview
 
