@@ -21,6 +21,7 @@ you need, read that page, and stop when you have your answer.
 | See every request an app can send | [websocket-requests.md](./websocket-requests.md) |
 | See every event the server sends | [websocket-events.md](./websocket-events.md) |
 | Start from working code | [websocket-client-example.md](./websocket-client-example.md) |
+| Read the Android app's plans | [Android/_docs/README.md](../Android/_docs/README.md) |
 
 ## Work on the server
 
