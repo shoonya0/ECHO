@@ -32,7 +32,7 @@ flowchart LR
 ## What works today
 
 Checked against the code at `17ec08b`. Issue numbers were last updated on 2026-11-09
-(#34 fixed, #65 added). Numbers like `#33` are GitHub issues.
+(#9 and #34 fixed, #65 added). Numbers like `#33` are GitHub issues.
 
 | Feature | What people can do | Status | Known gaps |
 |---|---|---|---|
@@ -42,7 +42,7 @@ Checked against the code at `17ec08b`. Issue numbers were last updated on 2026-1
 | Contacts | Send, accept and decline requests; remove; favorites; block and unblock | Partly works | Blocks aren't enforced in chats (#27). Also #38, #39, #62, #63. |
 | Direct chats | Start a chat with one person | Works | Someone already online gets no live messages from a new chat until they reconnect (#49). |
 | Group chats | Create a group; add and remove members | Partly works | Added members are never asked to accept (#5) and get no live messages (#17). Removed members keep getting them until they reconnect (#14). Also #16, #28. |
-| Invite codes | Create, list, delete and send codes; join with a code | Partly works | Codes can be forged (#9, #15). Also #29, #30. |
+| Invite codes | Create, list, delete and send codes; join with a code | Partly works | Anyone can decrypt a code and read the creator's ID and name (#15). Also #29, #30. |
 | Live messages | Send and receive instantly | Works | Missed messages can't be detected (#43). |
 | Message history | Load old messages, page by page | Works | |
 | Typing, read receipts, reactions | See who is typing, who has read a message, and emoji reactions | Partly works | Reaction counts can drift (#25). Emoji values aren't checked (#58). |
@@ -74,7 +74,7 @@ Checked against the code at `17ec08b`. Issue numbers were last updated on 2026-1
 - **Profile edits** are limited to an allow list of fields.
 - **Browser access (CORS)** is open to any site. No cookies are used.
 
-Open security bugs: #9, #15, #24, #33, #58, #59.
+Open security bugs: #15, #24, #33, #58, #59.
 
 ## Performance
 

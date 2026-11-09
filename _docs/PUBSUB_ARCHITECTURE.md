@@ -89,8 +89,10 @@ after 2 minutes, and nothing reads it yet (#31).
 
 **When someone connects,** the hub:
 
-1. Reads the `chats` list on the user's MongoDB document.
-2. Subscribes this server to `user:<userID>` and to `chat:<chatID>` for each chat.
+1. Reads the `chats` list on the user's MongoDB document, and keeps only the chats where
+   the user is also in `participants` (`GetUserChats`). Before #9 was fixed, a forged
+   invite code could add a chat to the list without making the user a participant.
+2. Subscribes this server to `user:<userID>` and to `chat:<chatID>` for each of those chats.
 3. Adds the connection to its lookup tables.
 4. Sends the welcome message.
 
