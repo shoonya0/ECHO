@@ -20,11 +20,13 @@ import (
 	"golang.org/x/crypto/bcrypt"
 )
 
+// SignupRequest has no ID field: the server always generates the user ID. A
+// client-chosen ID would let anyone sign up as a deleted user and inherit
+// their chats (#34). An "_id" in the body is ignored.
 type SignupRequest struct {
-	ID       bson.ObjectID `json:"_id" bson:"_id"`
-	Email    string        `json:"email" binding:"required,email"`
-	Username string        `json:"username" binding:"required"`
-	Password string        `json:"password" binding:"required,min=8"`
+	Email    string `json:"email" binding:"required,email"`
+	Username string `json:"username" binding:"required"`
+	Password string `json:"password" binding:"required,min=8"`
 }
 
 type LoginRequest struct {
@@ -63,7 +65,7 @@ func Signup(c *gin.Context) {
 		return
 	}
 
-	user := utils.NewUserWithDefaults(req.ID, req.Email, req.Username, string(hash))
+	user := utils.NewUserWithDefaults(req.Email, req.Username, string(hash))
 
 	if _, err := database.DB.Collection(string(constants.UserColl)).InsertOne(c.Request.Context(), user); err != nil {
 		// A concurrent signup with the same email can pass the count check

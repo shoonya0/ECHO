@@ -42,7 +42,7 @@ The codes are `MISSING_AUTH_HEADER`, `INVALID_AUTH_FORMAT`, `EMPTY_TOKEN`,
 
 | Route | What it does |
 |---|---|
-| `POST signup` | Creates an account. Send `email`, `username` and `password` (8 characters or more). `409` if the email is taken. Don't send `_id`: the server accepts it, and it shouldn't (#34). |
+| `POST signup` | Creates an account. Send `email`, `username` and `password` (8 characters or more). `409` if the email is taken. The server picks the new user's ID and returns it as `data._id`. An `_id` in the request is ignored. |
 | `POST login` | Send `email` and `password`. Returns `data.token` (valid for 7 days) and `data.user`. `401` for a wrong password, `403` for a banned or inactive account. |
 | `POST auth/logout` | Cancels the token you are using |
 | `GET /health` | Returns `{"status":"ok"}`. It sits at the root, not under `/echo/v1/`, and needs no login. |
