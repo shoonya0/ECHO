@@ -32,11 +32,11 @@ flowchart LR
 ## What works today
 
 Checked against the code at `17ec08b`. Issue numbers were last updated on 2026-11-09
-(#34 fixed). Numbers like `#33` are GitHub issues.
+(#34 fixed, #65 added). Numbers like `#33` are GitHub issues.
 
 | Feature | What people can do | Status | Known gaps |
 |---|---|---|---|
-| Accounts | Sign up, log in (lasts 7 days), log out | Works | Banned or deleted users stay logged in until their token ends (#33). Also #36. |
+| Accounts | Sign up, log in (lasts 7 days), log out | Works | Banned or deleted users stay logged in until their token ends (#33). Also #36, #65. |
 | Profiles | View, edit and delete your profile; view other people's | Works | Deleting a profile leaves old references behind (#35). |
 | Finding people | Get suggestions of people to add | Works | The "nearby" and "popular" lists are empty placeholders. |
 | Contacts | Send, accept and decline requests; remove; favorites; block and unblock | Partly works | Blocks aren't enforced in chats (#27). Also #38, #39, #62, #63. |
