@@ -16,11 +16,13 @@ import (
 )
 
 // NewUserWithDefaults creates a new User with all embedded structures properly initialized
-func NewUserWithDefaults(id bson.ObjectID, email, username, passwordHash string) models.User {
+// and a new server-generated ID. The caller can't choose the ID (#34), and the
+// returned user carries the same ID that will be inserted.
+func NewUserWithDefaults(email, username, passwordHash string) models.User {
 	now := time.Now()
 
 	return models.User{
-		ID:           id,
+		ID:           bson.NewObjectID(),
 		Email:        email,
 		Username:     username,
 		PasswordHash: passwordHash,
