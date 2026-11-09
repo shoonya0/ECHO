@@ -11,8 +11,8 @@ on `fix/34-server-signup-id`. To learn what the product does, read
 and with a link to exactly one feature state.md. Updated by /close-increment and
 /feature-docs update. -->
 
-- **Feature:** none yet (set by `/feature-docs start`) · #34 fixed on
-  `fix/34-server-signup-id` (verify `--full` passes), waiting for review and merge
+- **Feature:** none yet (set by `/feature-docs start`) · #34 fixed in PR #64 (verify
+  `--full` passes), waiting for review and merge
 - **Next step:** review and merge #34, then fix #9 (forged invite codes)
 - **Updated:** 2026-11-09 at `a609365`
 
@@ -29,7 +29,7 @@ declining a group invite. The full list is in
 
 ## Recently finished
 
-- **#34:** signup now always generates the user ID on the server. An `_id` in the request
+- **#34 (PR #64):** signup now always generates the user ID on the server. An `_id` in the request
   is ignored, so nobody can sign up with a deleted user's ID and take over their chats. The
   reply now returns the stored ID instead of `000000000000000000000000`.
 - **#26 (PR #61):** blocks are one-sided. They are stored in `contactInfo.blocked` (shown to the
