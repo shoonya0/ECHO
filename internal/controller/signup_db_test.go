@@ -3,8 +3,6 @@ package controller
 import (
 	"encoding/json"
 	"net/http"
-	"net/http/httptest"
-	"strings"
 	"testing"
 
 	"github.com/shoonya0/ECHO/internal/constants"
@@ -23,24 +21,23 @@ func TestSignupGeneratesTheUserID(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	ctx := testutil.UseTestDB(t)
 
-	// A deleted user's ID: no document has it any more.
-	deleted := bson.NewObjectID()
-
 	tests := []struct {
-		name, email, extra string
+		name, email string
+		sendID      bool
 	}{
-		{"client sends _id", "chosen@example.com", `"_id":"` + deleted.Hex() + `",`},
-		{"no _id", "plain@example.com", ""},
+		{"client sends _id", "chosen@example.com", true},
+		{"no _id", "plain@example.com", false},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			body := `{` + tt.extra + `"email":"` + tt.email + `","username":"u","password":"password123"}`
-			w := httptest.NewRecorder()
-			c, _ := gin.CreateTestContext(w)
-			c.Request = httptest.NewRequest(http.MethodPost, "/", strings.NewReader(body))
-			c.Request.Header.Set("Content-Type", "application/json")
-
-			Signup(c)
+			// A deleted user's ID: no document has it any more.
+			deleted := bson.NewObjectID()
+			extra := ""
+			if tt.sendID {
+				extra = `"_id":"` + deleted.Hex() + `",`
+			}
+			body := `{` + extra + `"email":"` + tt.email + `","username":"u","password":"password123"}`
+			w := postJSON(Signup, body)
 
 			if w.Code != http.StatusOK {
 				t.Fatalf("status = %d, want 200 (body %s)", w.Code, w.Body)
@@ -54,13 +51,20 @@ func TestSignupGeneratesTheUserID(t *testing.T) {
 				t.Fatalf("decode body: %v", err)
 			}
 
-			var stored models.User
-			if err := database.DB.Collection(string(constants.UserColl)).
-				FindOne(ctx, bson.M{"email": tt.email}).Decode(&stored); err != nil {
-				t.Fatalf("find created user: %v", err)
+			users := database.DB.Collection(string(constants.UserColl))
+			// Checked by ID, not only through the email lookup below, so a second
+			// document under the chosen ID can't hide behind the generated one.
+			if tt.sendID {
+				if n, err := users.CountDocuments(ctx, bson.M{"_id": deleted}); err != nil {
+					t.Fatalf("count users with the chosen _id: %v", err)
+				} else if n != 0 {
+					t.Fatalf("a user was stored under the client-chosen _id %s", deleted.Hex())
+				}
 			}
-			if stored.ID == deleted {
-				t.Fatalf("signup stored the client-chosen _id %s", deleted.Hex())
+
+			var stored models.User
+			if err := users.FindOne(ctx, bson.M{"email": tt.email}).Decode(&stored); err != nil {
+				t.Fatalf("find created user: %v", err)
 			}
 			if stored.ID.IsZero() {
 				t.Fatalf("stored user has a zero _id")
