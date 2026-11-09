@@ -11,9 +11,11 @@ on `main`. To learn what the product does, read
 and with a link to exactly one feature state.md. Updated by /close-increment and
 /feature-docs update. -->
 
-- **Feature:** none yet (set by `/feature-docs start`) · #24 fixed on branch
-  `fix/24-hub-stats`, PR not opened yet. The production audit for #34 hasn't been run yet
-- **Next step:** open the #24 PR, review and merge it, then fix #58 (reaction emoji)
+- **Feature:** none yet (set by `/feature-docs start`) · #24 fixed in PR #70 (verify
+  `--full`, CI and a live check pass), waiting for review and merge. After the merge,
+  `STATS_TOKEN` must exist on Render for production stats. The production audit for #34
+  hasn't been run yet
+- **Next step:** review and merge #24, then fix #58 (reaction emoji)
 - **Updated:** 2026-11-10 on `fix/24-hub-stats`
 
 ## Where things stand
@@ -29,7 +31,7 @@ declining a group invite. The full list is in
 
 ## Recently finished
 
-- **#24 (branch `fix/24-hub-stats`):** `GET chats/hub/stats` is for operators only. It needs
+- **#24 (PR #70):** `GET chats/hub/stats` is for operators only. It needs
   an `X-Stats-Token` header that matches the new `STATS_TOKEN` setting, and it is off while
   that is unset. Every refusal is `404`. The reply no longer lists the Redis channels, which
   named every online user and active chat. `render.yaml` asks Render to generate the token.
