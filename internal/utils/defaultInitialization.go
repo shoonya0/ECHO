@@ -31,7 +31,7 @@ func NewUserWithDefaults(email, username, passwordHash string) models.User {
 
 		// Initialize Profile with defaults
 		Profile: models.UserProfileEmbed{
-			DisplayName:   username, // Use email as default display name
+			DisplayName:   username, // The username is the default display name
 			Avatar:        "",
 			StatusMessage: "",
 			Bio:           "",

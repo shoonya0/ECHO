@@ -12,9 +12,9 @@ and with a link to exactly one feature state.md. Updated by /close-increment and
 /feature-docs update. -->
 
 - **Feature:** none yet (set by `/feature-docs start`) · #34 fixed in PR #64 (verify
-  `--full` passes), waiting for review and merge
-- **Next step:** review and merge #34, then fix #9 (forged invite codes)
-- **Updated:** 2026-11-09 at `a609365`
+  `--full` passes, code-review fixes applied), waiting for merge
+- **Next step:** merge PR #64, then fix #9 (forged invite codes)
+- **Updated:** 2026-11-09 at `c84fbe8`
 
 ## Where things stand
 
@@ -31,7 +31,8 @@ declining a group invite. The full list is in
 
 - **#34 (PR #64):** signup now always generates the user ID on the server. An `_id` in the request
   is ignored, so nobody can sign up with a deleted user's ID and take over their chats. The
-  reply now returns the stored ID instead of `000000000000000000000000`.
+  reply now returns the stored ID instead of `000000000000000000000000`. Accounts that were
+  created with a chosen ID before the fix aren't found or flagged.
 - **#26 (PR #61):** blocks are one-sided. They are stored in `contactInfo.blocked` (shown to the
   blocker) and `contactInfo.blockedBy` (never sent to clients), so only the blocker can lift
   a block and the blocked person can't see it. Blocking twice, or unblocking someone you
@@ -130,5 +131,5 @@ code: [architecture-overview.md](./architecture-overview.md#riskiest-areas).
 
 ## Next task
 
-Review and merge the #34 fix. Then fix #9: forged invite codes subscribe any user to a
+Merge PR #64 (#34). Then fix #9: forged invite codes subscribe any user to a
 group's live messages. Write a failing test first.

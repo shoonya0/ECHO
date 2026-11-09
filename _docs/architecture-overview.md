@@ -113,7 +113,7 @@ Take extra care when changing these places.
 | Disconnect cleanup | Subscriptions and old connections are left behind | `internal/realtime/hub.go:242` | #20 |
 | One Redis connection per channel | Connections grow with users and chats | `internal/realtime/pubsub.go:165` | #21 |
 | Block model | Blocks aren't enforced in chats; the startup block migration runs only once | `internal/services/chat.service.go`, `internal/services/migrations.go` | #27, #63 |
-| Account deletion | Deleting an account leaves its ID behind in chats and contact lists | `services/user.service.go:108` | #35 |
+| Account deletion | Deleting an account leaves its ID behind in chats and contact lists | `internal/services/user.service.go:108` | #35 |
 | Account status only in the token | Bans and deletions don't take effect at once | `internal/middleware/auth.go:20` | #33 |
 | Writes across several documents | No transactions, so an update can half-finish | `services/chat.service.go`, `contact.service.go` | #37 |
 | Invite codes | The encryption key is in the public source code | `internal/utils/defaultInitialization.go:155` | #9, #15 |

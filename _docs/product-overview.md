@@ -31,7 +31,8 @@ flowchart LR
 
 ## What works today
 
-Checked against the code at `17ec08b`. Numbers like `#33` are GitHub issues.
+Checked against the code at `17ec08b`. Issue numbers were last updated on 2026-11-09
+(#34 fixed). Numbers like `#33` are GitHub issues.
 
 | Feature | What people can do | Status | Known gaps |
 |---|---|---|---|
