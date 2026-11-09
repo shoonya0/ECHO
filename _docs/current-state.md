@@ -12,10 +12,11 @@ and with a link to exactly one feature state.md. Updated by /close-increment and
 /feature-docs update. -->
 
 - **Feature:** none yet (set by `/feature-docs start`) · #9 fixed in PR #66 (verify
-  `--full` and a live forged-code check pass), waiting for review and merge. It supersedes
-  PR #12. The production audit for #34 hasn't been run yet
-- **Next step:** review and merge #9, close PR #12, then fix #24 (hub stats)
-- **Updated:** 2026-11-09 at `46a6a54`
+  `--full` and a live forged-code check pass). The code review's in-scope findings are
+  fixed, and the rest are proposed as issues. Waiting for merge. It supersedes PR #12. The
+  production audit for #34 hasn't been run yet
+- **Next step:** merge #9, close PR #12, then fix #24 (hub stats)
+- **Updated:** 2026-11-09 on `fix/9-stored-invite-codes`
 
 ## Where things stand
 
@@ -33,9 +34,10 @@ declining a group invite. The full list is in
 - **#9 (PR #66):** joining a group needs an invite code that is stored on that group, not deleted
   and not expired. Before, any code that decrypted worked, and the key is public (#15). A
   connection now follows only chats that list the user in `participants`, so `chats`
-  entries planted by forged codes before the fix give no live messages. Bad codes return
-  400 on every invite route, and joining twice returns 409 instead of 500. The code is
-  carried over from PR #12, which branched before the docs rewrite.
+  entries planted by forged codes before the fix give no live messages. Codes that can't
+  be decoded return 400 on every invite route. Joining twice returns 409 instead of 500,
+  and retrying a join that failed halfway finishes it. The code is carried over from
+  PR #12, which branched before the docs rewrite.
 - **#34 (PR #64):** signup now always generates the user ID on the server. An `_id` in the
   request is ignored, so nobody can sign up with a deleted user's ID and take over their
   chats. The reply now returns the stored ID instead of `000000000000000000000000`. The
