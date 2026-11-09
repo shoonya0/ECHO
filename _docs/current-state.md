@@ -11,11 +11,10 @@ on `main`. To learn what the product does, read
 and with a link to exactly one feature state.md. Updated by /close-increment and
 /feature-docs update. -->
 
-- **Feature:** none yet (set by `/feature-docs start`) · #9 merged (PR #66). PR #12, the
-  older #9 fix, is still open and should be closed as superseded. The production audit for
-  #34 hasn't been run yet
-- **Next step:** fix #24 (hub stats)
-- **Updated:** 2026-11-10 at `16a110b`
+- **Feature:** none yet (set by `/feature-docs start`) · #24 fixed on branch
+  `fix/24-hub-stats`, PR not opened yet. The production audit for #34 hasn't been run yet
+- **Next step:** open the #24 PR, review and merge it, then fix #58 (reaction emoji)
+- **Updated:** 2026-11-10 on `fix/24-hub-stats`
 
 ## Where things stand
 
@@ -30,6 +29,10 @@ declining a group invite. The full list is in
 
 ## Recently finished
 
+- **#24 (branch `fix/24-hub-stats`):** `GET chats/hub/stats` is for operators only. It needs
+  an `X-Stats-Token` header that matches the new `STATS_TOKEN` setting, and it is off while
+  that is unset. Every refusal is `404`. The reply no longer lists the Redis channels, which
+  named every online user and active chat. `render.yaml` asks Render to generate the token.
 - **#9 (PR #66):** joining a group needs an invite code that is stored on that group, not deleted
   and not expired. Before, any code that decrypted worked, and the key is public (#15). A
   connection now follows only chats that list the user in `participants`, so `chats`
@@ -127,14 +130,15 @@ have no status, so the check must allow for that.
 
 ## Known issues and risks
 
-There are 42 open issues. Fix these first: #24. Where
+There are 42 open issues, and #24 closes when its fix merges. Fix these first: #58, then
+#33. Where
 each risk sits in the
 code: [architecture-overview.md](./architecture-overview.md#riskiest-areas).
 
 | Area | The problem, in short | Issues |
 |---|---|---|
 | Live connections | The server can leak resources or stall under load, missed live messages can't be detected, and open connections miss new chats | #20, #21, #22, #43, #49, #54, #55 |
-| Chat access | Hub stats show too much, and some replies reveal whether a chat exists | #24, #59 |
+| Chat access | Some replies reveal whether a chat exists | #59 |
 | Groups | Members are never asked to accept, live delivery doesn't match who is in the group, and the size limit isn't enforced | #5, #14, #16, #17, #28, #68 |
 | Invite codes | Anyone can decrypt a code, the invite endpoints lack permission checks, and entries left by forged joins before #9 was fixed are still stored | #15, #29, #30, #69 |
 | Accounts | Bans and deletions don't take effect at once, deleting an account leaves old references, emails are case-sensitive, usernames aren't unique, and signup logs personal data | #33, #35, #36, #65 |
@@ -146,5 +150,5 @@ code: [architecture-overview.md](./architecture-overview.md#riskiest-areas).
 
 ## Next task
 
-Fix #24: `GET chats/hub/stats` shows any logged-in user who is online and which chats are
-active. Write a failing test first. Close PR #12 as superseded by #66 if it is still open.
+Merge the #24 fix. Then fix #58: reaction emoji go into MongoDB field paths unchecked, so a
+chat member can corrupt a message's reactions. Write a failing test first.

@@ -32,7 +32,7 @@ flowchart LR
 ## What works today
 
 Checked against the code at `17ec08b`. Issue numbers were last updated on 2026-11-10
-(#9 and #34 fixed, #65 and #67 to #69 added). Numbers like `#33` are GitHub issues.
+(#9, #24 and #34 fixed, #65 and #67 to #69 added). Numbers like `#33` are GitHub issues.
 
 | Feature | What people can do | Status | Known gaps |
 |---|---|---|---|
@@ -73,8 +73,10 @@ Checked against the code at `17ec08b`. Issue numbers were last updated on 2026-1
   remove members.
 - **Profile edits** are limited to an allow list of fields.
 - **Browser access (CORS)** is open to any site. No cookies are used.
+- **Hub statistics** are for operators. They need the server's `STATS_TOKEN` as well as a
+  login, and they show counts only.
 
-Open security bugs: #15, #24, #33, #58, #59.
+Open security bugs: #15, #33, #58, #59.
 
 ## Performance
 
