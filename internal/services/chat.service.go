@@ -21,7 +21,10 @@ import (
 
 // ============ ENHANCED CHAT SERVICE WITH REAL-TIME SUPPORT ============
 
-// GetUserChats retrieves all chats where the user is a participant
+// GetUserChats returns the chats the hub subscribes userID to: the chats in the
+// user's chats list where the user is also a participant. The list alone isn't
+// trusted: before #9 was fixed, a forged invite code added a group to it
+// without making the user a participant, and those entries are still stored.
 func GetUserChats(ctx context.Context, userID bson.ObjectID) ([]bson.ObjectID, error) {
 	log := logger.WithContext(ctx)
 
@@ -40,12 +43,32 @@ func GetUserChats(ctx context.Context, userID bson.ObjectID) ([]bson.ObjectID, e
 		return nil, fmt.Errorf("failed to get user: %w", err)
 	}
 
-	chats := make([]bson.ObjectID, 0)
-
+	listed := make([]bson.ObjectID, 0, len(user.Chats))
 	for chatID := range user.Chats {
-		chats = append(chats, chatID)
+		listed = append(listed, chatID)
+	}
+	if len(listed) == 0 {
+		return listed, nil
 	}
 
+	cursor, err := database.DB.Collection(string(constants.ChatColl)).Find(ctx,
+		bson.M{"_id": bson.M{"$in": listed}, "participants." + userID.Hex(): bson.M{"$exists": true}},
+		options.Find().SetProjection(bson.M{"_id": 1}),
+	)
+	if err != nil {
+		return nil, fmt.Errorf("failed to find user chats: %w", err)
+	}
+	var found []struct {
+		ID bson.ObjectID `bson:"_id"`
+	}
+	if err := cursor.All(ctx, &found); err != nil {
+		return nil, fmt.Errorf("failed to decode user chats: %w", err)
+	}
+
+	chats := make([]bson.ObjectID, 0, len(found))
+	for _, c := range found {
+		chats = append(chats, c.ID)
+	}
 	return chats, nil
 }
 
