@@ -5,7 +5,8 @@ WebSocket load test for the ECHO server. Two phases against a running instance:
 1. **Concurrency** — opens `CONNS` authenticated WebSocket connections across a
    small pool of users, reports connect success rate and connect-time
    percentiles, and cross-checks the hub's own `totalClients` via
-   `GET /chats/hub/stats`.
+   `GET /chats/hub/stats`. That route is for operators only, so set
+   `STATS_TOKEN` to the server's value, or the cross-check is skipped.
 2. **Latency** — provisions `PAIRS` user pairs, each with a direct chat; every
    sender fires `MSGS` messages and the harness times each
    `send_message` → server `response` round-trip (validation + persistence +
@@ -42,6 +43,7 @@ node loadtest.mjs http://localhost:8080
 | `MSGS`        | `40`    | Messages each sender sends                          |
 | `MSG_GAP`     | `25`    | Milliseconds between a sender's messages            |
 | `RTT_TIMEOUT` | `10000` | Max wait (ms) for a message's response before it's counted lost |
+| `STATS_TOKEN` | empty   | The server's `STATS_TOKEN`, sent as `X-Stats-Token` to read hub stats |
 
 Example:
 

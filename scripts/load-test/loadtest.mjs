@@ -38,6 +38,8 @@ const PAIRS = int("PAIRS", 50);
 const MSGS = int("MSGS", 40);
 const MSG_GAP = int("MSG_GAP", 25);
 const RTT_TIMEOUT = int("RTT_TIMEOUT", 10000);
+// Same value as the server's STATS_TOKEN. Hub stats are operator-only (#24).
+const STATS_TOKEN = process.env.STATS_TOKEN || "";
 
 function int(name, def) {
   const v = process.env[name];
@@ -49,8 +51,8 @@ const createdTokens = []; // for cleanup
 
 // ---------- HTTP helpers ----------
 
-async function http(method, path, { token, body } = {}) {
-  const headers = {};
+async function http(method, path, { token, body, headers: extra } = {}) {
+  const headers = { ...extra };
   if (token) headers.Authorization = `Bearer ${token}`;
   if (body !== undefined) headers["Content-Type"] = "application/json";
   let res;
@@ -168,7 +170,15 @@ async function phaseConcurrency() {
   const tReg = performance.now();
   let peak = 0, lastData = null, stable = 0;
   for (let i = 0; i < 120; i++) { // up to ~60s
-    const hub = await http("GET", "/chats/hub/stats", { token: users[0].token });
+    const hub = await http("GET", "/chats/hub/stats", {
+      token: users[0].token,
+      headers: STATS_TOKEN ? { "X-Stats-Token": STATS_TOKEN } : undefined,
+    });
+    if (hub.status !== 200) {
+      console.log(`
+  hub stats unavailable (${hub.status}): set STATS_TOKEN to the server's value to check registrations`);
+      break;
+    }
     lastData = hub.json?.data ?? hub.json ?? null;
     const n = lastData?.totalClients ?? 0;
     if (n > peak) { peak = n; stable = 0; } else { stable++; }
