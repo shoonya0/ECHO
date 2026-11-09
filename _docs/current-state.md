@@ -1,6 +1,6 @@
 # ECHO: current state
 
-A one-page snapshot of where the project stands. Last checked on 2026-11-09 at `f384c47`
+A one-page snapshot of where the project stands. Last checked on 2026-11-10 at `16a110b`
 on `main`. To learn what the product does, read
 [product-overview.md](./product-overview.md). For the code, read
 [architecture-overview.md](./architecture-overview.md).
@@ -11,12 +11,11 @@ on `main`. To learn what the product does, read
 and with a link to exactly one feature state.md. Updated by /close-increment and
 /feature-docs update. -->
 
-- **Feature:** none yet (set by `/feature-docs start`) · #9 fixed in PR #66 (verify
-  `--full` and a live forged-code check pass). The code review's in-scope findings are
-  fixed, and the rest are proposed as issues. Waiting for merge. It supersedes PR #12. The
-  production audit for #34 hasn't been run yet
-- **Next step:** merge #9, close PR #12, then fix #24 (hub stats)
-- **Updated:** 2026-11-09 on `fix/9-stored-invite-codes`
+- **Feature:** none yet (set by `/feature-docs start`) · #9 merged (PR #66). PR #12, the
+  older #9 fix, is still open and should be closed as superseded. The production audit for
+  #34 hasn't been run yet
+- **Next step:** fix #24 (hub stats)
+- **Updated:** 2026-11-10 at `16a110b`
 
 ## Where things stand
 
@@ -37,7 +36,7 @@ declining a group invite. The full list is in
   entries planted by forged codes before the fix give no live messages. Codes that can't
   be decoded return 400 on every invite route. Joining twice returns 409 instead of 500,
   and retrying a join that failed halfway finishes it. The code is carried over from
-  PR #12, which branched before the docs rewrite.
+  PR #12, which branched before the docs rewrite. The code review found #67, #68 and #69.
 - **#34 (PR #64):** signup now always generates the user ID on the server. An `_id` in the
   request is ignored, so nobody can sign up with a deleted user's ID and take over their
   chats. The reply now returns the stored ID instead of `000000000000000000000000`. The
@@ -71,9 +70,10 @@ to remember is `node scripts/verify.mjs`.
 
 ## Test baseline
 
-Run on 2026-11-09 at `46a6a54` (branch `fix/9-stored-invite-codes`), on Windows, with
-MongoDB running and `TEST_DB_REQUIRED=1`, through `node scripts/verify.mjs --full`. The lint
-row is from 2026-11-07 at `90b2f73`. Compare new runs against this table by test name.
+Run on 2026-11-10 at `16a110b` on `main`, on Windows, with MongoDB running and
+`TEST_DB_REQUIRED=1`, through `node scripts/verify.mjs --full`. The test durations are from
+the last uncached run, on 2026-11-09 with the same code. The lint row is from 2026-11-07 at
+`90b2f73`. Compare new runs against this table by test name.
 
 | Command | Duration | Result | Known failures (by name) |
 |---|---|---|---|
@@ -88,6 +88,8 @@ row is from 2026-11-07 at `90b2f73`. Compare new runs against this table by test
   sets it.
 - `internal/realtime/hub_race_test.go` uses the hub from several goroutines at once. It only
   catches races under `go test -race`.
+- The contract test (`scripts/contract-test`) isn't part of verify. Its `chat messages` step
+  fails on every build, because it still sends `offset` (#67).
 
 ## Open decisions
 
@@ -125,7 +127,7 @@ have no status, so the check must allow for that.
 
 ## Known issues and risks
 
-There are 40 open issues, and #9 closes when its fix merges. Fix these first: #24. Where
+There are 42 open issues. Fix these first: #24. Where
 each risk sits in the
 code: [architecture-overview.md](./architecture-overview.md#riskiest-areas).
 
@@ -133,8 +135,8 @@ code: [architecture-overview.md](./architecture-overview.md#riskiest-areas).
 |---|---|---|
 | Live connections | The server can leak resources or stall under load, missed live messages can't be detected, and open connections miss new chats | #20, #21, #22, #43, #49, #54, #55 |
 | Chat access | Hub stats show too much, and some replies reveal whether a chat exists | #24, #59 |
-| Groups | Members are never asked to accept, and live delivery doesn't match who is in the group | #5, #14, #16, #17, #28 |
-| Invite codes | Anyone can decrypt a code, and the invite endpoints lack permission checks | #15, #29, #30 |
+| Groups | Members are never asked to accept, live delivery doesn't match who is in the group, and the size limit isn't enforced | #5, #14, #16, #17, #28, #68 |
+| Invite codes | Anyone can decrypt a code, the invite endpoints lack permission checks, and entries left by forged joins before #9 was fixed are still stored | #15, #29, #30, #69 |
 | Accounts | Bans and deletions don't take effect at once, deleting an account leaves old references, emails are case-sensitive, usernames aren't unique, and signup logs personal data | #33, #35, #36, #65 |
 | Contacts and blocking | Blocks aren't enforced in chats, your contacts list includes people you blocked, and blocks written during a deploy can be missed | #27, #38, #39, #62, #63 |
 | Online status and privacy | Online status is unreliable, and privacy settings aren't applied | #31, #32 |
@@ -144,5 +146,5 @@ code: [architecture-overview.md](./architecture-overview.md#riskiest-areas).
 
 ## Next task
 
-Merge the #9 fix and close PR #12 as superseded. Then fix #24: `GET chats/hub/stats` shows
-any logged-in user who is online and which chats are active. Write a failing test first.
+Fix #24: `GET chats/hub/stats` shows any logged-in user who is online and which chats are
+active. Write a failing test first. Close PR #12 as superseded by #66 if it is still open.
