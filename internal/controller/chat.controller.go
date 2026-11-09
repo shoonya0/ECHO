@@ -246,7 +246,8 @@ func GetChatMessagesHTTP(ctx *gin.Context) {
 	utils.SuccessResponse(ctx, "Chat messages retrieved successfully", response)
 }
 
-// GetHubStatsHTTP returns WebSocket hub statistics (for monitoring)
+// GetHubStatsHTTP returns this instance's hub counts. The route is for
+// operators: middleware.RequireStatsToken guards it.
 func GetHubStatsHTTP(ctx *gin.Context) {
 	stats := realtime.GetHubInstance().GetStats()
 	utils.SuccessResponse(ctx, "Hub statistics retrieved successfully", stats)
