@@ -35,7 +35,7 @@ Checked against the code at `17ec08b`. Numbers like `#33` are GitHub issues.
 
 | Feature | What people can do | Status | Known gaps |
 |---|---|---|---|
-| Accounts | Sign up, log in (lasts 7 days), log out | Works | Banned or deleted users stay logged in until their token ends (#33). Also #34, #36. |
+| Accounts | Sign up, log in (lasts 7 days), log out | Works | Banned or deleted users stay logged in until their token ends (#33). Also #36. |
 | Profiles | View, edit and delete your profile; view other people's | Works | Deleting a profile leaves old references behind (#35). |
 | Finding people | Get suggestions of people to add | Works | The "nearby" and "popular" lists are empty placeholders. |
 | Contacts | Send, accept and decline requests; remove; favorites; block and unblock | Partly works | Blocks aren't enforced in chats (#27). Also #38, #39, #62, #63. |
@@ -73,7 +73,7 @@ Checked against the code at `17ec08b`. Numbers like `#33` are GitHub issues.
 - **Profile edits** are limited to an allow list of fields.
 - **Browser access (CORS)** is open to any site. No cookies are used.
 
-Open security bugs: #9, #15, #24, #33, #34, #58, #59.
+Open security bugs: #9, #15, #24, #33, #58, #59.
 
 ## Performance
 
