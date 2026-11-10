@@ -22,6 +22,10 @@ type Config struct {
 	JWTSecret string // HMAC key for signing access tokens
 	LogFile   string // empty = log to stdout
 	LogLevel  string // logrus level name (debug, info, warn, ...)
+
+	// StatsToken is the X-Stats-Token value that unlocks GET chats/hub/stats.
+	// Empty turns that route off (#24).
+	StatsToken string
 }
 
 // Cfg is the loaded configuration, set once by Load at startup.
@@ -42,6 +46,8 @@ func Load(path string) error {
 		JWTSecret: strings.Trim(strings.TrimSpace(os.Getenv("JWT_SECRET")), `"'`),
 		LogFile:   os.Getenv("LOG_FILE"),
 		LogLevel:  getEnv("LOG_LEVEL", "info"),
+
+		StatsToken: strings.Trim(strings.TrimSpace(os.Getenv("STATS_TOKEN")), `"'`),
 	}
 
 	// A relative log path is relative to the project (where .env lives),

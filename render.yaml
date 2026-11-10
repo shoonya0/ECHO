@@ -21,6 +21,8 @@ services:
           property: connectionString
       - key: JWT_SECRET
         generateValue: true
+      - key: STATS_TOKEN
+        generateValue: true # operators send it as X-Stats-Token to read hub stats
       - key: LOG_LEVEL
         value: info
       - key: GIN_MODE

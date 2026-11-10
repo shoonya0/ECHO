@@ -13,6 +13,8 @@
 //   node run.mjs [baseUrl] [snapshot.json]
 //   node run.mjs http://localhost:8080 before.json
 //   node diff.mjs before.json after.json
+//
+// Set STATS_TOKEN to the server's value to also check hub stats as an operator.
 
 import { writeFileSync } from "node:fs";
 import WebSocket from "ws";
@@ -45,8 +47,8 @@ function record(name, entry, expectStatus) {
   console.log(`${ok ? "PASS" : "FAIL"}  ${String(entry.status).padEnd(4)} ${name}${ok ? "" : `  (expected ${expectStatus})`}`);
 }
 
-async function call(name, method, path, { token, body, expect } = {}) {
-  const headers = {};
+async function call(name, method, path, { token, body, expect, headers: extra } = {}) {
+  const headers = { ...extra };
   if (token) headers.Authorization = `Bearer ${token}`;
   if (body !== undefined) headers["Content-Type"] = "application/json";
   const res = await fetch(API + path, {
@@ -146,7 +148,13 @@ const group = await call("create group chat", "POST", "/chats/group", {
   token: tA, body: { name: "Contract Group", description: "ct", participants: [idB] }, expect: 200,
 });
 await call("create group no participants", "POST", "/chats/group", { token: tA, body: { name: "x", participants: ["bad"] }, expect: 400 });
-await call("hub stats", "GET", "/chats/hub/stats", { token: tA, expect: 200 });
+// Hub stats are for operators only (#24): a logged-in user without the stats token gets 404.
+await call("hub stats", "GET", "/chats/hub/stats", { token: tA, expect: 404 });
+if (process.env.STATS_TOKEN) {
+  await call("hub stats with stats token", "GET", "/chats/hub/stats", {
+    token: tA, headers: { "X-Stats-Token": process.env.STATS_TOKEN }, expect: 200,
+  });
+}
 const chatId = direct.data?.chatId ?? direct.data?._id ?? direct.data?.id;
 const groupId = group.data?.chatId ?? group.data?._id ?? group.data?.id;
 

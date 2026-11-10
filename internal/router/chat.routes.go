@@ -3,6 +3,7 @@ package router
 import (
 	"github.com/shoonya0/ECHO/internal/constants"
 	"github.com/shoonya0/ECHO/internal/controller"
+	"github.com/shoonya0/ECHO/internal/middleware"
 
 	"github.com/gin-gonic/gin"
 )
@@ -16,7 +17,9 @@ func RegisterChatRoutes(r *gin.Engine) {
 	{
 		chatRoutes.POST("/direct/:userId", controller.CreateDirectChatHTTP) // Create direct chat
 		chatRoutes.POST("/group", controller.CreateGroupChatHTTP)           // Create group chat
-		chatRoutes.GET("/hub/stats", controller.GetHubStatsHTTP)            // WebSocket hub stats (monitoring)
+
+		// Hub stats, for operators only: needs the X-Stats-Token header (#24)
+		chatRoutes.GET("/hub/stats", middleware.RequireStatsToken, controller.GetHubStatsHTTP)
 	}
 
 	// ============ MESSAGING ============

@@ -546,21 +546,34 @@ func (eh *Hub) GetUserInfo(userID bson.ObjectID) (*models.UserDisplayInfo, error
 	return userInfo, nil
 }
 
-// GetStats returns hub statistics including pub/sub info
-func (eh *Hub) GetStats() map[string]interface{} {
+// HubStats is what GET chats/hub/stats returns: counts for this instance.
+type HubStats struct {
+	InstanceID         string    `json:"instanceId"`
+	TotalClients       int       `json:"totalClients"`
+	TotalChats         int       `json:"totalChats"`
+	TotalUsers         int       `json:"totalUsers"`
+	CacheSize          int       `json:"cacheSize"`
+	SubscribedChannels int       `json:"subscribedChannels"`
+	Timestamp          time.Time `json:"timestamp"`
+}
+
+// GetStats returns counts for this hub. It never lists channel names: they are
+// user:<id> and chat:<id>, so they would show who is online and which chats
+// are active (#24).
+func (eh *Hub) GetStats() HubStats {
+	// Read the pub/sub count first, so the two locks are never held together.
+	subscribedChannels := len(eh.pubSubManager.GetSubscribedChannels())
+
 	eh.Mutex.RLock()
 	defer eh.Mutex.RUnlock()
 
-	subscribedChannels := eh.pubSubManager.GetSubscribedChannels()
-
-	return map[string]interface{}{
-		"instanceId":         eh.instanceID,
-		"totalClients":       len(eh.Clients),
-		"totalChats":         len(eh.ChatClients),
-		"totalUsers":         len(eh.UserClients),
-		"cacheSize":          len(eh.UserInfoCache),
-		"subscribedChannels": len(subscribedChannels),
-		"channels":           subscribedChannels,
-		"timestamp":          time.Now(),
+	return HubStats{
+		InstanceID:         eh.instanceID,
+		TotalClients:       len(eh.Clients),
+		TotalChats:         len(eh.ChatClients),
+		TotalUsers:         len(eh.UserClients),
+		CacheSize:          len(eh.UserInfoCache),
+		SubscribedChannels: subscribedChannels,
+		Timestamp:          time.Now(),
 	}
 }

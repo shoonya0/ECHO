@@ -70,7 +70,7 @@ Tag conventions:
 adb shell ping 10.0.2.2
 
 # Check if server is running:
-curl http://10.0.2.2:8080/echo/v1/chats/hub/stats
+curl http://10.0.2.2:8080/health
 ```
 
 ### WebSocket not connecting

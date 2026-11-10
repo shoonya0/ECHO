@@ -198,8 +198,10 @@ default:
 ### 12. Hub stats (for monitoring)
 
 ```go
-stats := services.GetHubInstance().GetStats()
-// Returns: instanceId, totalClients, totalChats, totalUsers, cacheSize, subscribedChannels, timestamp
+stats := realtime.GetHubInstance().GetStats()
+// Returns a HubStats: instanceId, totalClients, totalChats, totalUsers, cacheSize,
+// subscribedChannels, timestamp. Counts only, never channel names (#24).
 ```
 
-Exposed at `GET /echo/v1/chats/hub/stats`.
+Exposed at `GET /echo/v1/chats/hub/stats`, for operators only: `middleware.RequireStatsToken`
+checks the `X-Stats-Token` header against `STATS_TOKEN`.
