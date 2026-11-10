@@ -11,11 +11,12 @@ on `main`. To learn what the product does, read
 and with a link to exactly one feature state.md. Updated by /close-increment and
 /feature-docs update. -->
 
-- **Feature:** none yet (set by `/feature-docs start`) · #72 fixed on
-  `fix/72-reactions-null` (verify `--full` and a live check pass), waiting for review and
-  merge. The #34 audit hasn't been run on production yet. Production stats stay off until
-  `STATS_TOKEN` exists on Render
-- **Next step:** review and merge #72, then fix #33 (token claims)
+- **Feature:** none yet (set by `/feature-docs start`) · #72 fixed in PR #74 (verify
+  `--full`, CI and a live check pass), waiting for review and merge. An issue is proposed,
+  not filed: reaction `details` store `""` instead of the username. The #34 audit hasn't
+  been run on production yet. Production stats stay off until `STATS_TOKEN` exists on
+  Render
+- **Next step:** review and merge PR #74, then fix #33 (token claims)
 - **Updated:** 2026-11-10 on `fix/72-reactions-null`
 
 ## Where things stand
@@ -31,7 +32,7 @@ declining a group invite. The full list is in
 
 ## Recently finished
 
-- **#72:** reactions work on real messages. New messages store `reactions: {}` instead of
+- **#72 (PR #74):** reactions work on real messages. New messages store `reactions: {}` instead of
   `null`, which MongoDB refused to create reaction fields in. A message that still has
   `null` (every message saved before the fix, or one written by an older server copy
   during a deploy) is repaired when someone first reacts to it, so there is no startup
