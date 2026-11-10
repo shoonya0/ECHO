@@ -11,10 +11,11 @@ on `main`. To learn what the product does, read
 and with a link to exactly one feature state.md. Updated by /close-increment and
 /feature-docs update. -->
 
-- **Feature:** none yet (set by `/feature-docs start`) · #58 fixed on branch
-  `fix/58-reaction-emoji`, PR not opened yet. Production stats stay off until `STATS_TOKEN`
-  exists on Render. The #34 audit script hasn't been run on production yet
-- **Next step:** open the #58 PR, review and merge it, then fix #33 (token claims)
+- **Feature:** none yet (set by `/feature-docs start`) · #58 fixed in PR #71 (verify
+  `--full`, CI and a live check pass), waiting for review and merge. Production stats stay
+  off until `STATS_TOKEN` exists on Render. The #34 audit script hasn't been run on
+  production yet
+- **Next step:** review and merge #58, then fix #33 (token claims)
 - **Updated:** 2026-11-10 on `fix/58-reaction-emoji`
 
 ## Where things stand
@@ -30,7 +31,7 @@ declining a group invite. The full list is in
 
 ## Recently finished
 
-- **#58 (branch `fix/58-reaction-emoji`):** `add_reaction` and `remove_reaction` refuse an
+- **#58 (PR #71):** `add_reaction` and `remove_reaction` refuse an
   emoji with `.`, `$`, a NUL character or invalid UTF-8, or one over 10 bytes, with
   `INVALID_REQUEST`, before anything is written. Before, a member could send `ok.details`
   and wipe that part of a reaction for everyone. A live check found a separate bug: every
