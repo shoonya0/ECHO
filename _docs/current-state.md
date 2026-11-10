@@ -11,11 +11,11 @@ on `main`. To learn what the product does, read
 and with a link to exactly one feature state.md. Updated by /close-increment and
 /feature-docs update. -->
 
-- **Feature:** none yet (set by `/feature-docs start`) · #24 merged (PR #70). Production
-  stats stay off until `STATS_TOKEN` exists on Render. The production audit for #34 hasn't
-  been run yet
-- **Next step:** fix #58 (reaction emoji)
-- **Updated:** 2026-11-10 at `4b42931`
+- **Feature:** none yet (set by `/feature-docs start`) · #58 fixed on branch
+  `fix/58-reaction-emoji`, PR not opened yet. Production stats stay off until `STATS_TOKEN`
+  exists on Render. The #34 audit script hasn't been run on production yet
+- **Next step:** open the #58 PR, review and merge it, then fix #33 (token claims)
+- **Updated:** 2026-11-10 on `fix/58-reaction-emoji`
 
 ## Where things stand
 
@@ -30,6 +30,13 @@ declining a group invite. The full list is in
 
 ## Recently finished
 
+- **#58 (branch `fix/58-reaction-emoji`):** `add_reaction` and `remove_reaction` refuse an
+  emoji with `.`, `$`, a NUL character or invalid UTF-8, or one over 10 bytes, with
+  `INVALID_REQUEST`, before anything is written. Before, a member could send `ok.details`
+  and wipe that part of a reaction for everyone. A live check found a separate bug: every
+  message is saved with `reactions: null`, so adding a reaction to a real message always
+  fails (`REACTION_FAILED`). The local database has no stored reactions at all, so nothing
+  there was damaged. An issue is proposed, not filed yet.
 - **#24 (PR #70):** `GET chats/hub/stats` is for operators only. It needs
   an `X-Stats-Token` header that matches the new `STATS_TOKEN` setting, and it is off while
   that is unset. Every refusal is `404`. The reply no longer lists the Redis channels, which
@@ -131,7 +138,7 @@ have no status, so the check must allow for that.
 
 ## Known issues and risks
 
-There are 41 open issues. Fix these first: #58, then #33. Where
+There are 41 open issues, and #58 closes when its fix merges. Fix these first: #33. Where
 each risk sits in the
 code: [architecture-overview.md](./architecture-overview.md#riskiest-areas).
 
@@ -144,11 +151,13 @@ code: [architecture-overview.md](./architecture-overview.md#riskiest-areas).
 | Accounts | Bans and deletions don't take effect at once, deleting an account leaves old references, emails are case-sensitive, usernames aren't unique, and signup logs personal data | #33, #35, #36, #65 |
 | Contacts and blocking | Blocks aren't enforced in chats, your contacts list includes people you blocked, and blocks written during a deploy can be missed | #27, #38, #39, #62, #63 |
 | Online status and privacy | Online status is unreliable, and privacy settings aren't applied | #31, #32 |
-| Messages and data | Reaction counts drift, emoji values can corrupt reactions, writes can half-finish, and some lists grow without limit | #25, #37, #42, #58 |
+| Messages and data | Reaction counts drift, writes can half-finish, and some lists grow without limit | #25, #37, #42 |
 | Limits and errors | No rate or size limits on the WebSocket; some replies expose internal error text | #40, #41 |
 | WebSocket replies and events | Replies and events are inconsistent or leave out details, which affects the Android plan, and uppercase chat IDs lose live events | #47, #48, #50, #51, #60 |
 
 ## Next task
 
-Fix #58: reaction emoji go into MongoDB field paths unchecked, so a chat member can corrupt
-a message's reactions. Write a failing test first.
+Merge the #58 fix. Then fix #33: the server trusts the account status inside the 7-day
+login token, so a ban, a deactivation or a deleted account takes effect only when the token
+expires. It needs a choice first: check the account in the database on each request, or
+keep a token version that a ban raises. Write a failing test first.

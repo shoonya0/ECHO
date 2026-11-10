@@ -119,8 +119,12 @@ Adds or removes an emoji reaction. Both use the same format.
 }
 ```
 
+`emoji` must be one emoji of up to 10 bytes, such as 👍, 👍🏽 or ❤️. Longer emoji built from
+several parts, such as 👩‍💻, are refused too. A value with `.`, `$`, a NUL character or
+invalid UTF-8 is refused with `INVALID_REQUEST` and changes nothing.
+
 **You get:** a `response` with `action` set to `reaction_added` or `reaction_removed`. A
-`reaction` event goes to the chat. See #25 and #58.
+`reaction` event goes to the chat. See #25.
 
 **Errors:** `INVALID_REQUEST`, `INVALID_CHAT_ID`, `INVALID_MESSAGE_ID`,
 `PERMISSION_DENIED`, `MESSAGE_NOT_FOUND`, `REACTION_FAILED`.

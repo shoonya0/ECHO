@@ -32,7 +32,7 @@ flowchart LR
 ## What works today
 
 Checked against the code at `17ec08b`. Issue numbers were last updated on 2026-11-10
-(#9, #24 and #34 fixed, #65 and #67 to #69 added). Numbers like `#33` are GitHub issues.
+(#9, #24, #34 and #58 fixed, #65 and #67 to #69 added). Numbers like `#33` are GitHub issues.
 
 | Feature | What people can do | Status | Known gaps |
 |---|---|---|---|
@@ -45,7 +45,7 @@ Checked against the code at `17ec08b`. Issue numbers were last updated on 2026-1
 | Invite codes | Create, list, delete and send codes; join with a code | Partly works | Anyone can decrypt a code and read the creator's ID and name (#15). Also #29, #30. |
 | Live messages | Send and receive instantly | Works | Missed messages can't be detected (#43). |
 | Message history | Load old messages, page by page | Works | |
-| Typing, read receipts, reactions | See who is typing, who has read a message, and emoji reactions | Partly works | Reaction counts can drift (#25). Emoji values aren't checked (#58). |
+| Typing, read receipts, reactions | See who is typing, who has read a message, and emoji reactions | Partly works | Reactions fail on real messages: each message is saved with `reactions: null`. Reaction counts can drift (#25). Emoji made of several parts are refused. |
 | Online status | See who is online | Unreliable | Often wrong (#31). Privacy settings are saved but not applied (#32). |
 | Attachments | Send a link to a file, with its details | Partly works | There is no file upload. The app must store the file elsewhere and send its URL. |
 
@@ -76,7 +76,7 @@ Checked against the code at `17ec08b`. Issue numbers were last updated on 2026-1
 - **Hub statistics** are for operators. They need the server's `STATS_TOKEN` as well as a
   login, and they show counts only.
 
-Open security bugs: #15, #33, #58, #59.
+Open security bugs: #15, #33, #59.
 
 ## Performance
 
