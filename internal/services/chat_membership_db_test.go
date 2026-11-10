@@ -42,10 +42,11 @@ func TestChatActionsRequireMembership(t *testing.T) {
 		t.Fatalf("insert chat: %v", err)
 	}
 	if _, err := database.DB.Collection(string(constants.MessageColl)).InsertOne(ctx, bson.M{
-		"_id":      messageID,
-		"chatId":   chatID,
-		"senderId": member,
-		"content":  "private",
+		"_id":       messageID,
+		"chatId":    chatID,
+		"senderId":  member,
+		"content":   "private",
+		"reactions": nil, // as every message was saved before #72
 	}); err != nil {
 		t.Fatalf("insert message: %v", err)
 	}

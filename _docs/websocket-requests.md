@@ -126,8 +126,7 @@ invalid UTF-8 are refused with `INVALID_REQUEST`, and nothing changes. The serve
 check that the value is exactly one emoji, so `👍👍` is accepted.
 
 **You get:** a `response` with `action` set to `reaction_added` or `reaction_removed`. A
-`reaction` event goes to the chat. See #25. Until #72 is fixed, both requests fail with
-`REACTION_FAILED` on every message sent through `send_message`.
+`reaction` event goes to the chat. See #25.
 
 **Errors:** `INVALID_REQUEST`, `INVALID_CHAT_ID`, `INVALID_MESSAGE_ID`,
 `PERMISSION_DENIED`, `MESSAGE_NOT_FOUND`, `REACTION_FAILED`.
