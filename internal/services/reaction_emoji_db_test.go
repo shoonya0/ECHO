@@ -36,10 +36,10 @@ func TestReactionEmojiMustBeOneFieldName(t *testing.T) {
 		t.Fatalf("insert message: %v", err)
 	}
 
-	// Both members react with "ok", so the message has reactions.ok.count,
-	// .users and .details, as in the issue.
+	// Both members react with 👍, so the message has reactions.👍.count, .users
+	// and .details. The issue used "ok", which is now refused for being letters.
 	for _, id := range []bson.ObjectID{alice, bob} {
-		if err := AddMessageReaction(chatID, messageID, id, "ok"); err != nil {
+		if err := AddMessageReaction(chatID, messageID, id, "👍"); err != nil {
 			t.Fatalf("seed reaction: %v", err)
 		}
 	}
@@ -57,7 +57,8 @@ func TestReactionEmojiMustBeOneFieldName(t *testing.T) {
 		name  string
 		emoji string
 	}{
-		{"path into another field", "ok.details"},
+		{"path into another field", "👍.details"},
+		{"path from the issue", "ok.details"},
 		{"dot", "a.b"},
 		{"leading dollar", "$x"},
 		{"dollar inside", "a$b"},
@@ -98,7 +99,7 @@ func TestReactionEmojiMustBeOneFieldName(t *testing.T) {
 		return doc.Reactions
 	}
 
-	good := []string{"👍", "👍🏽", "❤️", "😂"}
+	good := []string{"😂", "👍🏽", "❤️", "\U0001F937\u200d\u2640\ufe0f" /* 🤷‍♀️, 13 bytes */}
 	for _, emoji := range good {
 		t.Run("real emoji works: "+emoji, func(t *testing.T) {
 			if err := AddMessageReaction(chatID, messageID, alice, emoji); err != nil {
