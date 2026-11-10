@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/shoonya0/ECHO/internal/constants"
 	"github.com/shoonya0/ECHO/internal/database"
@@ -642,13 +643,27 @@ func broadcastReadReceipts(chatID, userID bson.ObjectID, messageIDs []bson.Objec
 	BroadcastToChat(chatID.Hex(), wsMessage)
 }
 
+// maxEmojiBytes caps a reaction's emoji. It fits one emoji with a skin tone or a
+// variation selector, such as 👍🏽 (8 bytes) or ❤️ (6 bytes).
+const maxEmojiBytes = 10
+
+// validateEmoji refuses an emoji that isn't safe as one field name in
+// "reactions.<emoji>.users": a "." would split the path and reach other fields
+// (#58), "$" marks operators, and NUL or invalid UTF-8 can't be stored as a key.
+func validateEmoji(emoji string) error {
+	if emoji == "" || len(emoji) > maxEmojiBytes || !utf8.ValidString(emoji) ||
+		strings.ContainsAny(emoji, ".$\x00") {
+		return fmt.Errorf("%w", ErrInvalidEmoji)
+	}
+	return nil
+}
+
 // AddMessageReaction adds a reaction to a message
 func AddMessageReaction(chatID, messageID, userID bson.ObjectID, emoji string) error {
 	ctx := context.Background()
 
-	// Validate emoji (basic validation)
-	if len(emoji) == 0 || len(emoji) > 10 {
-		return fmt.Errorf("invalid emoji")
+	if err := validateEmoji(emoji); err != nil {
+		return err
 	}
 
 	if err := RequireChatMember(ctx, chatID, userID); err != nil {
@@ -689,6 +704,10 @@ func AddMessageReaction(chatID, messageID, userID bson.ObjectID, emoji string) e
 // RemoveMessageReaction removes a reaction from a message
 func RemoveMessageReaction(chatID, messageID, userID bson.ObjectID, emoji string) error {
 	ctx := context.Background()
+
+	if err := validateEmoji(emoji); err != nil {
+		return err
+	}
 
 	if err := RequireChatMember(ctx, chatID, userID); err != nil {
 		return err
