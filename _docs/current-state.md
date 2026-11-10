@@ -53,10 +53,10 @@ declining a group invite. The full list is in
   request is ignored, so nobody can sign up with a deleted user's ID and take over their
   chats. The reply now returns the stored ID instead of `000000000000000000000000`. The
   code review found #65. **Still to do:** accounts that took over an ID before the fix
-  aren't found automatically. Run
-  [scripts/audits/34-reused-signup-ids.js](../scripts/audits/34-reused-signup-ids.js) once
-  on the production database. Its header says how to run it and read the output. If it
-  flags any accounts, file an issue to clean them up.
+  aren't found automatically. Run this once on the production database. A reused ID's
+  timestamp is older than the account's `createdAt`. If it lists any accounts, file an issue
+  to clean them up:
+  `db.users.find({ $expr: { $lt: [ { $toDate: "$_id" }, { $subtract: ["$createdAt", 60000] } ] } }, { _id: 1, email: 1, createdAt: 1 })`
 - **#26 (PR #61):** blocks are one-sided. They are stored in `contactInfo.blocked` (shown to the
   blocker) and `contactInfo.blockedBy` (never sent to clients), so only the blocker can lift
   a block and the blocked person can't see it. Blocking twice, or unblocking someone you
