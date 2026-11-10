@@ -11,11 +11,11 @@ on `main`. To learn what the product does, read
 and with a link to exactly one feature state.md. Updated by /close-increment and
 /feature-docs update. -->
 
-- **Feature:** none yet (set by `/feature-docs start`) · #58 fixed in PR #71 (verify
-  `--full`, CI and a live check pass), waiting for review and merge. Production stats stay
-  off until `STATS_TOKEN` exists on Render. The #34 audit script hasn't been run on
-  production yet
-- **Next step:** review and merge #58, then fix #33 (token claims)
+- **Feature:** none yet (set by `/feature-docs start`) · #58 fixed in PR #71, now with
+  the code review's fixes, waiting for review and merge. The #34 audit script moved to
+  PR #73, also waiting; it hasn't been run on production yet. Reactions fail on every real
+  message (#72). Production stats stay off until `STATS_TOKEN` exists on Render
+- **Next step:** merge PR #71 and PR #73, then fix #33 (token claims)
 - **Updated:** 2026-11-10 on `fix/58-reaction-emoji`
 
 ## Where things stand
@@ -31,13 +31,15 @@ declining a group invite. The full list is in
 
 ## Recently finished
 
-- **#58 (PR #71):** `add_reaction` and `remove_reaction` refuse an
-  emoji with `.`, `$`, a NUL character or invalid UTF-8, or one over 10 bytes, with
-  `INVALID_REQUEST`, before anything is written. Before, a member could send `ok.details`
-  and wipe that part of a reaction for everyone. A live check found a separate bug: every
-  message is saved with `reactions: null`, so adding a reaction to a real message always
-  fails (`REACTION_FAILED`). The local database has no stored reactions at all, so nothing
-  there was damaged. An issue is proposed, not filed yet.
+- **#58 (PR #71):** `add_reaction` and `remove_reaction` refuse an emoji that has `.`,
+  `$`, a NUL character or invalid UTF-8, isn't made of emoji characters, or is over 64
+  bytes, with `INVALID_REQUEST`, before anything is written. Before, a member could send
+  `ok.details` and wipe that part of a reaction for everyone. Every standard emoji passes,
+  including joined ones such as 👩‍💻; the first 10-byte limit refused 1,615 of the 3,963.
+  A live check found a separate bug, filed as #72: every message is saved with
+  `reactions: null`, so adding a reaction to a real message always fails
+  (`REACTION_FAILED`). The local database has no stored reactions at all, so nothing there
+  was damaged. The code review moved the #34 audit script to PR #73.
 - **#24 (PR #70):** `GET chats/hub/stats` is for operators only. It needs
   an `X-Stats-Token` header that matches the new `STATS_TOKEN` setting, and it is off while
   that is unset. Every refusal is `404`. The reply no longer lists the Redis channels, which
@@ -139,7 +141,7 @@ have no status, so the check must allow for that.
 
 ## Known issues and risks
 
-There are 41 open issues, and #58 closes when its fix merges. Fix these first: #33. Where
+There are 42 open issues, and #58 closes when its fix merges. Fix these first: #33. Where
 each risk sits in the
 code: [architecture-overview.md](./architecture-overview.md#riskiest-areas).
 
@@ -152,7 +154,7 @@ code: [architecture-overview.md](./architecture-overview.md#riskiest-areas).
 | Accounts | Bans and deletions don't take effect at once, deleting an account leaves old references, emails are case-sensitive, usernames aren't unique, and signup logs personal data | #33, #35, #36, #65 |
 | Contacts and blocking | Blocks aren't enforced in chats, your contacts list includes people you blocked, and blocks written during a deploy can be missed | #27, #38, #39, #62, #63 |
 | Online status and privacy | Online status is unreliable, and privacy settings aren't applied | #31, #32 |
-| Messages and data | Reaction counts drift, writes can half-finish, and some lists grow without limit | #25, #37, #42 |
+| Messages and data | Reactions fail on every real message, reaction counts drift, writes can half-finish, and some lists grow without limit | #25, #37, #42, #72 |
 | Limits and errors | No rate or size limits on the WebSocket; some replies expose internal error text | #40, #41 |
 | WebSocket replies and events | Replies and events are inconsistent or leave out details, which affects the Android plan, and uppercase chat IDs lose live events | #47, #48, #50, #51, #60 |
 
