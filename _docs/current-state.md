@@ -1,6 +1,6 @@
 # ECHO: current state
 
-A one-page snapshot of where the project stands. Last checked on 2026-11-10 at `4b42931`
+A one-page snapshot of where the project stands. Last checked on 2026-11-10 at `c55921e`
 on `main`. To learn what the product does, read
 [product-overview.md](./product-overview.md). For the code, read
 [architecture-overview.md](./architecture-overview.md).
@@ -11,12 +11,12 @@ on `main`. To learn what the product does, read
 and with a link to exactly one feature state.md. Updated by /close-increment and
 /feature-docs update. -->
 
-- **Feature:** none yet (set by `/feature-docs start`) · #58 fixed in PR #71, now with
-  the code review's fixes, waiting for review and merge. The #34 audit script moved to
-  PR #73, also waiting; it hasn't been run on production yet. Reactions fail on every real
-  message (#72). Production stats stay off until `STATS_TOKEN` exists on Render
-- **Next step:** merge PR #71 and PR #73, then fix #33 (token claims)
-- **Updated:** 2026-11-10 on `fix/58-reaction-emoji`
+- **Feature:** none yet (set by `/feature-docs start`) · #58 (PR #71) and the #34 audit
+  script (PR #73) are merged. The audit hasn't been run on production yet. Reactions fail
+  on every real message (#72). Production stats stay off until `STATS_TOKEN` exists on
+  Render
+- **Next step:** fix #33 (token claims). #72 (reactions never work) is the other candidate
+- **Updated:** 2026-11-10 on `main`, after merging PR #71 and PR #73
 
 ## Where things stand
 
@@ -56,8 +56,8 @@ declining a group invite. The full list is in
   chats. The reply now returns the stored ID instead of `000000000000000000000000`. The
   code review found #65. **Still to do:** accounts that took over an ID before the fix
   aren't found automatically. Run
-  [scripts/audits/34-reused-signup-ids.js](../scripts/audits/34-reused-signup-ids.js) once
-  on the production database. Its header says how to run it and read the output. If it
+  [scripts/audits/34-reused-signup-ids.js](../scripts/audits/34-reused-signup-ids.js)
+  (PR #73) once on the production database. Its header says how to run it and read the output. If it
   flags any accounts, file an issue to clean them up.
 - **#26 (PR #61):** blocks are one-sided. They are stored in `contactInfo.blocked` (shown to the
   blocker) and `contactInfo.blockedBy` (never sent to clients), so only the blocker can lift
@@ -84,18 +84,18 @@ to remember is `node scripts/verify.mjs`.
 
 ## Test baseline
 
-Run on 2026-11-10 at `4b42931` on `main`, on Windows, with MongoDB running and
+Run on 2026-11-10 at `c55921e` on `main`, on Windows, with MongoDB running and
 `TEST_DB_REQUIRED=1`, through `node scripts/verify.mjs --full` after `go clean -testcache`.
 The lint row is from 2026-11-07 at `90b2f73`. Compare new runs against this table by test
 name.
 
 | Command | Duration | Result | Known failures (by name) |
 |---|---|---|---|
-| `go build ./...` | 2s | pass | — |
+| `go build ./...` | 7s | pass | — |
 | `go vet ./...` | 1s | pass | — |
 | `gofmt -l cmd internal` | <1s | pass (no files) | — |
-| `go test ./...` | 3s | pass, none skipped | — |
-| `go test -race ./...` | 12s | pass, none skipped | — |
+| `go test ./...` | 4s | pass, none skipped | — |
+| `go test -race ./...` | 10s | pass, none skipped | — |
 | `golangci-lint run ./...` (v2.14) | 11s | **27 issues**: errcheck 20, staticcheck 7 | not blocking: verify lints only new code (`--new-from-merge-base=origin/main`) |
 
 - Tests that need MongoDB skip when it isn't running, unless `TEST_DB_REQUIRED` is set. CI
@@ -141,7 +141,7 @@ have no status, so the check must allow for that.
 
 ## Known issues and risks
 
-There are 42 open issues, and #58 closes when its fix merges. Fix these first: #33. Where
+There are 41 open issues. Fix these first: #33. Where
 each risk sits in the
 code: [architecture-overview.md](./architecture-overview.md#riskiest-areas).
 
@@ -160,7 +160,7 @@ code: [architecture-overview.md](./architecture-overview.md#riskiest-areas).
 
 ## Next task
 
-Merge the #58 fix. Then fix #33: the server trusts the account status inside the 7-day
+Fix #33: the server trusts the account status inside the 7-day
 login token, so a ban, a deactivation or a deleted account takes effect only when the token
 expires. It needs a choice first: check the account in the database on each request, or
 keep a token version that a ban raises. Write a failing test first.
