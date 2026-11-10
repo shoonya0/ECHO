@@ -1,6 +1,6 @@
 # ECHO: current state
 
-A one-page snapshot of where the project stands. Last checked on 2026-11-10 at `16a110b`
+A one-page snapshot of where the project stands. Last checked on 2026-11-10 at `4b42931`
 on `main`. To learn what the product does, read
 [product-overview.md](./product-overview.md). For the code, read
 [architecture-overview.md](./architecture-overview.md).
@@ -11,12 +11,11 @@ on `main`. To learn what the product does, read
 and with a link to exactly one feature state.md. Updated by /close-increment and
 /feature-docs update. -->
 
-- **Feature:** none yet (set by `/feature-docs start`) · #24 fixed in PR #70 (verify
-  `--full`, CI and a live check pass), waiting for review and merge. After the merge,
-  `STATS_TOKEN` must exist on Render for production stats. The production audit for #34
-  hasn't been run yet
-- **Next step:** review and merge #24, then fix #58 (reaction emoji)
-- **Updated:** 2026-11-10 on `fix/24-hub-stats`
+- **Feature:** none yet (set by `/feature-docs start`) · #24 merged (PR #70). Production
+  stats stay off until `STATS_TOKEN` exists on Render. The production audit for #34 hasn't
+  been run yet
+- **Next step:** fix #58 (reaction emoji)
+- **Updated:** 2026-11-10 at `4b42931`
 
 ## Where things stand
 
@@ -46,10 +45,10 @@ declining a group invite. The full list is in
   request is ignored, so nobody can sign up with a deleted user's ID and take over their
   chats. The reply now returns the stored ID instead of `000000000000000000000000`. The
   code review found #65. **Still to do:** accounts that took over an ID before the fix
-  aren't found automatically. Run this once on the production database. A reused ID's
-  timestamp is older than the account's `createdAt`. If it lists any accounts, file an issue
-  to clean them up:
-  `db.users.find({ $expr: { $lt: [ { $toDate: "$_id" }, { $subtract: ["$createdAt", 60000] } ] } }, { _id: 1, email: 1, createdAt: 1 })`
+  aren't found automatically. Run
+  [scripts/audits/34-reused-signup-ids.js](../scripts/audits/34-reused-signup-ids.js) once
+  on the production database. Its header says how to run it and read the output. If it
+  flags any accounts, file an issue to clean them up.
 - **#26 (PR #61):** blocks are one-sided. They are stored in `contactInfo.blocked` (shown to the
   blocker) and `contactInfo.blockedBy` (never sent to clients), so only the blocker can lift
   a block and the blocked person can't see it. Blocking twice, or unblocking someone you
@@ -75,10 +74,10 @@ to remember is `node scripts/verify.mjs`.
 
 ## Test baseline
 
-Run on 2026-11-10 at `16a110b` on `main`, on Windows, with MongoDB running and
-`TEST_DB_REQUIRED=1`, through `node scripts/verify.mjs --full`. The test durations are from
-the last uncached run, on 2026-11-09 with the same code. The lint row is from 2026-11-07 at
-`90b2f73`. Compare new runs against this table by test name.
+Run on 2026-11-10 at `4b42931` on `main`, on Windows, with MongoDB running and
+`TEST_DB_REQUIRED=1`, through `node scripts/verify.mjs --full` after `go clean -testcache`.
+The lint row is from 2026-11-07 at `90b2f73`. Compare new runs against this table by test
+name.
 
 | Command | Duration | Result | Known failures (by name) |
 |---|---|---|---|
@@ -86,7 +85,7 @@ the last uncached run, on 2026-11-09 with the same code. The lint row is from 20
 | `go vet ./...` | 1s | pass | — |
 | `gofmt -l cmd internal` | <1s | pass (no files) | — |
 | `go test ./...` | 3s | pass, none skipped | — |
-| `go test -race ./...` | 10s | pass, none skipped | — |
+| `go test -race ./...` | 12s | pass, none skipped | — |
 | `golangci-lint run ./...` (v2.14) | 11s | **27 issues**: errcheck 20, staticcheck 7 | not blocking: verify lints only new code (`--new-from-merge-base=origin/main`) |
 
 - Tests that need MongoDB skip when it isn't running, unless `TEST_DB_REQUIRED` is set. CI
@@ -132,8 +131,7 @@ have no status, so the check must allow for that.
 
 ## Known issues and risks
 
-There are 42 open issues, and #24 closes when its fix merges. Fix these first: #58, then
-#33. Where
+There are 41 open issues. Fix these first: #58, then #33. Where
 each risk sits in the
 code: [architecture-overview.md](./architecture-overview.md#riskiest-areas).
 
@@ -152,5 +150,5 @@ code: [architecture-overview.md](./architecture-overview.md#riskiest-areas).
 
 ## Next task
 
-Merge the #24 fix. Then fix #58: reaction emoji go into MongoDB field paths unchecked, so a
-chat member can corrupt a message's reactions. Write a failing test first.
+Fix #58: reaction emoji go into MongoDB field paths unchecked, so a chat member can corrupt
+a message's reactions. Write a failing test first.
