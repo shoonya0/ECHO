@@ -385,6 +385,9 @@ func SendMessage(ctx context.Context, chatID, senderID bson.ObjectID, content, m
 			IsDeleted: false,
 			IsPinned:  false,
 		},
+		// Both maps must be stored as {}, not null: updates create paths inside them
+		// such as "reactions.👍.count", which MongoDB refuses inside null (#72).
+		Reactions: make(map[string]models.ReactionEmbed),
 		ReadBy:    make(map[string]time.Time),
 		CreatedAt: now,
 		UpdatedAt: now,
@@ -703,6 +706,10 @@ func AddMessageReaction(chatID, messageID, userID bson.ObjectID, emoji string) e
 		return err
 	}
 
+	if err := repairNullReactions(ctx, chatID, messageID); err != nil {
+		return err
+	}
+
 	// Update message with new reaction
 	filter := bson.M{
 		"_id":    messageID,
@@ -746,6 +753,10 @@ func RemoveMessageReaction(chatID, messageID, userID bson.ObjectID, emoji string
 		return err
 	}
 
+	if err := repairNullReactions(ctx, chatID, messageID); err != nil {
+		return err
+	}
+
 	// Remove user from reaction
 	filter := bson.M{
 		"_id":    messageID,
@@ -779,6 +790,22 @@ func RemoveMessageReaction(chatID, messageID, userID bson.ObjectID, emoji string
 	// Clean up empty reaction if count is 0
 	cleanupEmptyReaction(messageID, emoji)
 
+	return nil
+}
+
+// repairNullReactions sets a message's reactions to {} when it is null, so the
+// reaction paths can be created in it. Every message saved before #72 has null there,
+// and so does one written by an older server copy during a deploy, which a startup
+// migration would miss. Matching nothing is normal: the message is already fine, or
+// the reaction update that follows reports that it doesn't exist.
+func repairNullReactions(ctx context.Context, chatID, messageID bson.ObjectID) error {
+	_, err := database.DB.Collection(string(constants.MessageColl)).UpdateOne(ctx,
+		bson.M{"_id": messageID, "chatId": chatID, "reactions": bson.M{"$type": "null"}},
+		bson.M{"$set": bson.M{"reactions": bson.M{}}},
+	)
+	if err != nil {
+		return fmt.Errorf("failed to prepare reactions: %w", err)
+	}
 	return nil
 }
 

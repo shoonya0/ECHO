@@ -32,6 +32,7 @@ func TestReactionEmojiMustBeOneFieldName(t *testing.T) {
 	}
 	if _, err := database.DB.Collection(string(constants.MessageColl)).InsertOne(ctx, bson.M{
 		"_id": messageID, "chatId": chatID, "senderId": alice, "content": "hi",
+		"reactions": nil, // as every message was saved before #72
 	}); err != nil {
 		t.Fatalf("insert message: %v", err)
 	}
