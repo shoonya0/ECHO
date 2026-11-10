@@ -11,12 +11,12 @@ on `main`. To learn what the product does, read
 and with a link to exactly one feature state.md. Updated by /close-increment and
 /feature-docs update. -->
 
-- **Feature:** none yet (set by `/feature-docs start`) · #58 (PR #71) and the #34 audit
-  script (PR #73) are merged. The audit hasn't been run on production yet. Reactions fail
-  on every real message (#72). Production stats stay off until `STATS_TOKEN` exists on
-  Render
-- **Next step:** fix #33 (token claims). #72 (reactions never work) is the other candidate
-- **Updated:** 2026-11-10 on `main`, after merging PR #71 and PR #73
+- **Feature:** none yet (set by `/feature-docs start`) · #72 fixed on
+  `fix/72-reactions-null` (verify `--full` and a live check pass), waiting for review and
+  merge. The #34 audit hasn't been run on production yet. Production stats stay off until
+  `STATS_TOKEN` exists on Render
+- **Next step:** review and merge #72, then fix #33 (token claims)
+- **Updated:** 2026-11-10 on `fix/72-reactions-null`
 
 ## Where things stand
 
@@ -31,6 +31,12 @@ declining a group invite. The full list is in
 
 ## Recently finished
 
+- **#72:** reactions work on real messages. New messages store `reactions: {}` instead of
+  `null`, which MongoDB refused to create reaction fields in. A message that still has
+  `null` (every message saved before the fix, or one written by an older server copy
+  during a deploy) is repaired when someone first reacts to it, so there is no startup
+  migration. Old messages nobody has reacted to still show `reactions: null` in history
+  ([rest-api.md](./rest-api.md#messages)).
 - **#58 (PR #71):** `add_reaction` and `remove_reaction` refuse an emoji that has `.`,
   `$`, a NUL character or invalid UTF-8, isn't made of emoji characters, or is over 64
   bytes, with `INVALID_REQUEST`, before anything is written. Before, a member could send
@@ -141,7 +147,7 @@ have no status, so the check must allow for that.
 
 ## Known issues and risks
 
-There are 41 open issues. Fix these first: #33. Where
+There are 41 open issues, and #72 closes when its fix merges. Fix these first: #33. Where
 each risk sits in the
 code: [architecture-overview.md](./architecture-overview.md#riskiest-areas).
 
@@ -154,13 +160,13 @@ code: [architecture-overview.md](./architecture-overview.md#riskiest-areas).
 | Accounts | Bans and deletions don't take effect at once, deleting an account leaves old references, emails are case-sensitive, usernames aren't unique, and signup logs personal data | #33, #35, #36, #65 |
 | Contacts and blocking | Blocks aren't enforced in chats, your contacts list includes people you blocked, and blocks written during a deploy can be missed | #27, #38, #39, #62, #63 |
 | Online status and privacy | Online status is unreliable, and privacy settings aren't applied | #31, #32 |
-| Messages and data | Reactions fail on every real message, reaction counts drift, writes can half-finish, and some lists grow without limit | #25, #37, #42, #72 |
+| Messages and data | Reaction counts drift, writes can half-finish, and some lists grow without limit | #25, #37, #42 |
 | Limits and errors | No rate or size limits on the WebSocket; some replies expose internal error text | #40, #41 |
 | WebSocket replies and events | Replies and events are inconsistent or leave out details, which affects the Android plan, and uppercase chat IDs lose live events | #47, #48, #50, #51, #60 |
 
 ## Next task
 
-Fix #33: the server trusts the account status inside the 7-day
+Merge the #72 fix. Then fix #33: the server trusts the account status inside the 7-day
 login token, so a ban, a deactivation or a deleted account takes effect only when the token
 expires. It needs a choice first: check the account in the database on each request, or
 keep a token version that a ban raises. Write a failing test first.

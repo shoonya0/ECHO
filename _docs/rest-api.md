@@ -114,6 +114,9 @@ The reply's `data` has `chat`, `messages` and `pagination`:
 is `null` and `hasMore` is `false`. Pages stay correct while new messages arrive. The old
 `offset` option now returns `400`.
 
+Each message's `reactions` is an object keyed by emoji. A message saved before #72 was
+fixed has `reactions: null` until someone reacts to it, so treat `null` as no reactions.
+
 Only participants can read a chat. Everyone else gets `404 Chat not found`.
 
 ## Groups
