@@ -7,6 +7,8 @@ import (
 	"fmt"
 	"strings"
 	"time"
+	"unicode"
+	"unicode/utf8"
 
 	"github.com/shoonya0/ECHO/internal/constants"
 	"github.com/shoonya0/ECHO/internal/database"
@@ -642,13 +644,59 @@ func broadcastReadReceipts(chatID, userID bson.ObjectID, messageIDs []bson.Objec
 	BroadcastToChat(chatID.Hex(), wsMessage)
 }
 
+// maxEmojiBytes caps a reaction's emoji. The longest standard emoji, a kiss with two
+// skin tones such as 🧑🏻‍❤️‍💋‍🧑🏼, is 35 bytes.
+const maxEmojiBytes = 64
+
+// validateEmoji refuses an emoji that isn't safe as one field name in
+// "reactions.<emoji>.users": a "." would split the path and reach other fields
+// (#58), "$" marks operators, and NUL or invalid UTF-8 can't be stored as a key.
+// It also refuses anything that isn't made of emoji characters, such as letters,
+// spaces, line breaks or a right-to-left override, because every member's app shows
+// the value. It doesn't check that the value is exactly one emoji: "👍👍" passes.
+func validateEmoji(emoji string) error {
+	if emoji == "" || len(emoji) > maxEmojiBytes || !utf8.ValidString(emoji) ||
+		strings.ContainsAny(emoji, ".$\x00") {
+		return fmt.Errorf("%w", ErrInvalidEmoji)
+	}
+	for _, r := range emoji {
+		if !isEmojiRune(r) {
+			return fmt.Errorf("%w", ErrInvalidEmoji)
+		}
+	}
+	return nil
+}
+
+// isEmojiRune reports whether r can be part of an emoji.
+func isEmojiRune(r rune) bool {
+	switch {
+	case r >= 0x1F000 && r <= 0x1FAFF:
+		// The emoji blocks, including emoji newer than Go's Unicode tables.
+		return true
+	case r >= 0xE0020 && r <= 0xE007F:
+		// Tag characters, which spell subdivision flags such as 🏴󠁧󠁢󠁳󠁣󠁴󠁿.
+		return true
+	case unicode.In(r, unicode.So, unicode.Sm, unicode.Sk):
+		// Older emoji such as ❤ and ↔ are symbols.
+		return true
+	}
+	switch r {
+	case '#', '*', '0', '1', '2', '3', '4', '5', '6', '7', '8', '9', // keycap bases: 1️⃣
+		'\u200d',           // zero-width joiner: 👩‍💻
+		'\u20e3',           // keycap
+		'\ufe0e', '\ufe0f', // text or emoji style
+		'‼', '⁉', 'ℹ', '〰', '〽': // emoji that Unicode doesn't class as symbols
+		return true
+	}
+	return false
+}
+
 // AddMessageReaction adds a reaction to a message
 func AddMessageReaction(chatID, messageID, userID bson.ObjectID, emoji string) error {
 	ctx := context.Background()
 
-	// Validate emoji (basic validation)
-	if len(emoji) == 0 || len(emoji) > 10 {
-		return fmt.Errorf("invalid emoji")
+	if err := validateEmoji(emoji); err != nil {
+		return err
 	}
 
 	if err := RequireChatMember(ctx, chatID, userID); err != nil {
@@ -689,6 +737,10 @@ func AddMessageReaction(chatID, messageID, userID bson.ObjectID, emoji string) e
 // RemoveMessageReaction removes a reaction from a message
 func RemoveMessageReaction(chatID, messageID, userID bson.ObjectID, emoji string) error {
 	ctx := context.Background()
+
+	if err := validateEmoji(emoji); err != nil {
+		return err
+	}
 
 	if err := RequireChatMember(ctx, chatID, userID); err != nil {
 		return err

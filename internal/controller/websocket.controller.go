@@ -942,6 +942,8 @@ func sendChatError(client *models.Client, requestID string, err error, code, mes
 		code, message = "PERMISSION_DENIED", "You are not a participant of this chat"
 	case errors.Is(err, services.ErrMessageNotFound):
 		code, message = "MESSAGE_NOT_FOUND", "Message not found"
+	case errors.Is(err, services.ErrInvalidEmoji):
+		code, message = "INVALID_REQUEST", "Invalid emoji"
 	}
 	sendErrorResponse(client, requestID, code, message)
 }

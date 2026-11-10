@@ -24,4 +24,5 @@ var (
 	ErrNotParticipant         = errors.New("you are not a participant of this chat")
 	ErrPermissionDenied       = errors.New("permission denied")
 	ErrAlreadyParticipant     = errors.New("users are already in the chat")
+	ErrInvalidEmoji           = errors.New("invalid emoji")
 )

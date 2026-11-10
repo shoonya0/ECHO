@@ -1,6 +1,6 @@
 # ECHO: current state
 
-A one-page snapshot of where the project stands. Last checked on 2026-11-10 at `16a110b`
+A one-page snapshot of where the project stands. Last checked on 2026-11-10 at `4b42931`
 on `main`. To learn what the product does, read
 [product-overview.md](./product-overview.md). For the code, read
 [architecture-overview.md](./architecture-overview.md).
@@ -11,12 +11,12 @@ on `main`. To learn what the product does, read
 and with a link to exactly one feature state.md. Updated by /close-increment and
 /feature-docs update. -->
 
-- **Feature:** none yet (set by `/feature-docs start`) · #24 fixed in PR #70 (verify
-  `--full`, CI and a live check pass), waiting for review and merge. After the merge,
-  `STATS_TOKEN` must exist on Render for production stats. The production audit for #34
-  hasn't been run yet
-- **Next step:** review and merge #24, then fix #58 (reaction emoji)
-- **Updated:** 2026-11-10 on `fix/24-hub-stats`
+- **Feature:** none yet (set by `/feature-docs start`) · #58 fixed in PR #71, now with
+  the code review's fixes, waiting for review and merge. The #34 audit script moved to
+  PR #73, also waiting; it hasn't been run on production yet. Reactions fail on every real
+  message (#72). Production stats stay off until `STATS_TOKEN` exists on Render
+- **Next step:** merge PR #71 and PR #73, then fix #33 (token claims)
+- **Updated:** 2026-11-10 on `fix/58-reaction-emoji`
 
 ## Where things stand
 
@@ -31,6 +31,15 @@ declining a group invite. The full list is in
 
 ## Recently finished
 
+- **#58 (PR #71):** `add_reaction` and `remove_reaction` refuse an emoji that has `.`,
+  `$`, a NUL character or invalid UTF-8, isn't made of emoji characters, or is over 64
+  bytes, with `INVALID_REQUEST`, before anything is written. Before, a member could send
+  `ok.details` and wipe that part of a reaction for everyone. Every standard emoji passes,
+  including joined ones such as 👩‍💻; the first 10-byte limit refused 1,615 of the 3,963.
+  A live check found a separate bug, filed as #72: every message is saved with
+  `reactions: null`, so adding a reaction to a real message always fails
+  (`REACTION_FAILED`). The local database has no stored reactions at all, so nothing there
+  was damaged. The code review moved the #34 audit script to PR #73.
 - **#24 (PR #70):** `GET chats/hub/stats` is for operators only. It needs
   an `X-Stats-Token` header that matches the new `STATS_TOKEN` setting, and it is off while
   that is unset. Every refusal is `404`. The reply no longer lists the Redis channels, which
@@ -75,10 +84,10 @@ to remember is `node scripts/verify.mjs`.
 
 ## Test baseline
 
-Run on 2026-11-10 at `16a110b` on `main`, on Windows, with MongoDB running and
-`TEST_DB_REQUIRED=1`, through `node scripts/verify.mjs --full`. The test durations are from
-the last uncached run, on 2026-11-09 with the same code. The lint row is from 2026-11-07 at
-`90b2f73`. Compare new runs against this table by test name.
+Run on 2026-11-10 at `4b42931` on `main`, on Windows, with MongoDB running and
+`TEST_DB_REQUIRED=1`, through `node scripts/verify.mjs --full` after `go clean -testcache`.
+The lint row is from 2026-11-07 at `90b2f73`. Compare new runs against this table by test
+name.
 
 | Command | Duration | Result | Known failures (by name) |
 |---|---|---|---|
@@ -86,7 +95,7 @@ the last uncached run, on 2026-11-09 with the same code. The lint row is from 20
 | `go vet ./...` | 1s | pass | — |
 | `gofmt -l cmd internal` | <1s | pass (no files) | — |
 | `go test ./...` | 3s | pass, none skipped | — |
-| `go test -race ./...` | 10s | pass, none skipped | — |
+| `go test -race ./...` | 12s | pass, none skipped | — |
 | `golangci-lint run ./...` (v2.14) | 11s | **27 issues**: errcheck 20, staticcheck 7 | not blocking: verify lints only new code (`--new-from-merge-base=origin/main`) |
 
 - Tests that need MongoDB skip when it isn't running, unless `TEST_DB_REQUIRED` is set. CI
@@ -132,8 +141,7 @@ have no status, so the check must allow for that.
 
 ## Known issues and risks
 
-There are 42 open issues, and #24 closes when its fix merges. Fix these first: #58, then
-#33. Where
+There are 42 open issues, and #58 closes when its fix merges. Fix these first: #33. Where
 each risk sits in the
 code: [architecture-overview.md](./architecture-overview.md#riskiest-areas).
 
@@ -146,11 +154,13 @@ code: [architecture-overview.md](./architecture-overview.md#riskiest-areas).
 | Accounts | Bans and deletions don't take effect at once, deleting an account leaves old references, emails are case-sensitive, usernames aren't unique, and signup logs personal data | #33, #35, #36, #65 |
 | Contacts and blocking | Blocks aren't enforced in chats, your contacts list includes people you blocked, and blocks written during a deploy can be missed | #27, #38, #39, #62, #63 |
 | Online status and privacy | Online status is unreliable, and privacy settings aren't applied | #31, #32 |
-| Messages and data | Reaction counts drift, emoji values can corrupt reactions, writes can half-finish, and some lists grow without limit | #25, #37, #42, #58 |
+| Messages and data | Reactions fail on every real message, reaction counts drift, writes can half-finish, and some lists grow without limit | #25, #37, #42, #72 |
 | Limits and errors | No rate or size limits on the WebSocket; some replies expose internal error text | #40, #41 |
 | WebSocket replies and events | Replies and events are inconsistent or leave out details, which affects the Android plan, and uppercase chat IDs lose live events | #47, #48, #50, #51, #60 |
 
 ## Next task
 
-Merge the #24 fix. Then fix #58: reaction emoji go into MongoDB field paths unchecked, so a
-chat member can corrupt a message's reactions. Write a failing test first.
+Merge the #58 fix. Then fix #33: the server trusts the account status inside the 7-day
+login token, so a ban, a deactivation or a deleted account takes effect only when the token
+expires. It needs a choice first: check the account in the database on each request, or
+keep a token version that a ban raises. Write a failing test first.

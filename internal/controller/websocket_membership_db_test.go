@@ -53,7 +53,7 @@ func TestChatRequestsFromNonMemberAreDenied(t *testing.T) {
 		t.Fatalf("insert message: %v", err)
 	}
 
-	reaction := map[string]interface{}{"messageId": messageID.Hex(), "emoji": "ok"}
+	reaction := map[string]interface{}{"messageId": messageID.Hex(), "emoji": "👍"}
 	users := map[string]interface{}{"userIds": []interface{}{member.Hex()}}
 
 	requests := []models.MessageRequest{
