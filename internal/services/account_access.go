@@ -19,7 +19,7 @@ import (
 
 // AccountAccessCacheTTL is how long an account check is cached in Redis. A ban or
 // deactivation made by editing the database takes effect within this time. Deleting
-// a profile through the API clears the cache entry, so it takes effect at once.
+// a profile through the API marks the cache entry deleted, so it takes effect at once.
 const AccountAccessCacheTTL = 30 * time.Second
 
 // Values stored in the cache, one per outcome of CheckAccountAccess.
@@ -36,8 +36,8 @@ func accountAccessKey(userID bson.ObjectID) string {
 
 // CheckAccountAccess says whether the stored account may still use its token. It
 // returns nil, ErrUserNotFound (deleted), ErrAccountBanned or ErrAccountInactive,
-// with the same rules as Login: a missing accountStatus counts as active, and
-// isVerified isn't required. Any other error means the account couldn't be read.
+// with the same rules as Login: a missing accountStatus counts as active, a null one
+// as inactive, and isVerified isn't required. Any other error means the account couldn't be read.
 //
 // The result is cached in Redis for AccountAccessCacheTTL. If Redis fails, MongoDB
 // is read instead, so a Redis outage never lets a banned account through.
@@ -65,45 +65,64 @@ func CheckAccountAccess(ctx context.Context, userID bson.ObjectID) error {
 		return err
 	}
 
-	if database.Redis != nil {
-		if err := database.Redis.Set(ctx, key, value, AccountAccessCacheTTL).Err(); err != nil {
-			log.WithError(err).Warn("Account access cache write failed")
-		}
-	}
+	// SET NX: never overwrite an entry written meanwhile, such as the "missing"
+	// entry DeleteProfile writes while this request was reading the account.
+	cacheAccountAccess(ctx, key, value)
 
 	_, accessErr := accessFromCache(value)
 	return accessErr
 }
 
-// ForgetAccountAccess removes the cached check, so the next request reads MongoDB.
-// It is best effort: if Redis fails, the entry expires on its own.
-func ForgetAccountAccess(ctx context.Context, userID bson.ObjectID) {
+func cacheAccountAccess(ctx context.Context, key, value string) {
 	if database.Redis == nil {
 		return
 	}
-	if err := database.Redis.Del(ctx, accountAccessKey(userID)).Err(); err != nil {
-		logger.WithContext(ctx).WithError(err).Warn("Failed to clear account access cache")
+	if err := database.Redis.SetNX(ctx, key, value, AccountAccessCacheTTL).Err(); err != nil {
+		logger.WithContext(ctx).WithError(err).Warn("Account access cache write failed")
+	}
+}
+
+// MarkAccountDeleted caches the account as deleted, so its token stops working at
+// once rather than when a cached "ok" expires. Clearing the entry instead would let
+// a request that read the account just before the delete write "ok" back. It is best
+// effort: if Redis fails, the entry expires on its own.
+func MarkAccountDeleted(ctx context.Context, userID bson.ObjectID) {
+	if database.Redis == nil {
+		return
+	}
+	if err := database.Redis.Set(ctx, accountAccessKey(userID), accessMissing, AccountAccessCacheTTL).Err(); err != nil {
+		logger.WithContext(ctx).WithError(err).Warn("Failed to mark the account deleted in the access cache")
 	}
 }
 
 func loadAccountAccess(ctx context.Context, userID bson.ObjectID) (string, error) {
-	var doc struct {
-		AccountStatus *models.AccountStatusEmbed `bson:"accountStatus"`
-	}
-	err := database.DB.Collection(string(constants.UserColl)).FindOne(ctx,
+	raw, err := database.DB.Collection(string(constants.UserColl)).FindOne(ctx,
 		bson.M{"_id": userID},
 		options.FindOne().SetProjection(bson.M{"accountStatus": 1}),
-	).Decode(&doc)
-	switch {
-	case errors.Is(err, mongo.ErrNoDocuments):
+	).Raw()
+	if errors.Is(err, mongo.ErrNoDocuments) {
 		return accessMissing, nil
-	case err != nil:
+	}
+	if err != nil {
 		return "", fmt.Errorf("failed to read account status: %w", err)
-	case doc.AccountStatus == nil:
-		return accessAllowed, nil // legacy account without accountStatus, as in Login
-	case doc.AccountStatus.IsBanned:
+	}
+
+	// As in Login: a missing accountStatus (legacy account) counts as active, but a
+	// stored null decodes to the zero value, which is inactive.
+	field, err := raw.LookupErr("accountStatus")
+	if err != nil {
+		return accessAllowed, nil
+	}
+	var status models.AccountStatusEmbed
+	if field.Type != bson.TypeNull {
+		if err := field.Unmarshal(&status); err != nil {
+			return "", fmt.Errorf("failed to decode account status: %w", err)
+		}
+	}
+	switch {
+	case status.IsBanned:
 		return accessBanned, nil
-	case !doc.AccountStatus.IsActive:
+	case !status.IsActive:
 		return accessInactive, nil
 	default:
 		return accessAllowed, nil

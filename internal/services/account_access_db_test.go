@@ -62,6 +62,7 @@ func TestCheckAccountAccessReadsStoredAccount(t *testing.T) {
 		{"active", bson.M{"accountStatus": activeStatus}, nil},
 		{"active but not verified", bson.M{"accountStatus": bson.M{"isActive": true}}, nil},
 		{"no accountStatus (legacy account, as Login allows)", bson.M{}, nil},
+		{"accountStatus null (Login refuses it as inactive)", bson.M{"accountStatus": nil}, ErrAccountInactive},
 		{"banned", bson.M{"accountStatus": bannedStatus}, ErrAccountBanned},
 		{"inactive", bson.M{"accountStatus": inactiveStatus}, ErrAccountInactive},
 		{"banned and inactive", bson.M{"accountStatus": bson.M{"isActive": false, "isBanned": true}}, ErrAccountBanned},
@@ -120,13 +121,16 @@ func TestCheckAccountAccessCacheIsShortLived(t *testing.T) {
 	}
 }
 
-// Deleting your profile must lock the token out at once, not after the cache expires.
-func TestDeleteProfileForgetsCachedAccess(t *testing.T) {
+// Deleting your profile must lock the token out at once, not after the cache expires,
+// even if a request that read the account just before the delete writes its "ok"
+// into the cache just after it.
+func TestDeleteProfileLocksOutAtOnce(t *testing.T) {
 	ctx := useTestDB(t)
 	rdb := testutil.UseTestRedis(t)
 
 	id := insertAccount(t, ctx, bson.M{"accountStatus": activeStatus})
-	t.Cleanup(func() { rdb.Del(context.Background(), accountAccessKey(id)) })
+	key := accountAccessKey(id)
+	t.Cleanup(func() { rdb.Del(context.Background(), key) })
 
 	if err := CheckAccountAccess(ctx, id); err != nil {
 		t.Fatalf("check before delete: %v", err)
@@ -136,6 +140,37 @@ func TestDeleteProfileForgetsCachedAccess(t *testing.T) {
 	}
 	if err := CheckAccountAccess(ctx, id); !errors.Is(err, ErrUserNotFound) {
 		t.Errorf("check after delete = %v, want ErrUserNotFound", err)
+	}
+
+	// The in-flight request's cache write, landing after the delete.
+	cacheAccountAccess(ctx, key, accessAllowed)
+	if err := CheckAccountAccess(ctx, id); !errors.Is(err, ErrUserNotFound) {
+		t.Errorf("check after a late \"ok\" write = %v, want ErrUserNotFound", err)
+	}
+}
+
+// The logout list is read through IsTokenRevoked, with the key LogoutUser writes.
+// A Redis error must come back as an error, never as "not revoked".
+func TestIsTokenRevoked(t *testing.T) {
+	ctx := context.Background()
+	rdb := testutil.UseTestRedis(t)
+
+	jti := "test-" + bson.NewObjectID().Hex()
+	t.Cleanup(func() { rdb.Del(context.Background(), tokenBlacklistKey(jti)) })
+
+	if revoked, err := IsTokenRevoked(ctx, jti); err != nil || revoked {
+		t.Fatalf("before logout: revoked=%v err=%v, want false, nil", revoked, err)
+	}
+	if err := LogoutUser(ctx, jti, time.Now().Add(time.Minute)); err != nil {
+		t.Fatalf("LogoutUser: %v", err)
+	}
+	if revoked, err := IsTokenRevoked(ctx, jti); err != nil || !revoked {
+		t.Errorf("after logout: revoked=%v err=%v, want true, nil", revoked, err)
+	}
+
+	testutil.UseBrokenRedis(t)
+	if _, err := IsTokenRevoked(ctx, jti); err == nil {
+		t.Error("with Redis down: err = nil, want an error")
 	}
 }
 
