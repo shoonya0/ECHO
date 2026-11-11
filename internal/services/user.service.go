@@ -122,6 +122,9 @@ func DeleteProfile(ctx context.Context, userID string) error {
 		return fmt.Errorf("%w", ErrUserNotFound)
 	}
 
+	// Lock the token out now, not when the cached account check expires (#33).
+	MarkAccountDeleted(ctx, objectID)
+
 	return nil
 }
 
@@ -497,6 +500,24 @@ func toString(v interface{}) string {
 	return fmt.Sprintf("%v", v)
 }
 
+func tokenBlacklistKey(jti string) string {
+	return "auth:blacklist:" + jti
+}
+
+// IsTokenRevoked says whether the token with this JTI was logged out. An error means
+// Redis couldn't answer; callers must not treat that as "not revoked". With no Redis
+// client (only in tests; it is required at startup) nothing is revoked.
+func IsTokenRevoked(ctx context.Context, jti string) (bool, error) {
+	if database.Redis == nil {
+		return false, nil
+	}
+	n, err := database.Redis.Exists(ctx, tokenBlacklistKey(jti)).Result()
+	if err != nil {
+		return false, fmt.Errorf("failed to check the token blacklist: %w", err)
+	}
+	return n > 0, nil
+}
+
 // LogoutUser adds a token's JTI to the Redis blacklist so it cannot be reused.
 // The TTL is set to the token's remaining lifetime; already-expired tokens are a no-op.
 func LogoutUser(ctx context.Context, jti string, expiresAt time.Time) error {
@@ -509,7 +530,7 @@ func LogoutUser(ctx context.Context, jti string, expiresAt time.Time) error {
 		return nil
 	}
 
-	blacklistKey := "auth:blacklist:" + jti
+	blacklistKey := tokenBlacklistKey(jti)
 
 	if database.Redis == nil {
 		log.Warn("Redis client is nil — cannot blacklist token")

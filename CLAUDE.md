@@ -25,7 +25,8 @@ Platform: Linux server, Docker image auto-deployed to Render from `main`.
 - Single test: `go test ./internal/services -run TestName -v`
 - DB tests skip unless MongoDB is reachable at `TEST_DB_URI`
   (default `mongodb://echo:echo@localhost:27017`). CI sets `TEST_DB_REQUIRED=1`, so
-  there they fail instead of skipping. A skipped DB test is "not verified".
+  there they fail instead of skipping. A skipped DB test is "not verified". Redis tests
+  (`testutil.UseTestRedis`) work the same way, with `TEST_REDIS_URI` (default `localhost:6379`).
 - Once per clone: `git config core.hooksPath .githooks` (pre-commit: docs-check, gofmt, vet)
 
 ## Workflow
