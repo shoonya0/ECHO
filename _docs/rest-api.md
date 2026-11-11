@@ -26,7 +26,15 @@ Some failures add an `error` field with more detail.
 ```
 
 The codes are `MISSING_AUTH_HEADER`, `INVALID_AUTH_FORMAT`, `EMPTY_TOKEN`,
-`TOKEN_VERIFICATION_FAILED` and `TOKEN_REVOKED`.
+`TOKEN_VERIFICATION_FAILED` and `TOKEN_REVOKED`. The reply never says why a token failed
+to verify.
+
+Every request also checks the account itself, so a token stops working when its account
+changes after login. These are `401` too: `ACCOUNT_BANNED`, `ACCOUNT_INACTIVE` and
+`ACCOUNT_NOT_FOUND` (the profile was deleted). The check is cached for up to 30 seconds,
+so a ban takes effect within that time. Deleting your profile takes effect at once. If
+the server can't check the token or the account, it returns `503` with
+`AUTH_UNAVAILABLE`. That isn't a reason to log out: retry later.
 
 | Status | Meaning |
 |---|---|
@@ -37,6 +45,7 @@ The codes are `MISSING_AUTH_HEADER`, `INVALID_AUTH_FORMAT`, `EMPTY_TOKEN`,
 | `404` | Not found, or you aren't allowed to know it exists |
 | `409` | Conflict, such as "already in your contacts" |
 | `500` | Something went wrong on the server |
+| `503` | The server can't check your token right now (`AUTH_UNAVAILABLE`); retry later |
 
 ## Accounts
 
