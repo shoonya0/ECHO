@@ -1,6 +1,7 @@
 package middleware
 
 import (
+	"errors"
 	"fmt"
 	"net/http"
 	"strings"
@@ -10,46 +11,41 @@ import (
 	"github.com/shoonya0/ECHO/internal/database"
 	"github.com/shoonya0/ECHO/internal/logger"
 	"github.com/shoonya0/ECHO/internal/models"
+	"github.com/shoonya0/ECHO/internal/services"
 	"github.com/shoonya0/ECHO/internal/utils"
 
 	"github.com/gin-gonic/gin"
 	"github.com/golang-jwt/jwt/v5"
+	"github.com/sirupsen/logrus"
 	"go.mongodb.org/mongo-driver/v2/bson"
 )
 
-func validateClaims(claims utils.JwtClaims) error {
-
-	if claims.RegisteredClaims.ExpiresAt.Before(time.Now()) {
+// validateClaims checks the token's own fields. Whether the account may still use the
+// token (banned, inactive, deleted) is decided from the database in AuthMiddleware,
+// not from the accountStatus copied into the token at login (#33).
+func validateClaims(claims *utils.JwtClaims) error {
+	if claims.ExpiresAt.Before(time.Now()) {
 		return fmt.Errorf("token is expired")
 	}
 
-	if claims.RegisteredClaims.NotBefore.After(time.Now()) {
+	if claims.NotBefore.After(time.Now()) {
 		return fmt.Errorf("token is not valid yet")
 	}
 
-	if claims.RegisteredClaims.Subject == "" {
+	if claims.Subject == "" {
 		return fmt.Errorf("missing user_id in token claims")
-	} else if claims.Username == "" {
-		return fmt.Errorf("missing username in token claims")
-	} else if claims.Email == "" {
-		return fmt.Errorf("missing email in token claims")
-	} else if claims.DisplayName == "" {
-		// Legacy tokens or accounts created before displayName was required:
-		// fall back to Username or Email instead of hard-rejecting.
-		if claims.Username != "" {
-			claims.DisplayName = claims.Username
-		} else if claims.Email != "" {
-			claims.DisplayName = claims.Email
-		}
-		// If still empty after fallback, we let it through — the login
-		// endpoint now normalizes displayName on every token issuance.
-	} else if claims.AccountStatus.IsBanned {
-		return fmt.Errorf("account is banned")
-	} else if claims.AccountStatus.IsActive && claims.AccountStatus.IsVerified && !claims.AccountStatus.IsBanned {
-		// All good — account is fully active. Continue.
 	}
-	// Note: zero/missing accountStatus is tolerated (legacy tokens from seed accounts).
-	// The Login handler guarantees only active+unbanned accounts can obtain a token.
+	if claims.Username == "" {
+		return fmt.Errorf("missing username in token claims")
+	}
+	if claims.Email == "" {
+		return fmt.Errorf("missing email in token claims")
+	}
+
+	// Tokens from accounts created before displayName was required.
+	if claims.DisplayName == "" {
+		claims.DisplayName = claims.Username
+	}
 
 	return nil
 }
@@ -95,7 +91,7 @@ func verifyToken(tokenString string) (utils.JwtClaims, error) {
 		return utils.JwtClaims{}, fmt.Errorf("invalid token")
 	}
 
-	if err := validateClaims(claims); err != nil {
+	if err := validateClaims(&claims); err != nil {
 		return utils.JwtClaims{}, err
 	}
 
@@ -146,27 +142,47 @@ func AuthMiddleware(ctx *gin.Context) {
 	claims, err := verifyToken(token)
 	if err != nil {
 		log.WithError(err).Debug("Token verification failed")
-		ctx.JSON(http.StatusUnauthorized, gin.H{
-			"code":    "TOKEN_VERIFICATION_FAILED",
-			"details": err.Error(),
-			"error":   "invalid or expired token",
-		})
-		ctx.Abort()
+		refuseToken(ctx)
+		return
+	}
+
+	objectID, err := bson.ObjectIDFromHex(claims.Subject)
+	if err != nil {
+		log.WithError(err).Debug("Token subject is not a user ID")
+		refuseToken(ctx)
 		return
 	}
 
 	// Add user ID to context for logging
-	reqCtx = logger.WithUserID(reqCtx, claims.RegisteredClaims.Subject)
+	reqCtx = logger.WithUserID(reqCtx, claims.Subject)
 	ctx.Request = ctx.Request.WithContext(reqCtx)
 	log = logger.WithContext(reqCtx)
 
-	ctx.Set("userId", claims.RegisteredClaims.Subject)
+	// Check the token blacklist (server-side logout). If Redis can't answer, refuse
+	// with 503 rather than let a revoked token through (#33). Redis is required at
+	// startup, so a nil client only happens in tests.
+	if database.Redis != nil {
+		blacklistKey := "auth:blacklist:" + claims.ID
+		exists, err := database.Redis.Exists(ctx.Request.Context(), blacklistKey).Result()
+		if err != nil {
+			log.WithError(err).Warn("Redis blacklist lookup failed; refusing the request")
+			refuseUnavailable(ctx)
+			return
+		}
+		if exists > 0 {
+			log.Warn("Token has been revoked")
+			ctx.JSON(http.StatusUnauthorized, gin.H{
+				"error": "token has been revoked",
+				"code":  "TOKEN_REVOKED",
+			})
+			ctx.Abort()
+			return
+		}
+	}
 
-	objectID, err := bson.ObjectIDFromHex(claims.RegisteredClaims.Subject)
-	if err != nil {
-		log.Debug("Invalid user ID format")
-		utils.ErrorResponse(ctx, http.StatusUnauthorized, "invalid user id format", err.Error())
-		ctx.Abort()
+	// The account may have been banned, deactivated or deleted since login (#33).
+	if err := services.CheckAccountAccess(reqCtx, objectID); err != nil {
+		refuseAccount(ctx, log, err)
 		return
 	}
 
@@ -185,25 +201,9 @@ func AuthMiddleware(ctx *gin.Context) {
 		AccountStatus: claims.AccountStatus,
 	}
 
+	ctx.Set("userId", claims.Subject)
 	ctx.Set("user", user)
 	ctx.Set("jwtClaims", claims)
-
-	// Check token blacklist (for server-side logout).
-	if database.Redis != nil {
-		blacklistKey := "auth:blacklist:" + claims.RegisteredClaims.ID
-		exists, err := database.Redis.Exists(ctx.Request.Context(), blacklistKey).Result()
-		if err != nil {
-			log.WithError(err).Warn("Redis blacklist lookup failed — failing open to avoid lockout")
-		} else if exists > 0 {
-			log.Warn("Token has been revoked")
-			ctx.JSON(http.StatusUnauthorized, gin.H{
-				"error": "token has been revoked",
-				"code":  "TOKEN_REVOKED",
-			})
-			ctx.Abort()
-			return
-		}
-	}
 
 	log.WithFields(map[string]interface{}{
 		"userId":   user.ID.Hex(),
@@ -212,4 +212,42 @@ func AuthMiddleware(ctx *gin.Context) {
 	}).Debug("User authenticated successfully")
 
 	ctx.Next()
+}
+
+// refuseToken answers a token that can't be used, without saying why: the reason is
+// logged, not sent (#33, #41).
+func refuseToken(ctx *gin.Context) {
+	ctx.JSON(http.StatusUnauthorized, gin.H{
+		"error": "invalid or expired token",
+		"code":  "TOKEN_VERIFICATION_FAILED",
+	})
+	ctx.Abort()
+}
+
+func refuseUnavailable(ctx *gin.Context) {
+	ctx.JSON(http.StatusServiceUnavailable, gin.H{
+		"error": "authentication is temporarily unavailable",
+		"code":  "AUTH_UNAVAILABLE",
+	})
+	ctx.Abort()
+}
+
+// refuseAccount answers a valid token whose account may no longer use it.
+func refuseAccount(ctx *gin.Context, log *logrus.Entry, err error) {
+	var message, code string
+	switch {
+	case errors.Is(err, services.ErrAccountBanned):
+		message, code = "account is banned", "ACCOUNT_BANNED"
+	case errors.Is(err, services.ErrAccountInactive):
+		message, code = "account is not active", "ACCOUNT_INACTIVE"
+	case errors.Is(err, services.ErrUserNotFound):
+		message, code = "account no longer exists", "ACCOUNT_NOT_FOUND"
+	default:
+		log.WithError(err).Error("Account check failed; refusing the request")
+		refuseUnavailable(ctx)
+		return
+	}
+	log.WithField("code", code).Info("Refused a token for an account that can't use it")
+	ctx.JSON(http.StatusUnauthorized, gin.H{"error": message, "code": code})
+	ctx.Abort()
 }
