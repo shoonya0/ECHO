@@ -122,6 +122,9 @@ func DeleteProfile(ctx context.Context, userID string) error {
 		return fmt.Errorf("%w", ErrUserNotFound)
 	}
 
+	// Lock the token out now, not when the cached account check expires (#33).
+	ForgetAccountAccess(ctx, objectID)
+
 	return nil
 }
 
