@@ -11,12 +11,13 @@ on `main`. To learn what the product does, read
 and with a link to exactly one feature state.md. Updated by /close-increment and
 /feature-docs update. -->
 
-- **Feature:** none yet (set by `/feature-docs start`) · #72 (PR #74) is merged; react to
-  an existing message on Render to confirm it there. Its live check found #75: reaction
-  `details` store `""` instead of the username. The #34 audit hasn't been run on
-  production yet. Production stats stay off until `STATS_TOKEN` exists on Render
-- **Next step:** fix #33 (token claims)
-- **Updated:** 2026-11-10 on `main`, after merging PR #74
+- **Feature:** none yet (set by `/feature-docs start`) · #33 fixed on `fix/33-token-claims`
+  (verify `--full` and a live check pass), waiting for review, a PR and merge. Its open
+  WebSocket part is split out as #76. Still to do from before: react to an existing
+  message on Render to confirm #72 there, run the #34 audit on production, and add
+  `STATS_TOKEN` on Render
+- **Next step:** `/code-review` this branch, open the PR, then fix #76 (open WebSockets)
+- **Updated:** 2026-11-11 on `fix/33-token-claims`
 
 ## Where things stand
 
@@ -31,6 +32,16 @@ declining a group invite. The full list is in
 
 ## Recently finished
 
+- **#33 (branch `fix/33-token-claims`, not merged yet):** a token stops working when its
+  account is banned, deactivated or deleted after login. Before, the middleware trusted
+  the account status copied into the 7-day token. Every request now reads the account
+  (`services.CheckAccountAccess`), cached in Redis for 30 seconds, and refuses it with
+  `401` `ACCOUNT_BANNED`, `ACCOUNT_INACTIVE` or `ACCOUNT_NOT_FOUND`. Deleting a profile
+  clears the cache, so it applies at once; a ban made in MongoDB applies within 30 seconds.
+  If Redis can't answer the logout list, the request gets `503` `AUTH_UNAVAILABLE`
+  instead of going through; a cache failure reads MongoDB instead. `401` replies no longer
+  include the parser's error text. The `else if` chain that skipped the ban check is gone.
+  CI now runs Redis for the cache tests. Open WebSockets are still not re-checked: #76.
 - **#72 (PR #74):** reactions work on real messages. New messages store `reactions: {}` instead of
   `null`, which MongoDB refused to create reaction fields in. A message that still has
   `null` (every message saved before the fix, or one written by an older server copy
@@ -90,7 +101,7 @@ to remember is `node scripts/verify.mjs`.
 
 ## Test baseline
 
-Run on 2026-11-10 at `1a6eb6e` on `main`, on Windows, with MongoDB running and
+Run on 2026-11-11 on `fix/33-token-claims`, on Windows, with MongoDB and Redis running and
 `TEST_DB_REQUIRED=1`, through `node scripts/verify.mjs --full` after `go clean -testcache`.
 The lint row is from 2026-11-07 at `90b2f73`. Compare new runs against this table by test
 name.
@@ -101,7 +112,7 @@ name.
 | `go vet ./...` | 1s | pass | — |
 | `gofmt -l cmd internal` | <1s | pass (no files) | — |
 | `go test ./...` | 3s | pass, none skipped | — |
-| `go test -race ./...` | 10s | pass, none skipped | — |
+| `go test -race ./...` | 16s | pass, none skipped | — |
 | `golangci-lint run ./...` (v2.14) | 11s | **27 issues**: errcheck 20, staticcheck 7 | not blocking: verify lints only new code (`--new-from-merge-base=origin/main`) |
 
 - Tests that need MongoDB skip when it isn't running, unless `TEST_DB_REQUIRED` is set. CI
@@ -147,17 +158,17 @@ have no status, so the check must allow for that.
 
 ## Known issues and risks
 
-There are 41 open issues. Fix these first: #33. Where
+There are 42 open issues, and #33 closes when its fix merges. Fix these first: #76. Where
 each risk sits in the
 code: [architecture-overview.md](./architecture-overview.md#riskiest-areas).
 
 | Area | The problem, in short | Issues |
 |---|---|---|
-| Live connections | The server can leak resources or stall under load, missed live messages can't be detected, and open connections miss new chats | #20, #21, #22, #43, #49, #54, #55 |
+| Live connections | The server can leak resources or stall under load, missed live messages can't be detected, open connections miss new chats, and they stay open after logout, a ban or a deleted profile | #20, #21, #22, #43, #49, #54, #55, #76 |
 | Chat access | Some replies reveal whether a chat exists | #59 |
 | Groups | Members are never asked to accept, live delivery doesn't match who is in the group, and the size limit isn't enforced | #5, #14, #16, #17, #28, #68 |
 | Invite codes | Anyone can decrypt a code, the invite endpoints lack permission checks, and entries left by forged joins before #9 was fixed are still stored | #15, #29, #30, #69 |
-| Accounts | Bans and deletions don't take effect at once, deleting an account leaves old references, emails are case-sensitive, usernames aren't unique, and signup logs personal data | #33, #35, #36, #65 |
+| Accounts | Deleting an account leaves old references, emails are case-sensitive, usernames aren't unique, and signup logs personal data | #35, #36, #65 |
 | Contacts and blocking | Blocks aren't enforced in chats, your contacts list includes people you blocked, and blocks written during a deploy can be missed | #27, #38, #39, #62, #63 |
 | Online status and privacy | Online status is unreliable, and privacy settings aren't applied | #31, #32 |
 | Messages and data | Reaction counts drift, history doesn't show who reacted by name, writes can half-finish, and some lists grow without limit | #25, #37, #42, #75 |
@@ -166,7 +177,8 @@ code: [architecture-overview.md](./architecture-overview.md#riskiest-areas).
 
 ## Next task
 
-Fix #33: the server trusts the account status inside the 7-day
-login token, so a ban, a deactivation or a deleted account takes effect only when the token
-expires. It needs a choice first: check the account in the database on each request, or
-keep a token version that a ban raises. Write a failing test first.
+Fix #76: an open WebSocket is never checked again, so logout, a ban or a deleted profile
+leave it connected and receiving messages. Logout and delete can publish a Redis control
+message that closes the user's connections on every server; a ban made in MongoDB needs
+a periodic re-check with `services.CheckAccountAccess`. Reproduce it in a test first, under
+`go test -race`, since it touches the hub.

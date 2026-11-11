@@ -109,7 +109,8 @@ For local development only.
 **Database tests need MongoDB.** They use a throwaway database and drop it afterwards. They
 connect to `TEST_DB_URI` (default: the Docker MongoDB). If MongoDB isn't reachable they are
 skipped, and a skipped test proves nothing. With `TEST_DB_REQUIRED=1`, as in CI, they fail
-instead of skipping.
+instead of skipping. A few tests also need Redis, at `TEST_REDIS_URI` (default: the Docker
+Redis, `localhost:6379`). They use Redis database 15 and the same skip rule.
 
 ### API contract test
 
