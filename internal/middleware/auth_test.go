@@ -1,6 +1,7 @@
 package middleware
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -92,8 +93,8 @@ func TestAuthRefusesAccountChangedAfterLogin(t *testing.T) {
 		wantErr  string
 	}{
 		{"still active", bson.M{"isActive": true, "isVerified": true, "isBanned": false}, http.StatusOK, ""},
-		{"banned", bson.M{"isActive": true, "isVerified": true, "isBanned": true}, http.StatusUnauthorized, "ACCOUNT_BANNED"},
-		{"deactivated", bson.M{"isActive": false, "isVerified": true, "isBanned": false}, http.StatusUnauthorized, "ACCOUNT_INACTIVE"},
+		{"banned", bson.M{"isActive": true, "isVerified": true, "isBanned": true}, http.StatusForbidden, "ACCOUNT_BANNED"},
+		{"deactivated", bson.M{"isActive": false, "isVerified": true, "isBanned": false}, http.StatusForbidden, "ACCOUNT_INACTIVE"},
 		{"deleted", nil, http.StatusUnauthorized, "ACCOUNT_NOT_FOUND"},
 	}
 	for _, tc := range cases {
@@ -136,8 +137,8 @@ func TestAuthChecksAccountWhenDisplayNameIsEmpty(t *testing.T) {
 	}); err != nil {
 		t.Fatalf("insert user: %v", err)
 	}
-	if got := callAuth(t, tokenFor(t, id, "")); got.status != http.StatusUnauthorized || got.body["code"] != "ACCOUNT_BANNED" {
-		t.Errorf("banned account, empty displayName: status %d body %s, want 401 ACCOUNT_BANNED", got.status, got.raw)
+	if got := callAuth(t, tokenFor(t, id, "")); got.status != http.StatusForbidden || got.body["code"] != "ACCOUNT_BANNED" {
+		t.Errorf("banned account, empty displayName: status %d body %s, want 403 ACCOUNT_BANNED", got.status, got.raw)
 	}
 
 	claims, err := verifyToken(tokenFor(t, id, ""))
@@ -158,6 +159,51 @@ func TestAuthRefusesWhenRevocationCheckFails(t *testing.T) {
 	got := callAuth(t, tokenFor(t, bson.NewObjectID(), "Display"))
 	if got.status != http.StatusServiceUnavailable || got.body["code"] != "AUTH_UNAVAILABLE" {
 		t.Errorf("status %d body %s, want 503 AUTH_UNAVAILABLE", got.status, got.raw)
+	}
+}
+
+// If the client hangs up during the account check, the reply is 503 like any failed
+// check (it is logged at Debug, not as an outage), and the request never gets through.
+func TestAuthCanceledRequestIsRefused(t *testing.T) {
+	testutil.UseTestDB(t)
+	useTestSecret(t)
+	withoutRedis(t)
+
+	gin.SetMode(gin.TestMode)
+	r := gin.New()
+	r.GET("/x", AuthMiddleware, func(c *gin.Context) { c.Status(http.StatusOK) })
+
+	reqCtx, cancel := context.WithCancel(context.Background())
+	cancel()
+	req := httptest.NewRequest(http.MethodGet, "/x", nil).WithContext(reqCtx)
+	req.Header.Set("Authorization", "Bearer "+tokenFor(t, bson.NewObjectID(), "d"))
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+
+	if w.Code != http.StatusServiceUnavailable || !strings.Contains(w.Body.String(), "AUTH_UNAVAILABLE") {
+		t.Errorf("status %d body %s, want 503 AUTH_UNAVAILABLE", w.Code, w.Body.String())
+	}
+}
+
+// Logout revokes a token by its ID (jti), so a token without one must be refused.
+func TestAuthRefusesTokenWithoutID(t *testing.T) {
+	useTestSecret(t)
+	withoutRedis(t)
+
+	noID := jwt.NewWithClaims(jwt.SigningMethodHS256, utils.JwtClaims{
+		RegisteredClaims: jwt.RegisteredClaims{
+			Subject:   bson.NewObjectID().Hex(),
+			ExpiresAt: jwt.NewNumericDate(time.Now().Add(time.Hour)),
+			NotBefore: jwt.NewNumericDate(time.Now().Add(-time.Minute)),
+		},
+		Username: "u", Email: "e@example.com", DisplayName: "d",
+	})
+	signed, err := noID.SignedString([]byte(config.Cfg.JWTSecret))
+	if err != nil {
+		t.Fatalf("sign: %v", err)
+	}
+	if got := callAuth(t, signed); got.status != http.StatusUnauthorized || got.body["code"] != "TOKEN_VERIFICATION_FAILED" {
+		t.Errorf("status %d body %s, want 401 TOKEN_VERIFICATION_FAILED", got.status, got.raw)
 	}
 }
 

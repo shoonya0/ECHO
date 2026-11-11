@@ -12,11 +12,11 @@ and with a link to exactly one feature state.md. Updated by /close-increment and
 /feature-docs update. -->
 
 - **Feature:** none yet (set by `/feature-docs start`) · #33 fixed on `fix/33-token-claims`
-  (verify `--full` and a live check pass), waiting for review, a PR and merge. Its open
+  (verify `--full`, a live check and the code review's fixes are in), waiting for a PR and merge. Its open
   WebSocket part is split out as #76. Still to do from before: react to an existing
   message on Render to confirm #72 there, run the #34 audit on production, and add
   `STATS_TOKEN` on Render
-- **Next step:** `/code-review` this branch, open the PR, then fix #76 (open WebSockets)
+- **Next step:** `/security-review`, push and open the PR, then fix #76 (open WebSockets)
 - **Updated:** 2026-11-11 on `fix/33-token-claims`
 
 ## Where things stand
@@ -36,12 +36,15 @@ declining a group invite. The full list is in
   account is banned, deactivated or deleted after login. Before, the middleware trusted
   the account status copied into the 7-day token. Every request now reads the account
   (`services.CheckAccountAccess`), cached in Redis for 30 seconds, and refuses it with
-  `401` `ACCOUNT_BANNED`, `ACCOUNT_INACTIVE` or `ACCOUNT_NOT_FOUND`. Deleting a profile
-  clears the cache, so it applies at once; a ban made in MongoDB applies within 30 seconds.
-  If Redis can't answer the logout list, the request gets `503` `AUTH_UNAVAILABLE`
-  instead of going through; a cache failure reads MongoDB instead. `401` replies no longer
-  include the parser's error text. The `else if` chain that skipped the ban check is gone.
-  CI now runs Redis for the cache tests. Open WebSockets are still not re-checked: #76.
+  `403` `ACCOUNT_BANNED` or `ACCOUNT_INACTIVE` (as Login does) or `401`
+  `ACCOUNT_NOT_FOUND`. Deleting a profile caches the account as deleted, so it applies at
+  once, even for a request that was mid-check; a ban made in MongoDB applies within 30
+  seconds. A stored `accountStatus: null` counts as inactive, as in Login. If Redis can't
+  answer the logout list, the request gets `503` `AUTH_UNAVAILABLE` instead of going
+  through; a cache failure reads MongoDB instead. Tokens without a `jti` are refused.
+  `401` replies no longer include the parser's error text. The `else if` chain that
+  skipped the ban check is gone. CI now runs Redis for the cache tests. The code review's
+  fixes are in. Open WebSockets are still not re-checked: #76.
 - **#72 (PR #74):** reactions work on real messages. New messages store `reactions: {}` instead of
   `null`, which MongoDB refused to create reaction fields in. A message that still has
   `null` (every message saved before the fix, or one written by an older server copy

@@ -30,8 +30,10 @@ The codes are `MISSING_AUTH_HEADER`, `INVALID_AUTH_FORMAT`, `EMPTY_TOKEN`,
 to verify.
 
 Every request also checks the account itself, so a token stops working when its account
-changes after login. These are `401` too: `ACCOUNT_BANNED`, `ACCOUNT_INACTIVE` and
-`ACCOUNT_NOT_FOUND` (the profile was deleted). The check is cached for up to 30 seconds,
+changes after login, in the same shape: `403` with `ACCOUNT_BANNED` or `ACCOUNT_INACTIVE`
+(as `login` answers for those accounts), and `401` with `ACCOUNT_NOT_FOUND` when the
+profile was deleted. A token must also have an ID (`jti`); every token `login` issues
+does. The check is cached for up to 30 seconds,
 so a ban takes effect within that time. Deleting your profile takes effect at once. If
 the server can't check the token or the account, it returns `503` with
 `AUTH_UNAVAILABLE`. That isn't a reason to log out: retry later.

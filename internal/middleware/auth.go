@@ -1,6 +1,7 @@
 package middleware
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"net/http"
@@ -8,7 +9,6 @@ import (
 	"time"
 
 	"github.com/shoonya0/ECHO/internal/config"
-	"github.com/shoonya0/ECHO/internal/database"
 	"github.com/shoonya0/ECHO/internal/logger"
 	"github.com/shoonya0/ECHO/internal/models"
 	"github.com/shoonya0/ECHO/internal/services"
@@ -34,6 +34,10 @@ func validateClaims(claims *utils.JwtClaims) error {
 
 	if claims.Subject == "" {
 		return fmt.Errorf("missing user_id in token claims")
+	}
+	// Logout revokes a token by its ID, so a token without one can't be revoked alone.
+	if claims.ID == "" {
+		return fmt.Errorf("missing jti in token claims")
 	}
 	if claims.Username == "" {
 		return fmt.Errorf("missing username in token claims")
@@ -159,25 +163,20 @@ func AuthMiddleware(ctx *gin.Context) {
 	log = logger.WithContext(reqCtx)
 
 	// Check the token blacklist (server-side logout). If Redis can't answer, refuse
-	// with 503 rather than let a revoked token through (#33). Redis is required at
-	// startup, so a nil client only happens in tests.
-	if database.Redis != nil {
-		blacklistKey := "auth:blacklist:" + claims.ID
-		exists, err := database.Redis.Exists(ctx.Request.Context(), blacklistKey).Result()
-		if err != nil {
-			log.WithError(err).Warn("Redis blacklist lookup failed; refusing the request")
-			refuseUnavailable(ctx)
-			return
-		}
-		if exists > 0 {
-			log.Warn("Token has been revoked")
-			ctx.JSON(http.StatusUnauthorized, gin.H{
-				"error": "token has been revoked",
-				"code":  "TOKEN_REVOKED",
-			})
-			ctx.Abort()
-			return
-		}
+	// with 503 rather than let a revoked token through (#33).
+	revoked, err := services.IsTokenRevoked(reqCtx, claims.ID)
+	if err != nil {
+		refuseUnavailable(ctx, log, err)
+		return
+	}
+	if revoked {
+		log.Warn("Token has been revoked")
+		ctx.JSON(http.StatusUnauthorized, gin.H{
+			"error": "token has been revoked",
+			"code":  "TOKEN_REVOKED",
+		})
+		ctx.Abort()
+		return
 	}
 
 	// The account may have been banned, deactivated or deleted since login (#33).
@@ -224,7 +223,14 @@ func refuseToken(ctx *gin.Context) {
 	ctx.Abort()
 }
 
-func refuseUnavailable(ctx *gin.Context) {
+// refuseUnavailable answers when the token or the account couldn't be checked. A
+// client that hung up (context canceled) isn't an outage, so it isn't logged as one.
+func refuseUnavailable(ctx *gin.Context, log *logrus.Entry, err error) {
+	if errors.Is(err, context.Canceled) {
+		log.WithError(err).Debug("Auth check stopped: the client went away")
+	} else {
+		log.WithError(err).Error("Auth check failed; refusing the request")
+	}
 	ctx.JSON(http.StatusServiceUnavailable, gin.H{
 		"error": "authentication is temporarily unavailable",
 		"code":  "AUTH_UNAVAILABLE",
@@ -232,8 +238,10 @@ func refuseUnavailable(ctx *gin.Context) {
 	ctx.Abort()
 }
 
-// refuseAccount answers a valid token whose account may no longer use it.
+// refuseAccount answers a valid token whose account may no longer use it: 403 for a
+// banned or inactive account, as Login answers, and 401 for a deleted one.
 func refuseAccount(ctx *gin.Context, log *logrus.Entry, err error) {
+	status := http.StatusForbidden
 	var message, code string
 	switch {
 	case errors.Is(err, services.ErrAccountBanned):
@@ -241,13 +249,12 @@ func refuseAccount(ctx *gin.Context, log *logrus.Entry, err error) {
 	case errors.Is(err, services.ErrAccountInactive):
 		message, code = "account is not active", "ACCOUNT_INACTIVE"
 	case errors.Is(err, services.ErrUserNotFound):
-		message, code = "account no longer exists", "ACCOUNT_NOT_FOUND"
+		status, message, code = http.StatusUnauthorized, "account no longer exists", "ACCOUNT_NOT_FOUND"
 	default:
-		log.WithError(err).Error("Account check failed; refusing the request")
-		refuseUnavailable(ctx)
+		refuseUnavailable(ctx, log, err)
 		return
 	}
 	log.WithField("code", code).Info("Refused a token for an account that can't use it")
-	ctx.JSON(http.StatusUnauthorized, gin.H{"error": message, "code": code})
+	ctx.JSON(status, gin.H{"error": message, "code": code})
 	ctx.Abort()
 }
