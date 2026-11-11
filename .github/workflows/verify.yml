@@ -33,7 +33,8 @@ jobs:
         os: [ubuntu-latest] # e.g. [windows-latest, macos-latest] for desktop apps
     # MongoDB for the DB tests (internal/services/*_db_test.go). Same throwaway
     # credentials as docker/docker-compose.yml; TEST_DB_REQUIRED makes a missing DB
-    # fail the run instead of skipping the tests.
+    # fail the run instead of skipping the tests. Redis is for the tests that use
+    # testutil.UseTestRedis (the account check cache, #33); the same flag applies.
     services:
       mongodb:
         image: mongo:7
@@ -45,8 +46,16 @@ jobs:
         options: >-
           --health-cmd "mongosh --quiet --eval 'db.adminCommand(\"ping\")'"
           --health-interval 5s --health-timeout 5s --health-retries 20
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s --health-timeout 5s --health-retries 20
     env:
       TEST_DB_URI: mongodb://echo:echo@localhost:27017
+      TEST_REDIS_URI: localhost:6379
       TEST_DB_REQUIRED: "1"
     steps:
       - uses: actions/checkout@v4
