@@ -17,7 +17,7 @@ and with a link to exactly one feature state.md. Updated by /close-increment and
   [Android/_docs/08_SERVER_CHANGES.md](../Android/_docs/08_SERVER_CHANGES.md). Still to do
   from before: react to an existing message on Render to confirm #72 there, run the #34
   audit on production, and add `STATS_TOKEN` on Render
-- **Next step:** `/code-review` and `/security-review`, then push and open the PR for #76
+- **Next step:** `/security-review`, then push and open the PR for #76
 - **Updated:** 2026-11-12 on `fix/76-close-sockets-on-revoke`
 
 ## Where things stand
@@ -38,11 +38,14 @@ declining a group invite. The full list is in
   (other devices stay connected); deleting the profile closes all of the user's. Both act
   at once on every server, through the Redis channel `control:sessions`. Every open
   connection is also re-checked every 30 seconds, so a ban made in MongoDB closes it within
-  about a minute (52 s in the live check). If the check can't be made, the connection stays
-  open until the next pass. The close frame says why: `4401` `TOKEN_REVOKED` or
-  `ACCOUNT_NOT_FOUND`, `4403` `ACCOUNT_BANNED` or `ACCOUNT_INACTIVE`
+  about a minute (52 to 58 s in the live checks), and a connection closes when its token
+  expires. If a check can't be made, the pass stops and the connections stay open until
+  the next one. The close frame says why: `4401` `TOKEN_REVOKED`,
+  `TOKEN_EXPIRED` or `ACCOUNT_NOT_FOUND`, `4403` `ACCOUNT_BANNED` or `ACCOUNT_INACTIVE`
   ([WEBSOCKET_PROTOCOL.md](./WEBSOCKET_PROTOCOL.md#stay-connected)). A closed connection's
-  read loop stops at once instead of at its 60-second deadline.
+  read loop finishes the close handshake within 5 seconds instead of at its 60-second
+  deadline. The middleware and the re-check share one check (`services.CheckSession`). The
+  code review's fixes are in.
 - **#33 (PR #77):** a token stops working when its
   account is banned, deactivated or deleted after login. Before, the middleware trusted
   the account status copied into the 7-day token. Every request now reads the account

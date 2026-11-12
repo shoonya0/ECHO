@@ -41,6 +41,7 @@ When you connect, the server:
   | Code | Reason | When | What to do |
   |---|---|---|---|
   | `4401` | `TOKEN_REVOKED` | This token was logged out | Log out. Don't reconnect. |
+  | `4401` | `TOKEN_EXPIRED` | The token expired (checked every 30 seconds) | Log in again. |
   | `4401` | `ACCOUNT_NOT_FOUND` | The profile was deleted | Log out and clear local data. |
   | `4403` | `ACCOUNT_BANNED` / `ACCOUNT_INACTIVE` | The account was banned or deactivated | Log out and say why. |
 

@@ -35,6 +35,7 @@ says why. The reasons are the REST codes above.
 | Close code | Reason | What the app should do |
 |---|---|---|
 | `4401` | `TOKEN_REVOKED` | Logged out (this token only; other devices stay connected). Don't reconnect. |
+| `4401` | `TOKEN_EXPIRED` | The 7-day token ran out: log in again. |
 | `4401` | `ACCOUNT_NOT_FOUND` | Log out and clear local data. |
 | `4403` | `ACCOUNT_BANNED` / `ACCOUNT_INACTIVE` | Log out and show why. |
 | anything else | | Reconnect with backoff, as before. |
