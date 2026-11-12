@@ -33,7 +33,7 @@ type Hub struct {
 	redisClient   *redis.Client
 	logger        *logrus.Logger
 	instanceID    string
-	// checkSession re-checks open connections; nil means checkSessionWithServices.
+	// checkSession checks open connections; nil means services.CheckSession.
 	checkSession SessionChecker
 }
 
@@ -190,6 +190,9 @@ func (eh *Hub) handleClientRegistration(client *models.Client) {
 	}
 
 	eh.Mutex.Unlock()
+
+	// Off the hub goroutine, so registrations don't wait on Redis (#22, #76).
+	go eh.checkNewSession(client)
 
 	// Send welcome message
 	welcomeMsg := models.WebSocketMessage{

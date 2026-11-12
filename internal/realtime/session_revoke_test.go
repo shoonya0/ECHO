@@ -3,6 +3,7 @@ package realtime
 import (
 	"context"
 	"errors"
+	"fmt"
 	"io"
 	"sync"
 	"sync/atomic"
@@ -88,25 +89,25 @@ func TestDeleteClosesEveryConnectionOfTheUser(t *testing.T) {
 
 func TestRecheckClosesConnectionsTheAccountCheckRefuses(t *testing.T) {
 	hub := newTestHub(t)
-	banned, fine, unknown, revoked := bson.NewObjectID(), bson.NewObjectID(), bson.NewObjectID(), bson.NewObjectID()
+	banned, fine, expired, revoked := bson.NewObjectID(), bson.NewObjectID(), bson.NewObjectID(), bson.NewObjectID()
 
 	bannedA := newTokenClient("bannedA", banned, "tok-b")
 	bannedB := newTokenClient("bannedB", banned, "tok-b") // same token: checked once
 	fineC := newTokenClient("fine", fine, "tok-f")
-	unknownC := newTokenClient("unknown", unknown, "tok-u")
+	expiredC := newTokenClient("expired", expired, "tok-e")
 	revokedC := newTokenClient("revoked", revoked, "tok-r")
-	for _, c := range []*models.Client{bannedA, bannedB, fineC, unknownC, revokedC} {
+	for _, c := range []*models.Client{bannedA, bannedB, fineC, expiredC, revokedC} {
 		addClient(hub, c)
 	}
 
 	var calls atomic.Int32
-	hub.checkSession = func(_ context.Context, userID bson.ObjectID, _ string) error {
+	hub.checkSession = func(_ context.Context, userID bson.ObjectID, _ string, _ time.Time) error {
 		calls.Add(1)
 		switch userID {
 		case banned:
 			return services.ErrAccountBanned
-		case unknown:
-			return errors.New("mongo is down") // an outage must not drop anyone
+		case expired:
+			return services.ErrTokenExpired
 		case revoked:
 			return services.ErrTokenRevoked
 		}
@@ -118,8 +119,8 @@ func TestRecheckClosesConnectionsTheAccountCheckRefuses(t *testing.T) {
 	assertClosedWith(t, bannedA, CloseCodeForbidden, ReasonAccountBanned)
 	assertClosedWith(t, bannedB, CloseCodeForbidden, ReasonAccountBanned)
 	assertClosedWith(t, revokedC, CloseCodeUnauthorized, ReasonTokenRevoked)
+	assertClosedWith(t, expiredC, CloseCodeUnauthorized, ReasonTokenExpired)
 	assertOpen(t, fineC)
-	assertOpen(t, unknownC)
 	if got := calls.Load(); got != 4 {
 		t.Fatalf("checked %d sessions, want 4 (one per user and token)", got)
 	}
@@ -132,6 +133,7 @@ func TestSessionEndReason(t *testing.T) {
 		reason string
 		ends   bool
 	}{
+		{services.ErrTokenExpired, CloseCodeUnauthorized, ReasonTokenExpired, true},
 		{services.ErrTokenRevoked, CloseCodeUnauthorized, ReasonTokenRevoked, true},
 		{services.ErrUserNotFound, CloseCodeUnauthorized, ReasonAccountNotFound, true},
 		{services.ErrAccountBanned, CloseCodeForbidden, ReasonAccountBanned, true},
@@ -145,6 +147,61 @@ func TestSessionEndReason(t *testing.T) {
 				tc.err, reason, ends, closeCodeFor(reason), tc.reason, tc.ends, tc.code)
 		}
 	}
+}
+
+// An outage must not drop anyone, and must end the pass instead of failing (and
+// logging) once per session.
+func TestRecheckStopsAtAnOutageAndKeepsConnections(t *testing.T) {
+	hub := newTestHub(t)
+	const sessions = 40
+	clients := make([]*models.Client, sessions)
+	for i := range clients {
+		clients[i] = newTokenClient(fmt.Sprintf("c%d", i), bson.NewObjectID(), "tok")
+		addClient(hub, clients[i])
+	}
+	var calls atomic.Int32
+	hub.checkSession = func(context.Context, bson.ObjectID, string, time.Time) error {
+		calls.Add(1)
+		return errors.New("redis is down")
+	}
+
+	hub.performSessionRecheck()
+
+	for _, c := range clients {
+		assertOpen(t, c)
+	}
+	if got := calls.Load(); got > sessionCheckWorkers {
+		t.Fatalf("made %d checks during an outage, want at most %d (one per worker)", got, sessionCheckWorkers)
+	}
+}
+
+// A logout that runs while a connection is being registered finds nothing to
+// close; the check right after registration must catch it.
+func TestNewConnectionIsCheckedAfterRegistration(t *testing.T) {
+	hub := newTestHub(t)
+	loggedOut := newTokenClient("late", bson.NewObjectID(), "tok-late")
+	healthy := newTokenClient("ok", bson.NewObjectID(), "tok-ok")
+	down := newTokenClient("down", bson.NewObjectID(), "tok-down")
+	for _, c := range []*models.Client{loggedOut, healthy, down} {
+		addClient(hub, c)
+	}
+	hub.checkSession = func(_ context.Context, _ bson.ObjectID, tokenID string, _ time.Time) error {
+		switch tokenID {
+		case "tok-late":
+			return services.ErrTokenRevoked
+		case "tok-down":
+			return errors.New("redis is down")
+		}
+		return nil
+	}
+
+	for _, c := range []*models.Client{loggedOut, healthy, down} {
+		hub.checkNewSession(c)
+	}
+
+	assertClosedWith(t, loggedOut, CloseCodeUnauthorized, ReasonTokenRevoked)
+	assertOpen(t, healthy)
+	assertOpen(t, down)
 }
 
 // A logout on one instance must close the socket held by another instance.
@@ -167,7 +224,7 @@ func TestSessionControlMessageReachesOtherInstances(t *testing.T) {
 
 	sender := NewPubSubManager(redisClient, &models.Hub{}, logger, "sender")
 	t.Cleanup(sender.cancel)
-	if err := sender.publishSessionControl(sessionControl{UserID: user.Hex(), TokenID: "tok-remote", Reason: ReasonTokenRevoked}); err != nil {
+	if err := sender.publishSessionControl(context.Background(), sessionControl{UserID: user.Hex(), TokenID: "tok-remote", Reason: ReasonTokenRevoked}); err != nil {
 		t.Fatalf("publish: %v", err)
 	}
 

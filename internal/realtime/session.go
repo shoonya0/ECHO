@@ -7,6 +7,8 @@ import (
 	"fmt"
 	"maps"
 	"slices"
+	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/sirupsen/logrus"
@@ -17,10 +19,12 @@ import (
 )
 
 // Open connections are closed when their session ends: on logout, a deleted
-// profile, or a ban or deactivation (#76). Logout and delete close them at once,
-// on every instance, through SessionControlChannel. Every open connection is also
-// re-checked every SessionRecheckInterval, which catches bans made in the
-// database and any control message an instance missed.
+// profile, a ban or deactivation, or when the token expires (#76). Logout and
+// delete close them at once, on every instance, through SessionControlChannel.
+// Every open connection is also re-checked every SessionRecheckInterval, which
+// catches bans made in the database, expired tokens and any control message an
+// instance missed. A new connection is checked once more right after it is
+// registered, which catches a logout that ran while it was being registered.
 
 // SessionControlChannel carries sessionControl messages. Every instance
 // subscribes to it.
@@ -37,17 +41,25 @@ const (
 	CloseCodeForbidden    = 4403
 )
 
-// Close frame reasons, the same codes the REST API sends.
+// Close frame reasons: the codes the REST API sends.
 const (
-	ReasonTokenRevoked    = "TOKEN_REVOKED"
-	ReasonAccountNotFound = "ACCOUNT_NOT_FOUND"
-	ReasonAccountBanned   = "ACCOUNT_BANNED"
-	ReasonAccountInactive = "ACCOUNT_INACTIVE"
+	ReasonTokenExpired    = services.CodeTokenExpired
+	ReasonTokenRevoked    = services.CodeTokenRevoked
+	ReasonAccountNotFound = services.CodeAccountNotFound
+	ReasonAccountBanned   = services.CodeAccountBanned
+	ReasonAccountInactive = services.CodeAccountInactive
 )
 
-// sessionRecheckTimeout bounds one session's check, so a slow database can't stall
-// the whole pass.
-const sessionRecheckTimeout = 5 * time.Second
+const (
+	// sessionCheckTimeout bounds one session's check, so a slow database can't
+	// stall a whole pass.
+	sessionCheckTimeout = 5 * time.Second
+	// sessionCheckWorkers is how many sessions a pass checks at once.
+	sessionCheckWorkers = 8
+	// sessionPublishTimeout bounds telling the other instances, so a stalled
+	// Redis can't hold up a logout reply.
+	sessionPublishTimeout = 2 * time.Second
+)
 
 // sessionControl asks every instance to close a user's connections: those opened
 // with TokenID, or all of them when TokenID is empty.
@@ -57,45 +69,31 @@ type sessionControl struct {
 	Reason  string `json:"reason"`
 }
 
-// SessionChecker says whether a connection's session may continue. It returns nil,
-// an error that sessionEndReason maps to a reason, or any other error when the
-// check couldn't be made.
-type SessionChecker func(ctx context.Context, userID bson.ObjectID, tokenID string) error
+// SessionChecker says whether a connection's session may continue, with the
+// contract of services.CheckSession, which the hub uses outside tests.
+type SessionChecker func(ctx context.Context, userID bson.ObjectID, tokenID string, expiresAt time.Time) error
 
-// checkSessionWithServices is the SessionChecker the hub uses outside tests: the
-// same checks AuthMiddleware makes on every request.
-func checkSessionWithServices(ctx context.Context, userID bson.ObjectID, tokenID string) error {
-	revoked, err := services.IsTokenRevoked(ctx, tokenID)
-	if err != nil {
-		return err
+func (eh *Hub) sessionChecker() SessionChecker {
+	if eh.checkSession != nil {
+		return eh.checkSession
 	}
-	if revoked {
-		return services.ErrTokenRevoked
-	}
-	return services.CheckAccountAccess(ctx, userID)
+	return services.CheckSession
 }
 
 // sessionEndReason maps a SessionChecker error to a close reason. ok is false when
 // the error says nothing about the session, such as an outage: the connection is
 // kept and checked again on the next pass, so an outage doesn't drop every client.
 func sessionEndReason(err error) (reason string, ok bool) {
-	switch {
-	case errors.Is(err, services.ErrTokenRevoked):
-		return ReasonTokenRevoked, true
-	case errors.Is(err, services.ErrUserNotFound):
-		return ReasonAccountNotFound, true
-	case errors.Is(err, services.ErrAccountBanned):
-		return ReasonAccountBanned, true
-	case errors.Is(err, services.ErrAccountInactive):
-		return ReasonAccountInactive, true
-	default:
-		return "", false
+	reason, ok = services.SessionEndCode(err)
+	if ok && closeCodeFor(reason) == 0 {
+		return "", false // a code this file doesn't know yet; never close without a code
 	}
+	return reason, ok
 }
 
 func closeCodeFor(reason string) int {
 	switch reason {
-	case ReasonTokenRevoked, ReasonAccountNotFound:
+	case ReasonTokenExpired, ReasonTokenRevoked, ReasonAccountNotFound:
 		return CloseCodeUnauthorized
 	case ReasonAccountBanned, ReasonAccountInactive:
 		return CloseCodeForbidden
@@ -108,14 +106,18 @@ func closeCodeFor(reason string) int {
 // tokenID, or all of them when tokenID is empty. Connections on this instance
 // close before it returns, even if Redis is down. An error means the other
 // instances weren't told; their re-check closes those within
-// SessionRecheckInterval.
-func (eh *Hub) CloseSessions(userID bson.ObjectID, tokenID, reason string) error {
+// SessionRecheckInterval. ctx may be a request's: it isn't cut short when the
+// caller hangs up.
+func (eh *Hub) CloseSessions(ctx context.Context, userID bson.ObjectID, tokenID, reason string) error {
 	msg := sessionControl{UserID: userID.Hex(), TokenID: tokenID, Reason: reason}
 	eh.pubSubManager.closeLocalSessions(msg)
-	return eh.pubSubManager.publishSessionControl(msg)
+
+	ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), sessionPublishTimeout)
+	defer cancel()
+	return eh.pubSubManager.publishSessionControl(ctx, msg)
 }
 
-func (pm *PubSubManager) publishSessionControl(msg sessionControl) error {
+func (pm *PubSubManager) publishSessionControl(ctx context.Context, msg sessionControl) error {
 	if pm.redisClient == nil {
 		return errors.New("redis client is not initialized")
 	}
@@ -123,7 +125,7 @@ func (pm *PubSubManager) publishSessionControl(msg sessionControl) error {
 	if err != nil {
 		return fmt.Errorf("failed to marshal session control: %w", err)
 	}
-	if err := pm.redisClient.Publish(pm.ctx, SessionControlChannel, data).Err(); err != nil {
+	if err := pm.redisClient.Publish(ctx, SessionControlChannel, data).Err(); err != nil {
 		return fmt.Errorf("failed to publish session control: %w", err)
 	}
 	return nil
@@ -131,8 +133,13 @@ func (pm *PubSubManager) publishSessionControl(msg sessionControl) error {
 
 func (pm *PubSubManager) handleSessionControl(payload string) {
 	var msg sessionControl
-	if err := json.Unmarshal([]byte(payload), &msg); err != nil || msg.UserID == "" || closeCodeFor(msg.Reason) == 0 {
-		pm.logger.WithError(err).Warn("Ignoring a malformed session control message")
+	if err := json.Unmarshal([]byte(payload), &msg); err != nil {
+		pm.logger.WithError(err).Warn("Ignoring a session control message that isn't JSON")
+		return
+	}
+	if msg.UserID == "" || closeCodeFor(msg.Reason) == 0 {
+		pm.logger.WithFields(logrus.Fields{"userID": msg.UserID, "reason": msg.Reason}).
+			Warn("Ignoring a session control message with no user or an unknown reason")
 		return
 	}
 	pm.closeLocalSessions(msg)
@@ -167,6 +174,20 @@ func (pm *PubSubManager) revokeClient(client *models.Client, reason string) {
 	}
 }
 
+// checkNewSession checks a connection just added to the hub's maps. A logout
+// that ran between the upgrade's auth check and the registration found nothing
+// to close, but its blacklist entry is already written, so this sees it. Later
+// logouts find the client in the maps.
+func (eh *Hub) checkNewSession(client *models.Client) {
+	ctx, cancel := context.WithTimeout(eh.Ctx, sessionCheckTimeout)
+	defer cancel()
+	err := eh.sessionChecker()(ctx, client.UserID, client.TokenID, client.TokenExpiresAt)
+	if reason, ends := sessionEndReason(err); ends {
+		eh.pubSubManager.revokeClient(client, reason)
+	}
+	// Any other error: the periodic re-check tries again.
+}
+
 // recheckSessions runs performSessionRecheck every SessionRecheckInterval.
 func (eh *Hub) recheckSessions() {
 	ticker := time.NewTicker(SessionRecheckInterval)
@@ -182,8 +203,10 @@ func (eh *Hub) recheckSessions() {
 	}
 }
 
-// performSessionRecheck checks every open connection once, one check per user and
-// token, and closes those whose session ended.
+// performSessionRecheck checks every open connection, one check per user and
+// token, sessionCheckWorkers at a time, and closes those whose session ended. The
+// first check that can't be made (an outage) ends the pass with one log line;
+// the next pass tries again.
 func (eh *Hub) performSessionRecheck() {
 	eh.Mutex.RLock()
 	clients := slices.Collect(maps.Values(eh.Clients))
@@ -193,34 +216,51 @@ func (eh *Hub) performSessionRecheck() {
 		userID  bson.ObjectID
 		tokenID string
 	}
-	results := make(map[session]error)
-	check := eh.checkSession
-	if check == nil {
-		check = checkSessionWithServices
+	bySession := make(map[session][]*models.Client)
+	for _, client := range clients {
+		if !client.IsClosed() {
+			key := session{client.UserID, client.TokenID}
+			bySession[key] = append(bySession[key], client)
+		}
 	}
 
-	for _, client := range clients {
-		if client.IsClosed() {
-			continue
-		}
-		key := session{client.UserID, client.TokenID}
-		err, checked := results[key]
-		if !checked {
-			ctx, cancel := context.WithTimeout(eh.Ctx, sessionRecheckTimeout)
-			err = check(ctx, key.userID, key.tokenID)
-			cancel()
-			results[key] = err
-		}
-		if err == nil {
-			continue
-		}
-		reason, ends := sessionEndReason(err)
-		if !ends {
-			if !checked {
-				eh.logger.WithError(err).WithField("userID", key.userID.Hex()).Warn("Session re-check failed; keeping the connection")
+	check := eh.sessionChecker()
+	jobs := make(chan []*models.Client)
+	var outage atomic.Pointer[error]
+	var wg sync.WaitGroup
+	for range min(sessionCheckWorkers, len(bySession)) {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for group := range jobs {
+				if outage.Load() != nil {
+					continue // drain without checking
+				}
+				first := group[0]
+				ctx, cancel := context.WithTimeout(eh.Ctx, sessionCheckTimeout)
+				err := check(ctx, first.UserID, first.TokenID, first.TokenExpiresAt)
+				cancel()
+				if err == nil {
+					continue
+				}
+				reason, ends := sessionEndReason(err)
+				if !ends {
+					outage.CompareAndSwap(nil, &err)
+					continue
+				}
+				for _, client := range group {
+					eh.pubSubManager.revokeClient(client, reason)
+				}
 			}
-			continue
-		}
-		eh.pubSubManager.revokeClient(client, reason)
+		}()
+	}
+	for _, group := range bySession {
+		jobs <- group
+	}
+	close(jobs)
+	wg.Wait()
+
+	if errp := outage.Load(); errp != nil {
+		eh.logger.WithError(*errp).Warn("Session re-check stopped: a check couldn't be made; open connections are kept until the next pass")
 	}
 }

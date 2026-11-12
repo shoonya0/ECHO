@@ -246,7 +246,7 @@ func Logout(c *gin.Context) {
 
 	// Close this token's open WebSockets too, on every instance (#76).
 	if userID, err := bson.ObjectIDFromHex(claims.Subject); err == nil {
-		if err := realtime.GetHubInstance().CloseSessions(userID, jti, realtime.ReasonTokenRevoked); err != nil {
+		if err := realtime.GetHubInstance().CloseSessions(reqCtx, userID, jti, realtime.ReasonTokenRevoked); err != nil {
 			log.WithError(err).Warn("Couldn't tell other instances about the logout; their re-check will close its sockets")
 		}
 	}

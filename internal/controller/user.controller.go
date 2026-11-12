@@ -126,7 +126,7 @@ func DeleteProfile(ctx *gin.Context) {
 
 	// Close every open WebSocket of the account, on every instance (#76).
 	if objectID, err := bson.ObjectIDFromHex(userID.(string)); err == nil {
-		if err := realtime.GetHubInstance().CloseSessions(objectID, "", realtime.ReasonAccountNotFound); err != nil {
+		if err := realtime.GetHubInstance().CloseSessions(reqCtx, objectID, "", realtime.ReasonAccountNotFound); err != nil {
 			log.WithError(err).Warn("Couldn't tell other instances about the delete; their re-check will close its sockets")
 		}
 	}
