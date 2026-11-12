@@ -23,7 +23,24 @@ when its account is banned, deactivated or deleted after login.
   Only `401` and the two `403` codes above mean the session is over.
 - A ban made in the database takes up to 30 seconds to apply. Deleting the profile
   applies at once.
-- An open WebSocket isn't closed when the account is banned, deleted or logged out
-  (#76). Until that is fixed, the app should close its socket itself on logout.
+- The WebSocket closes when the session ends; see below.
 
 Details: [rest-api.md](../../_docs/rest-api.md).
+
+## WebSocket close codes (#76)
+
+The server now closes an open WebSocket when its session ends, with a close frame that
+says why. The reasons are the REST codes above.
+
+| Close code | Reason | What the app should do |
+|---|---|---|
+| `4401` | `TOKEN_REVOKED` | Logged out (this token only; other devices stay connected). Don't reconnect. |
+| `4401` | `ACCOUNT_NOT_FOUND` | Log out and clear local data. |
+| `4403` | `ACCOUNT_BANNED` / `ACCOUNT_INACTIVE` | Log out and show why. |
+| anything else | | Reconnect with backoff, as before. |
+
+- The reconnect logic must check the close code first: reconnecting after a `4401` or
+  `4403` only gets a `401` or `403` at the upgrade.
+- A ban made in the database closes the socket within about a minute.
+
+Details: [WEBSOCKET_PROTOCOL.md](../../_docs/WEBSOCKET_PROTOCOL.md#stay-connected).

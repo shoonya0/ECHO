@@ -11,13 +11,14 @@ on `main`. To learn what the product does, read
 and with a link to exactly one feature state.md. Updated by /close-increment and
 /feature-docs update. -->
 
-- **Feature:** none yet (set by `/feature-docs start`) · #33 (PR #77) is merged and live
-  on Render. The app must handle its new auth replies:
+- **Feature:** none yet (set by `/feature-docs start`) · #76 fixed on
+  `fix/76-close-sockets-on-revoke` (verify `--full` and a live check pass), not pushed yet.
+  The app must handle the new auth replies and WebSocket close codes:
   [Android/_docs/08_SERVER_CHANGES.md](../Android/_docs/08_SERVER_CHANGES.md). Still to do
   from before: react to an existing message on Render to confirm #72 there, run the #34
   audit on production, and add `STATS_TOKEN` on Render
-- **Next step:** fix #76 (open WebSockets stay connected after logout, a ban or a delete)
-- **Updated:** 2026-11-11 on `main`, after merging PR #77
+- **Next step:** `/code-review` and `/security-review`, then push and open the PR for #76
+- **Updated:** 2026-11-12 on `fix/76-close-sockets-on-revoke`
 
 ## Where things stand
 
@@ -32,6 +33,16 @@ declining a group invite. The full list is in
 
 ## Recently finished
 
+- **#76 (branch `fix/76-close-sockets-on-revoke`, not merged yet):** open WebSockets now
+  close when their session ends. Logout closes the connections opened with that token
+  (other devices stay connected); deleting the profile closes all of the user's. Both act
+  at once on every server, through the Redis channel `control:sessions`. Every open
+  connection is also re-checked every 30 seconds, so a ban made in MongoDB closes it within
+  about a minute (52 s in the live check). If the check can't be made, the connection stays
+  open until the next pass. The close frame says why: `4401` `TOKEN_REVOKED` or
+  `ACCOUNT_NOT_FOUND`, `4403` `ACCOUNT_BANNED` or `ACCOUNT_INACTIVE`
+  ([WEBSOCKET_PROTOCOL.md](./WEBSOCKET_PROTOCOL.md#stay-connected)). A closed connection's
+  read loop stops at once instead of at its 60-second deadline.
 - **#33 (PR #77):** a token stops working when its
   account is banned, deactivated or deleted after login. Before, the middleware trusted
   the account status copied into the 7-day token. Every request now reads the account
@@ -95,8 +106,6 @@ declining a group invite. The full list is in
 - **#18 (PR #45):** group creators now get the `owner` role, so adding and removing group
   members works again. Groups created before the fix are repaired when the server starts.
   CI now runs the database tests against a real MongoDB.
-- **PR #44:** added the AI tooling, the `verify` script and CI. See
-  [ai-harness-setup.md](./ai-harness-setup.md).
 
 ## How to build, run, test
 
@@ -105,7 +114,7 @@ to remember is `node scripts/verify.mjs`.
 
 ## Test baseline
 
-Run on 2026-11-11 on `fix/33-token-claims` (merged unchanged as `13f3d79`), on Windows, with MongoDB and Redis running and
+Run on 2026-11-12 on `fix/76-close-sockets-on-revoke`, on Windows, with MongoDB and Redis running and
 `TEST_DB_REQUIRED=1`, through `node scripts/verify.mjs --full` after `go clean -testcache`.
 The lint row is from 2026-11-07 at `90b2f73`. Compare new runs against this table by test
 name.
@@ -162,13 +171,13 @@ have no status, so the check must allow for that.
 
 ## Known issues and risks
 
-There are 41 open issues. Fix these first: #76. Where
+There are 41 open issues, and #76 closes when its fix merges. Where
 each risk sits in the
 code: [architecture-overview.md](./architecture-overview.md#riskiest-areas).
 
 | Area | The problem, in short | Issues |
 |---|---|---|
-| Live connections | The server can leak resources or stall under load, missed live messages can't be detected, open connections miss new chats, and they stay open after logout, a ban or a deleted profile | #20, #21, #22, #43, #49, #54, #55, #76 |
+| Live connections | The server can leak resources or stall under load, missed live messages can't be detected, and open connections miss new chats | #20, #21, #22, #43, #49, #54, #55 |
 | Chat access | Some replies reveal whether a chat exists | #59 |
 | Groups | Members are never asked to accept, live delivery doesn't match who is in the group, and the size limit isn't enforced | #5, #14, #16, #17, #28, #68 |
 | Invite codes | Anyone can decrypt a code, the invite endpoints lack permission checks, and entries left by forged joins before #9 was fixed are still stored | #15, #29, #30, #69 |
@@ -181,8 +190,5 @@ code: [architecture-overview.md](./architecture-overview.md#riskiest-areas).
 
 ## Next task
 
-Fix #76: an open WebSocket is never checked again, so logout, a ban or a deleted profile
-leave it connected and receiving messages. Logout and delete can publish a Redis control
-message that closes the user's connections on every server; a ban made in MongoDB needs
-a periodic re-check with `services.CheckAccountAccess`. Reproduce it in a test first, under
-`go test -race`, since it touches the hub.
+Review, push and merge #76 (ask before `gh pr merge`: it deploys to Render). Then pick the
+next issue from the table above.
