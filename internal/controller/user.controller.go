@@ -5,6 +5,7 @@ import (
 	"strconv"
 
 	"github.com/shoonya0/ECHO/internal/models"
+	"github.com/shoonya0/ECHO/internal/realtime"
 	"github.com/shoonya0/ECHO/internal/services"
 	"github.com/shoonya0/ECHO/internal/utils"
 
@@ -121,6 +122,13 @@ func DeleteProfile(ctx *gin.Context) {
 		status, msg := MapServiceErrorToHTTP(err)
 		utils.ErrorResponse(ctx, status, msg, nil)
 		return
+	}
+
+	// Close every open WebSocket of the account, on every instance (#76).
+	if objectID, err := bson.ObjectIDFromHex(userID.(string)); err == nil {
+		if err := realtime.GetHubInstance().CloseSessions(reqCtx, objectID, "", realtime.ReasonAccountNotFound); err != nil {
+			log.WithError(err).Warn("Couldn't tell other instances about the delete; their re-check will close its sockets")
+		}
 	}
 
 	log.Debug("profile deleted successfully")

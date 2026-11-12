@@ -18,3 +18,4 @@ server's API as it works today, read [rest-api.md](../../_docs/rest-api.md) and
 | [05_WEBSOCKET_CLIENT.md](./05_WEBSOCKET_CLIENT.md) | WebSocket client |
 | [06_DEPENDENCIES.md](./06_DEPENDENCIES.md) | Dependencies and build configuration |
 | [07_TESTING_STRATEGY.md](./07_TESTING_STRATEGY.md) | Testing strategy |
+| [08_SERVER_CHANGES.md](./08_SERVER_CHANGES.md) | **Read first:** server changes the app must handle (auth replies from #33) |

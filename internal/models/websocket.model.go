@@ -158,10 +158,39 @@ type Client struct {
 	Send       chan WebSocketMessage `json:"-"`
 	// we have to seprate this userID[activeChats]
 	Metadata map[string]interface{} `json:"metadata,omitempty"`
+	// TokenID is the jti of the token that opened the connection, so a logout
+	// closes only that device's connections (#76).
+	TokenID string `json:"-"`
+	// TokenExpiresAt is when that token expires; the connection closes then (#76).
+	TokenExpiresAt time.Time `json:"-"`
 
 	lastActivity atomic.Pointer[time.Time] // see Touch and LastActivity
-	sendMu       sync.Mutex                // guards sendClosed and every send/close on Send
+	sendMu       sync.Mutex                // guards the fields below and every send/close on Send
 	sendClosed   bool
+	closeCode    int    // WebSocket close code sent when Send closes; 0 means a plain close
+	closeReason  string // close frame text, such as "ACCOUNT_BANNED"
+}
+
+// Revoke ends the connection because its session may no longer be used: the
+// writer sends a close frame with code and reason, then closes the socket. The
+// first reason wins, and a client already closing keeps its plain close.
+func (c *Client) Revoke(code int, reason string) {
+	c.closeWith(code, reason)
+}
+
+// CloseReason returns the code and text given to Revoke, or 0 and "".
+func (c *Client) CloseReason() (int, string) {
+	c.sendMu.Lock()
+	defer c.sendMu.Unlock()
+	return c.closeCode, c.closeReason
+}
+
+// IsClosed says whether Send has been closed, so nothing more should be read
+// from or sent to this connection.
+func (c *Client) IsClosed() bool {
+	c.sendMu.Lock()
+	defer c.sendMu.Unlock()
+	return c.sendClosed
 }
 
 // Touch records activity now. It is safe to call from any goroutine.
@@ -198,12 +227,20 @@ func (c *Client) TrySend(msg WebSocketMessage) bool {
 
 // CloseSend closes Send once; later calls are no-ops.
 func (c *Client) CloseSend() {
+	c.closeWith(0, "")
+}
+
+// closeWith closes Send once, recording the close frame to send; later calls are
+// no-ops, so Send is never closed twice.
+func (c *Client) closeWith(code int, reason string) {
 	c.sendMu.Lock()
 	defer c.sendMu.Unlock()
-	if !c.sendClosed {
-		c.sendClosed = true
-		close(c.Send)
+	if c.sendClosed {
+		return
 	}
+	c.closeCode, c.closeReason = code, reason
+	c.sendClosed = true
+	close(c.Send)
 }
 
 // UserDisplayInfo represents cached user display information for UI
