@@ -81,6 +81,7 @@ call `BroadcastToChat`, which calls the hub's `PublishToChat`.
 | `user:<userID>` | Messages for one person | No. Servers listen, but nothing publishes to it. |
 | `system:global` | Announcements to everyone | No. Servers listen, but nothing publishes to it. |
 | `instance:<instanceID>` | Messages for one server | No. Servers listen, but nothing publishes to it. |
+| `control:sessions` | Close a user's connections on every server (logout, deleted profile) | **Yes** (#76). Never forwarded to clients. |
 
 The server also writes a normal Redis key, `presence:<userID>`, every 30 seconds. It expires
 after 2 minutes, and nothing reads it yet (#31).
@@ -116,6 +117,7 @@ disconnects it.
 |---|---|
 | Every 30 seconds | Removes connections with no activity for 5 minutes, and clears expired cache entries |
 | Every 30 seconds | Writes `presence:<userID>` to Redis for connected users |
+| Every 30 seconds | Re-checks each open connection's token and account, and closes those that may no longer be used (#76) |
 
 Each server also keeps user display names in memory for 5 minutes, so it doesn't have to ask
 MongoDB every time.

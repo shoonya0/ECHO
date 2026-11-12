@@ -35,6 +35,20 @@ When you connect, the server:
 - A cleanup job also removes connections with no activity for 5 minutes.
 - The server queues up to 10 outgoing messages per connection. If your app reads too
   slowly and the queue fills up, the server disconnects it.
+- The server closes the connection when its session ends (#76). The close frame's code
+  and reason say why, using the REST codes:
+
+  | Code | Reason | When | What to do |
+  |---|---|---|---|
+  | `4401` | `TOKEN_REVOKED` | This token was logged out | Log out. Don't reconnect. |
+  | `4401` | `ACCOUNT_NOT_FOUND` | The profile was deleted | Log out and clear local data. |
+  | `4403` | `ACCOUNT_BANNED` / `ACCOUNT_INACTIVE` | The account was banned or deactivated | Log out and say why. |
+
+  Logout and delete close it at once, on every server. Logging out closes only the
+  connections opened with that token. A ban or deactivation made in the database closes
+  it within about a minute: open connections are re-checked every 30 seconds, and the
+  account check is cached for 30 seconds. If the check can't be made (Redis or MongoDB
+  down), the connection stays open and is checked again later.
 
 After a reconnect, load recent messages over REST. The server doesn't replay what you
 missed (#43).

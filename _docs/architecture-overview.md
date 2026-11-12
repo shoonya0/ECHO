@@ -62,7 +62,8 @@ imports `services`, and Go doesn't allow import loops. So `services` declares a 
    days. The token carries the user's details, account status and presence. On every
    request the middleware checks the Redis logout list, then whether the account still
    exists and isn't banned or inactive (`services.CheckAccountAccess`, read from MongoDB
-   and cached in Redis for 30 seconds). An open WebSocket is never checked again (#76).
+   and cached in Redis for 30 seconds). Open WebSockets are re-checked every 30 seconds, and
+   logout and delete close them at once through `control:sessions` (#76).
 2. **Connect:** `GET /ws/chat` with the token → the hub reads `users.chats` from MongoDB and
    keeps the chats where the user is in `participants` → subscribes to `user:<id>` and
    `chat:<id>` in Redis → adds the connection to `ChatClients`.
@@ -118,6 +119,5 @@ Take extra care when changing these places.
 | One Redis connection per channel | Connections grow with users and chats | `internal/realtime/pubsub.go:165` | #21 |
 | Block model | Blocks aren't enforced in chats; the startup block migration runs only once | `internal/services/chat.service.go`, `internal/services/migrations.go` | #27, #63 |
 | Account deletion | Deleting an account leaves its ID behind in chats and contact lists | `internal/services/user.service.go:108` | #35 |
-| Open WebSockets aren't re-checked | Logout, a ban or a deleted profile leave open sockets connected | `internal/middleware/auth.go`, `internal/realtime/hub.go` | #76 |
 | Writes across several documents | No transactions, so an update can half-finish | `services/chat.service.go`, `contact.service.go` | #37 |
 | Invite codes | The encryption key is in the public source code, so anyone can read a code | `internal/utils/defaultInitialization.go:155` | #15 |

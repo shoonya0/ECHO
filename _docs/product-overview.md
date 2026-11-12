@@ -36,7 +36,7 @@ Checked against the code at `17ec08b`. Issue numbers were last updated on 2026-1
 
 | Feature | What people can do | Status | Known gaps |
 |---|---|---|---|
-| Accounts | Sign up, log in (lasts 7 days), log out | Works | A ban made in the database takes up to 30 seconds to apply. Open WebSockets stay connected after logout, a ban or a deleted profile (#76). Also #36, #65. |
+| Accounts | Sign up, log in (lasts 7 days), log out | Works | A ban made in the database takes up to 30 seconds to apply, and about a minute to close an open WebSocket. Also #36, #65. |
 | Profiles | View, edit and delete your profile; view other people's | Works | Deleting a profile leaves old references behind (#35). |
 | Finding people | Get suggestions of people to add | Works | The "nearby" and "popular" lists are empty placeholders. |
 | Contacts | Send, accept and decline requests; remove; favorites; block and unblock | Partly works | Blocks aren't enforced in chats (#27). Also #38, #39, #62, #63. |
@@ -69,7 +69,8 @@ Checked against the code at `17ec08b`. Issue numbers were last updated on 2026-1
   answer, the server refuses the request with `503`, so a logged-out token never gets
   through.
 - **Banned, inactive and deleted accounts** are refused on every request, read from the
-  database and cached for up to 30 seconds. Open WebSockets aren't re-checked (#76).
+  database and cached for up to 30 seconds. Open WebSockets close on logout and delete at
+  once, and within about a minute after a ban (#76).
 - **Chat history** can only be read by participants. Everyone else gets `404`, the same as
   for a chat that doesn't exist, so nobody can test whether a chat ID is real.
 - **Group roles** are `owner`, `admin` and `member`. Only owners and admins can add or
@@ -79,7 +80,7 @@ Checked against the code at `17ec08b`. Issue numbers were last updated on 2026-1
 - **Hub statistics** are for operators. They need the server's `STATS_TOKEN` as well as a
   login, and they show counts only.
 
-Open security bugs: #15, #59, #76.
+Open security bugs: #15, #59.
 
 ## Performance
 
