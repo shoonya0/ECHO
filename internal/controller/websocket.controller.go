@@ -82,6 +82,9 @@ func HandleWebSocketChat(ctx *gin.Context) {
 		Connection: conn,
 		Send:       make(chan models.WebSocketMessage, 10),
 	}
+	if claims.ExpiresAt != nil {
+		client.TokenExpiresAt = claims.ExpiresAt.Time // the re-check closes the connection then (#76)
+	}
 
 	// Check if hub is still running, restart if needed
 	hub := realtime.GetHubInstance()
@@ -127,6 +130,10 @@ func HandleWebSocketChat(ctx *gin.Context) {
 	handleClientRead(reqCtx, client) // Handle reading in the main routine (blocking)
 }
 
+// closeHandshakeTimeout is how long the read loop waits for the client to answer
+// the server's close frame before the socket is closed anyway.
+const closeHandshakeTimeout = 5 * time.Second
+
 // handleClientWrite handles writing messages to the WebSocket connection
 // message to be sent to the client
 func handleClientWrite(client *models.Client) {
@@ -141,14 +148,17 @@ func handleClientWrite(client *models.Client) {
 		case message, ok := <-client.Send:
 			client.Connection.SetWriteDeadline(time.Now().Add(10 * time.Second))
 			if !ok {
-				// Send closed: say why if the session ended (#76), then close the
-				// socket so the read loop stops at once instead of at its deadline.
+				// Send closed: say why if the session ended (#76). The read loop
+				// closes the socket once the client answers, or at this deadline.
+				// Closing it here, with client data still unread, can reset the
+				// connection and lose the frame, so the app would reconnect
+				// instead of logging out.
 				frame := []byte{}
 				if code, reason := client.CloseReason(); code != 0 {
 					frame = websocket.FormatCloseMessage(code, reason)
 				}
 				_ = client.Connection.WriteMessage(websocket.CloseMessage, frame) // best effort: the peer may be gone
-				_ = client.Connection.Close()
+				_ = client.Connection.SetReadDeadline(time.Now().Add(closeHandshakeTimeout))
 				return
 			}
 
@@ -175,12 +185,15 @@ func handleClientWrite(client *models.Client) {
 func handleClientRead(ctx context.Context, client *models.Client) {
 	defer func() {
 		realtime.GetHubInstance().Unregister <- client
-		client.Connection.Close()
+		_ = client.Connection.Close()
 		wsLog().Printf("Read goroutine closed for client: %s", client.ID)
 	}()
 
 	client.Connection.SetReadDeadline(time.Now().Add(60 * time.Second)) // Set read deadline and pong handler
 	client.Connection.SetPongHandler(func(string) error {
+		if client.IsClosed() {
+			return nil // closing: pongs must not push back the close deadline (#76)
+		}
 		client.Connection.SetReadDeadline(time.Now().Add(60 * time.Second))
 		client.Touch()
 		return nil
@@ -200,8 +213,10 @@ func handleClientRead(ctx context.Context, client *models.Client) {
 		}
 
 		// A connection being closed, for example after logout, may not act (#76).
+		// Keep reading until the client answers the close frame (a read error), so
+		// the frame isn't lost; see handleClientWrite.
 		if client.IsClosed() {
-			break
+			continue
 		}
 
 		var request models.MessageRequest // Parse the message into a MessageRequest
