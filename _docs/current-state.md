@@ -1,6 +1,6 @@
 # ECHO: current state
 
-A one-page snapshot of where the project stands. Last checked on 2026-11-10 at `1a6eb6e`
+A one-page snapshot of where the project stands. Last checked on 2026-11-11 at `13f3d79`
 on `main`. To learn what the product does, read
 [product-overview.md](./product-overview.md). For the code, read
 [architecture-overview.md](./architecture-overview.md).
@@ -11,13 +11,13 @@ on `main`. To learn what the product does, read
 and with a link to exactly one feature state.md. Updated by /close-increment and
 /feature-docs update. -->
 
-- **Feature:** none yet (set by `/feature-docs start`) · #33 fixed on `fix/33-token-claims`
-  (verify `--full`, a live check and the code review's fixes are in), waiting for a PR and merge. Its open
-  WebSocket part is split out as #76. Still to do from before: react to an existing
-  message on Render to confirm #72 there, run the #34 audit on production, and add
-  `STATS_TOKEN` on Render
-- **Next step:** `/security-review`, push and open the PR, then fix #76 (open WebSockets)
-- **Updated:** 2026-11-11 on `fix/33-token-claims`
+- **Feature:** none yet (set by `/feature-docs start`) · #33 (PR #77) is merged and live
+  on Render. The app must handle its new auth replies:
+  [Android/_docs/08_SERVER_CHANGES.md](../Android/_docs/08_SERVER_CHANGES.md). Still to do
+  from before: react to an existing message on Render to confirm #72 there, run the #34
+  audit on production, and add `STATS_TOKEN` on Render
+- **Next step:** fix #76 (open WebSockets stay connected after logout, a ban or a delete)
+- **Updated:** 2026-11-11 on `main`, after merging PR #77
 
 ## Where things stand
 
@@ -32,7 +32,7 @@ declining a group invite. The full list is in
 
 ## Recently finished
 
-- **#33 (branch `fix/33-token-claims`, not merged yet):** a token stops working when its
+- **#33 (PR #77):** a token stops working when its
   account is banned, deactivated or deleted after login. Before, the middleware trusted
   the account status copied into the 7-day token. Every request now reads the account
   (`services.CheckAccountAccess`), cached in Redis for 30 seconds, and refuses it with
@@ -43,8 +43,9 @@ declining a group invite. The full list is in
   answer the logout list, the request gets `503` `AUTH_UNAVAILABLE` instead of going
   through; a cache failure reads MongoDB instead. Tokens without a `jti` are refused.
   `401` replies no longer include the parser's error text. The `else if` chain that
-  skipped the ban check is gone. CI now runs Redis for the cache tests. The code review's
-  fixes are in. Open WebSockets are still not re-checked: #76.
+  skipped the ban check is gone. CI now runs Redis for the cache tests. Open WebSockets are
+  still not re-checked: #76. What the Android app must change is in
+  [08_SERVER_CHANGES.md](../Android/_docs/08_SERVER_CHANGES.md).
 - **#72 (PR #74):** reactions work on real messages. New messages store `reactions: {}` instead of
   `null`, which MongoDB refused to create reaction fields in. A message that still has
   `null` (every message saved before the fix, or one written by an older server copy
@@ -104,7 +105,7 @@ to remember is `node scripts/verify.mjs`.
 
 ## Test baseline
 
-Run on 2026-11-11 on `fix/33-token-claims`, on Windows, with MongoDB and Redis running and
+Run on 2026-11-11 on `fix/33-token-claims` (merged unchanged as `13f3d79`), on Windows, with MongoDB and Redis running and
 `TEST_DB_REQUIRED=1`, through `node scripts/verify.mjs --full` after `go clean -testcache`.
 The lint row is from 2026-11-07 at `90b2f73`. Compare new runs against this table by test
 name.
@@ -161,7 +162,7 @@ have no status, so the check must allow for that.
 
 ## Known issues and risks
 
-There are 42 open issues, and #33 closes when its fix merges. Fix these first: #76. Where
+There are 41 open issues. Fix these first: #76. Where
 each risk sits in the
 code: [architecture-overview.md](./architecture-overview.md#riskiest-areas).
 
