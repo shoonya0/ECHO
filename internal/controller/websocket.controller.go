@@ -59,6 +59,15 @@ func HandleWebSocketChat(ctx *gin.Context) {
 		return
 	}
 
+	// AuthMiddleware refuses tokens without a jti, so every connection has one (#33).
+	claimsValue, _ := ctx.Get("jwtClaims")
+	claims, ok := claimsValue.(utils.JwtClaims)
+	if !ok || claims.ID == "" {
+		log.Debug("jwt claims not found")
+		utils.ErrorResponse(ctx, http.StatusUnauthorized, "User not authenticated", nil)
+		return
+	}
+
 	conn, err := upgrader.Upgrade(ctx.Writer, ctx.Request, nil) // Upgrade HTTP connection to WebSocket
 	if err != nil {
 		log.WithError(err).Error("Failed to upgrade WebSocket connection")
@@ -69,6 +78,7 @@ func HandleWebSocketChat(ctx *gin.Context) {
 	client := &models.Client{ // Create new client with unique ID for each connection
 		ID:         uuid.New().String(), // Generate unique ID for each WebSocket connection
 		UserID:     user.ID,
+		TokenID:    claims.ID, // a logout closes only this token's connections (#76)
 		Connection: conn,
 		Send:       make(chan models.WebSocketMessage, 10),
 	}
@@ -131,7 +141,14 @@ func handleClientWrite(client *models.Client) {
 		case message, ok := <-client.Send:
 			client.Connection.SetWriteDeadline(time.Now().Add(10 * time.Second))
 			if !ok {
-				client.Connection.WriteMessage(websocket.CloseMessage, []byte{}) // Send close message
+				// Send closed: say why if the session ended (#76), then close the
+				// socket so the read loop stops at once instead of at its deadline.
+				frame := []byte{}
+				if code, reason := client.CloseReason(); code != 0 {
+					frame = websocket.FormatCloseMessage(code, reason)
+				}
+				_ = client.Connection.WriteMessage(websocket.CloseMessage, frame) // best effort: the peer may be gone
+				_ = client.Connection.Close()
 				return
 			}
 
@@ -179,6 +196,11 @@ func handleClientRead(ctx context.Context, client *models.Client) {
 			} else {
 				wsLog().Printf("WebSocket read failed for client %s: %v", client.ID, err)
 			}
+			break
+		}
+
+		// A connection being closed, for example after logout, may not act (#76).
+		if client.IsClosed() {
 			break
 		}
 

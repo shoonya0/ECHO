@@ -10,6 +10,7 @@ import (
 	"github.com/shoonya0/ECHO/internal/database"
 	"github.com/shoonya0/ECHO/internal/logger"
 	"github.com/shoonya0/ECHO/internal/models"
+	"github.com/shoonya0/ECHO/internal/realtime"
 	"github.com/shoonya0/ECHO/internal/services"
 	"github.com/shoonya0/ECHO/internal/utils"
 
@@ -241,6 +242,13 @@ func Logout(c *gin.Context) {
 		log.WithError(err).Debug("failed to logout user")
 		utils.ErrorResponse(c, http.StatusInternalServerError, "failed to logout", nil)
 		return
+	}
+
+	// Close this token's open WebSockets too, on every instance (#76).
+	if userID, err := bson.ObjectIDFromHex(claims.Subject); err == nil {
+		if err := realtime.GetHubInstance().CloseSessions(userID, jti, realtime.ReasonTokenRevoked); err != nil {
+			log.WithError(err).Warn("Couldn't tell other instances about the logout; their re-check will close its sockets")
+		}
 	}
 
 	log.Info("User logged out successfully")
