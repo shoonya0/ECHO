@@ -28,4 +28,5 @@ var (
 	ErrAccountBanned          = errors.New("account is banned")
 	ErrAccountInactive        = errors.New("account is not active")
 	ErrTokenRevoked           = errors.New("token has been revoked")
+	ErrTokenExpired           = errors.New("token has expired")
 )

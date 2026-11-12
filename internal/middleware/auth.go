@@ -162,26 +162,12 @@ func AuthMiddleware(ctx *gin.Context) {
 	ctx.Request = ctx.Request.WithContext(reqCtx)
 	log = logger.WithContext(reqCtx)
 
-	// Check the token blacklist (server-side logout). If Redis can't answer, refuse
-	// with 503 rather than let a revoked token through (#33).
-	revoked, err := services.IsTokenRevoked(reqCtx, claims.ID)
-	if err != nil {
-		refuseUnavailable(ctx, log, err)
-		return
-	}
-	if revoked {
-		log.Warn("Token has been revoked")
-		ctx.JSON(http.StatusUnauthorized, gin.H{
-			"error": "token has been revoked",
-			"code":  "TOKEN_REVOKED",
-		})
-		ctx.Abort()
-		return
-	}
-
-	// The account may have been banned, deactivated or deleted since login (#33).
-	if err := services.CheckAccountAccess(reqCtx, objectID); err != nil {
-		refuseAccount(ctx, log, err)
+	// The token may have been logged out, or its account banned, deactivated or
+	// deleted since login (#33). Open WebSockets re-run the same check (#76). If it
+	// can't be made, refuse with 503 rather than let the token through. Expiry was
+	// checked above, so it isn't passed.
+	if err := services.CheckSession(reqCtx, objectID, claims.ID, time.Time{}); err != nil {
+		refuseSession(ctx, log, err)
 		return
 	}
 
@@ -238,23 +224,29 @@ func refuseUnavailable(ctx *gin.Context, log *logrus.Entry, err error) {
 	ctx.Abort()
 }
 
-// refuseAccount answers a valid token whose account may no longer use it: 403 for a
-// banned or inactive account, as Login answers, and 401 for a deleted one.
-func refuseAccount(ctx *gin.Context, log *logrus.Entry, err error) {
-	status := http.StatusForbidden
-	var message, code string
-	switch {
-	case errors.Is(err, services.ErrAccountBanned):
-		message, code = "account is banned", "ACCOUNT_BANNED"
-	case errors.Is(err, services.ErrAccountInactive):
-		message, code = "account is not active", "ACCOUNT_INACTIVE"
-	case errors.Is(err, services.ErrUserNotFound):
-		status, message, code = http.StatusUnauthorized, "account no longer exists", "ACCOUNT_NOT_FOUND"
-	default:
+// sessionRefusals is the reply for each services.SessionEndCode: 403 for a banned
+// or inactive account, as Login answers, and 401 otherwise.
+var sessionRefusals = map[string]struct {
+	status  int
+	message string
+}{
+	services.CodeTokenExpired:    {http.StatusUnauthorized, "token has expired"},
+	services.CodeTokenRevoked:    {http.StatusUnauthorized, "token has been revoked"},
+	services.CodeAccountNotFound: {http.StatusUnauthorized, "account no longer exists"},
+	services.CodeAccountBanned:   {http.StatusForbidden, "account is banned"},
+	services.CodeAccountInactive: {http.StatusForbidden, "account is not active"},
+}
+
+// refuseSession answers a valid token whose session may no longer be used, or 503
+// when the check couldn't be made.
+func refuseSession(ctx *gin.Context, log *logrus.Entry, err error) {
+	code, ok := services.SessionEndCode(err)
+	refusal, known := sessionRefusals[code]
+	if !ok || !known {
 		refuseUnavailable(ctx, log, err)
 		return
 	}
-	log.WithField("code", code).Info("Refused a token for an account that can't use it")
-	ctx.JSON(status, gin.H{"error": message, "code": code})
+	log.WithField("code", code).Info("Refused a token whose session ended")
+	ctx.JSON(refusal.status, gin.H{"error": refusal.message, "code": code})
 	ctx.Abort()
 }
