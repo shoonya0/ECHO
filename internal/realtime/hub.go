@@ -33,6 +33,8 @@ type Hub struct {
 	redisClient   *redis.Client
 	logger        *logrus.Logger
 	instanceID    string
+	// checkSession re-checks open connections; nil means checkSessionWithServices.
+	checkSession SessionChecker
 }
 
 // GetHubInstance returns the process-wide hub, creating it on first use.
@@ -82,6 +84,7 @@ func (eh *Hub) Start() error {
 	go eh.runHub()
 	go eh.cleanupInactiveConnections()
 	go eh.syncPresenceWithRedis()
+	go eh.recheckSessions()
 
 	eh.logger.Info("Enhanced WebSocket hub started successfully")
 	return nil
@@ -107,6 +110,7 @@ func (eh *Hub) Restart() error {
 	go eh.runHub()
 	go eh.cleanupInactiveConnections()
 	go eh.syncPresenceWithRedis()
+	go eh.recheckSessions()
 
 	eh.logger.Info("Hub restarted successfully")
 	return nil
