@@ -232,18 +232,8 @@ func handleClientRead(ctx context.Context, client *models.Client) {
 		var request models.MessageRequest // Parse the message into a MessageRequest
 		if err := json.Unmarshal(message, &request); err != nil {
 			wsLog().Printf("Failed to unmarshal message from client %s: %v", client.ID, err)
-			errorMsg := models.WebSocketMessage{
-				Type: models.WSMessageTypeError,
-				Data: models.ErrorMessage{
-					Code:    "PARSE_ERROR",
-					Message: "Failed to parse message: " + err.Error(),
-				},
-				Timestamp: time.Now(),
-			}
-			if !client.TrySend(errorMsg) {
-				wsLog().Printf("Cannot send error message to client %s, closing connection", client.ID)
-			}
-			continue // SAFE: connection is still valid, just skip this bad message
+			sendErrorResponse(client, "", "PARSE_ERROR", "Message is not valid JSON") // no decoder text (#41)
+			continue                                                                  // SAFE: connection is still valid, just skip this bad message
 		}
 
 		client.Touch() // Update client activity
@@ -552,13 +542,7 @@ func handleAddReaction(client *models.Client, request models.MessageRequest) {
 	err = services.AddMessageReaction(chatID, msgObjectID, client.UserID, emoji) // Add reaction through service layer
 	if err != nil {
 		wsLog().Printf("Failed to add reaction: %v", err)
-		errCode := "REACTION_FAILED"
-		errMsg := "Failed to add reaction"
-		if err.Error() == "message not found" {
-			errCode = "MESSAGE_NOT_FOUND"
-			errMsg = "Message not found"
-		}
-		sendChatError(client, request.RequestID, err, errCode, errMsg)
+		sendChatError(client, request.RequestID, err, "REACTION_FAILED", "Failed to add reaction")
 		return
 	}
 
@@ -628,13 +612,7 @@ func handleRemoveReaction(client *models.Client, request models.MessageRequest) 
 	err = services.RemoveMessageReaction(chatID, msgObjectID, client.UserID, emoji) // Remove reaction through service layer
 	if err != nil {
 		wsLog().Printf("Failed to remove reaction: %v", err)
-		errCode := "REACTION_FAILED"
-		errMsg := "Failed to remove reaction"
-		if err.Error() == "message not found" {
-			errCode = "MESSAGE_NOT_FOUND"
-			errMsg = "Message not found"
-		}
-		sendChatError(client, request.RequestID, err, errCode, errMsg)
+		sendChatError(client, request.RequestID, err, "REACTION_FAILED", "Failed to remove reaction")
 		return
 	}
 
@@ -742,7 +720,7 @@ func handleInviteUser(ctx context.Context, client *models.Client, request models
 	err = services.AddGroupMember(ctx, client.UserID, chatID, userIDs)
 	if err != nil {
 		wsLog().Printf("Failed to add group members: %v", err)
-		sendErrorResponse(client, request.RequestID, "INVITE_FAILED", "Failed to invite users: "+err.Error())
+		sendChatError(client, request.RequestID, err, "INVITE_FAILED", "Failed to invite users")
 		return
 	}
 
@@ -991,6 +969,14 @@ func sendChatError(client *models.Client, requestID string, err error, code, mes
 		code, message = "MESSAGE_NOT_FOUND", "Message not found"
 	case errors.Is(err, services.ErrInvalidEmoji):
 		code, message = "INVALID_REQUEST", "Invalid emoji"
+	case errors.Is(err, services.ErrChatNotFound):
+		code, message = "INVALID_CHAT_ID", "Chat not found"
+	case errors.Is(err, services.ErrPermissionDenied):
+		code, message = "PERMISSION_DENIED", "Permission denied"
+	case errors.Is(err, services.ErrAlreadyParticipant):
+		code, message = "INVALID_REQUEST", "Users are already in the chat"
+	case errors.Is(err, services.ErrUserNotFound):
+		code, message = "INVALID_USER_ID", "User not found"
 	}
 	sendErrorResponse(client, requestID, code, message)
 }
