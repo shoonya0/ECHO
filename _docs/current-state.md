@@ -11,12 +11,14 @@ on `main`. To learn what the product does, read
 and with a link to exactly one feature state.md. Updated by /close-increment and
 /feature-docs update. -->
 
-- **Feature:** none yet (set by `/feature-docs start`) · #76 merged (PR #78) and live on
-  Render. The app must handle the new auth replies and WebSocket close codes:
-  [Android/_docs/08_SERVER_CHANGES.md](../Android/_docs/08_SERVER_CHANGES.md). Still to do:
-  react to a message saved before PR #74 on Render to confirm #72 there
-- **Next step:** pick the next issue from [Known issues](#known-issues-and-risks)
-- **Updated:** 2026-11-12 on `main` (uncommitted; commit on the next work branch)
+- **Feature:** none yet (set by `/feature-docs start`) · #40, part 1 on
+  `fix/40-ws-frame-and-rate-limits` (verify `--full` passes, not pushed): frame size and
+  request rate limits ([protocol](./WEBSOCKET_PROTOCOL.md#stay-connected),
+  [app changes](../Android/_docs/08_SERVER_CHANGES.md)). Left on #40: `set_typing`'s
+  MongoDB write, mention lookups, `CheckOrigin`, login/signup limits. Also to do: confirm
+  #72 on Render with a message saved before PR #74
+- **Next step:** `/code-review`, then push and open the PR (`Refs #40`, not `Fixes`)
+- **Updated:** 2026-11-13 on `fix/40-ws-frame-and-rate-limits`
 
 ## Where things stand
 
