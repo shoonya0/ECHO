@@ -12,10 +12,10 @@ and with a link to exactly one feature state.md. Updated by /close-increment and
 /feature-docs update. -->
 
 - **Feature:** none yet (set by `/feature-docs start`) · #41 on `fix/41-hide-internal-errors`
-  (verify `--full` passes, code review fixes in, not pushed): no reply carries `err.Error()`
+  (verify `--full` passes, both reviews done, PR open): no reply carries `err.Error()`
   ([REST](./rest-api.md#the-basics), [app changes](../Android/_docs/08_SERVER_CHANGES.md)).
   Still to do: confirm #72 on Render with a message saved before PR #74
-- **Next step:** `/security-review`, then push and open the PR (`Fixes #41`)
+- **Next step:** CI green, then ask before merging the PR (it deploys to Render)
 - **Updated:** 2026-11-13 on `fix/41-hide-internal-errors`
 
 ## Where things stand
