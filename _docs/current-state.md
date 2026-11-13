@@ -1,6 +1,6 @@
 # ECHO: current state
 
-A one-page snapshot of where the project stands. Last checked on 2026-11-11 at `13f3d79`
+A one-page snapshot of where the project stands. Last checked on 2026-11-12 at `d9f19ae`
 on `main`. To learn what the product does, read
 [product-overview.md](./product-overview.md). For the code, read
 [architecture-overview.md](./architecture-overview.md).
@@ -11,14 +11,15 @@ on `main`. To learn what the product does, read
 and with a link to exactly one feature state.md. Updated by /close-increment and
 /feature-docs update. -->
 
-- **Feature:** none yet (set by `/feature-docs start`) · #76 fixed on
-  `fix/76-close-sockets-on-revoke` (verify `--full` and a live check pass), not pushed yet.
-  The app must handle the new auth replies and WebSocket close codes:
-  [Android/_docs/08_SERVER_CHANGES.md](../Android/_docs/08_SERVER_CHANGES.md). Still to do
-  from before: react to an existing message on Render to confirm #72 there, run the #34
-  audit on production, and add `STATS_TOKEN` on Render
-- **Next step:** `/security-review`, then push and open the PR for #76
-- **Updated:** 2026-11-12 on `fix/76-close-sockets-on-revoke`
+- **Feature:** none yet (set by `/feature-docs start`) · #40, part 1 on
+  `fix/40-ws-frame-and-rate-limits` (verify `--full` passes, PR open): frame size and
+  request rate limits ([protocol](./WEBSOCKET_PROTOCOL.md#stay-connected),
+  [app changes](../Android/_docs/08_SERVER_CHANGES.md)). Code review fixes in; security review found nothing. Left
+  on #40: a per-user limit (one account can open many sockets), `set_typing`'s MongoDB
+  write, mention lookups, `CheckOrigin`, login/signup limits. Also to do: confirm #72 on
+  Render with a message saved before PR #74
+- **Next step:** CI green, then ask before merging the PR (it deploys to Render)
+- **Updated:** 2026-11-13 on `fix/40-ws-frame-and-rate-limits`
 
 ## Where things stand
 
@@ -33,7 +34,11 @@ declining a group invite. The full list is in
 
 ## Recently finished
 
-- **#76 (branch `fix/76-close-sockets-on-revoke`, not merged yet):** open WebSockets now
+- **Render (2026-11-12):** `STATS_TOKEN` is set (the Blueprint generated it), and
+  `GET chats/hub/stats` with `X-Stats-Token` returns `200`. The MongoDB password,
+  `JWT_SECRET` and `STATS_TOKEN` were rotated after being exposed, so every login before
+  that was signed out.
+- **#76 (PR #78):** open WebSockets now
   close when their session ends. Logout closes the connections opened with that token
   (other devices stay connected); deleting the profile closes all of the user's. Both act
   at once on every server, through the Redis channel `control:sessions`. Every open
@@ -45,7 +50,7 @@ declining a group invite. The full list is in
   ([WEBSOCKET_PROTOCOL.md](./WEBSOCKET_PROTOCOL.md#stay-connected)). A closed connection's
   read loop finishes the close handshake within 5 seconds instead of at its 60-second
   deadline. The middleware and the re-check share one check (`services.CheckSession`). The
-  code review's fixes are in.
+  code review found #79; the security review found nothing.
 - **#33 (PR #77):** a token stops working when its
   account is banned, deactivated or deleted after login. Before, the middleware trusted
   the account status copied into the 7-day token. Every request now reads the account
@@ -57,8 +62,8 @@ declining a group invite. The full list is in
   answer the logout list, the request gets `503` `AUTH_UNAVAILABLE` instead of going
   through; a cache failure reads MongoDB instead. Tokens without a `jti` are refused.
   `401` replies no longer include the parser's error text. The `else if` chain that
-  skipped the ban check is gone. CI now runs Redis for the cache tests. Open WebSockets are
-  still not re-checked: #76. What the Android app must change is in
+  skipped the ban check is gone. CI now runs Redis for the cache tests. What the Android
+  app must change is in
   [08_SERVER_CHANGES.md](../Android/_docs/08_SERVER_CHANGES.md).
 - **#72 (PR #74):** reactions work on real messages. New messages store `reactions: {}` instead of
   `null`, which MongoDB refused to create reaction fields in. A message that still has
@@ -89,11 +94,10 @@ declining a group invite. The full list is in
 - **#34 (PR #64):** signup now always generates the user ID on the server. An `_id` in the
   request is ignored, so nobody can sign up with a deleted user's ID and take over their
   chats. The reply now returns the stored ID instead of `000000000000000000000000`. The
-  code review found #65. **Still to do:** accounts that took over an ID before the fix
-  aren't found automatically. Run
+  code review found #65. The audit
   [scripts/audits/34-reused-signup-ids.js](../scripts/audits/34-reused-signup-ids.js)
-  (PR #73) once on the production database. Its header says how to run it and read the output. If it
-  flags any accounts, file an issue to clean them up.
+  (PR #73) ran on production on 2026-11-12: 1 user checked, 0 flagged, 0 it couldn't
+  judge, so no account took over an ID.
 - **#26 (PR #61):** blocks are one-sided. They are stored in `contactInfo.blocked` (shown to the
   blocker) and `contactInfo.blockedBy` (never sent to clients), so only the blocker can lift
   a block and the blocked person can't see it. Blocking twice, or unblocking someone you
@@ -174,13 +178,11 @@ have no status, so the check must allow for that.
 
 ## Known issues and risks
 
-There are 41 open issues, and #76 closes when its fix merges. Where
-each risk sits in the
-code: [architecture-overview.md](./architecture-overview.md#riskiest-areas).
+There are 41 open issues. Where each risk sits in the code: [architecture-overview.md](./architecture-overview.md#riskiest-areas).
 
 | Area | The problem, in short | Issues |
 |---|---|---|
-| Live connections | The server can leak resources or stall under load, missed live messages can't be detected, and open connections miss new chats | #20, #21, #22, #43, #49, #54, #55 |
+| Live connections | The server can leak resources or stall under load, missed live messages can't be detected, and open connections miss new chats, and a restart of a running hub doubles its loops | #20, #21, #22, #43, #49, #54, #55, #79 |
 | Chat access | Some replies reveal whether a chat exists | #59 |
 | Groups | Members are never asked to accept, live delivery doesn't match who is in the group, and the size limit isn't enforced | #5, #14, #16, #17, #28, #68 |
 | Invite codes | Anyone can decrypt a code, the invite endpoints lack permission checks, and entries left by forged joins before #9 was fixed are still stored | #15, #29, #30, #69 |
@@ -193,5 +195,5 @@ code: [architecture-overview.md](./architecture-overview.md#riskiest-areas).
 
 ## Next task
 
-Review, push and merge #76 (ask before `gh pr merge`: it deploys to Render). Then pick the
-next issue from the table above.
+Pick the next issue from the table above. Commit this state update as the first commit on
+that branch.

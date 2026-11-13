@@ -51,6 +51,13 @@ When you connect, the server:
   account check is cached for 30 seconds. If the check can't be made (Redis or MongoDB
   down), the connection stays open and is checked again later.
 
+- Limits per connection (#40): a frame over 64 KiB closes the connection with `1009`.
+  Up to 20 requests a second are handled, with bursts of up to 40; your pings count too,
+  and a ping over the limit gets no pong. A request over the limit is not carried out and
+  gets a `RATE_LIMITED` error with its `requestId`, unless your outgoing queue is half
+  full, in which case it gets no reply. The connection stays open, so wait a moment and
+  retry.
+
 After a reconnect, load recent messages over REST. The server doesn't replay what you
 missed (#43).
 
@@ -173,6 +180,7 @@ An `error` event has a `code` and a readable `message`.
 | `NOT_IMPLEMENTED` | This feature isn't built yet |
 | `UNKNOWN_REQUEST` | The server doesn't know this request type |
 | `PARSE_ERROR` | Your message wasn't valid JSON |
+| `RATE_LIMITED` | Too many requests on this connection; the request wasn't carried out. Retry after a short wait |
 | `CHANNEL_FULL` | Your outgoing queue is full, so a reply was dropped |
 | `USER_NOT_AUTHENTICATED` | The server couldn't find your user |
 

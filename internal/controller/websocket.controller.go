@@ -189,6 +189,10 @@ func handleClientRead(ctx context.Context, client *models.Client) {
 		wsLog().Printf("Read goroutine closed for client: %s", client.ID)
 	}()
 
+	client.Connection.SetReadLimit(maxFrameBytes) // a bigger frame closes with 1009 (#40)
+	limiter := newConnectionLimiter()
+	client.Connection.SetPingHandler(limitedPingHandler(client.Connection, limiter))
+
 	client.Connection.SetReadDeadline(time.Now().Add(60 * time.Second)) // Set read deadline and pong handler
 	client.Connection.SetPongHandler(func(string) error {
 		if client.IsClosed() {
@@ -216,6 +220,12 @@ func handleClientRead(ctx context.Context, client *models.Client) {
 		// Keep reading until the client answers the close frame (a read error), so
 		// the frame isn't lost; see handleClientWrite.
 		if client.IsClosed() {
+			continue
+		}
+
+		// Every frame counts, unreadable ones too, so a flood costs no database work (#40).
+		if !limiter.allow(time.Now()) {
+			refuseRateLimited(client, message)
 			continue
 		}
 
