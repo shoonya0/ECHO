@@ -1,6 +1,6 @@
 # ECHO: current state
 
-A one-page snapshot of where the project stands. Last checked on 2026-11-13 at `dad9640`
+A one-page snapshot of where the project stands. Last checked on 2026-11-13 at `c20d168`
 on `main`. To learn what the product does, read
 [product-overview.md](./product-overview.md). For the code, read
 [architecture-overview.md](./architecture-overview.md).
@@ -11,12 +11,11 @@ on `main`. To learn what the product does, read
 and with a link to exactly one feature state.md. Updated by /close-increment and
 /feature-docs update. -->
 
-- **Feature:** none yet (set by `/feature-docs start`) · #41 on `fix/41-hide-internal-errors`
-  (verify `--full` passes, both reviews done, PR open): no reply carries `err.Error()`
-  ([REST](./rest-api.md#the-basics), [app changes](../Android/_docs/08_SERVER_CHANGES.md)).
-  Still to do: confirm #72 on Render with a message saved before PR #74
-- **Next step:** CI green, then ask before merging the PR (it deploys to Render)
-- **Updated:** 2026-11-13 on `fix/41-hide-internal-errors`
+- **Feature:** none yet (set by `/feature-docs start`) · #65 on `fix/65-signup-log-user-id`:
+  signup logs the new user's ID only, not the whole user. Still to do: confirm #72 on
+  Render with a message saved before PR #74
+- **Next step:** verify, push, open the PR, then ask before merging (it deploys to Render)
+- **Updated:** 2026-11-13 on `fix/65-signup-log-user-id`
 
 ## Where things stand
 
@@ -31,6 +30,10 @@ declining a group invite. The full list is in
 
 ## Recently finished
 
+- **#41 (PR #81):** no REST or WebSocket reply carries internal error text. A `400`'s
+  `error` names each field by its JSON path and rule (`password: min=8`), and
+  `invite_user` answers with specific codes ([REST](./rest-api.md#the-basics),
+  [app changes](../Android/_docs/08_SERVER_CHANGES.md)). Security review: nothing found.
 - **#40 part 1 (PR #80):** a WebSocket frame over 64 KiB closes with `1009`, and each
   connection gets 20 requests a second (bursts of 40, pings included). A request over that
   isn't handled and gets `RATE_LIMITED` ([protocol](./WEBSOCKET_PROTOCOL.md#stay-connected),
@@ -109,10 +112,6 @@ declining a group invite. The full list is in
 - **#23 (PR #57):** typing, read receipts and reactions now refuse non-members with
   `PERMISSION_DENIED`, checked in the service layer. `leave_chat` is refused unless the
   connection is in the chat's room, and `mark_read` skips IDs from other chats.
-- **#19:** the hub now uses its shared maps safely, so concurrent connections can no longer
-  crash the server that way, and inactive-client cleanup can no longer deadlock.
-- **PR #46:** rewrote these docs in plain language and corrected what didn't match the
-  code. Checking the docs against the code found five new bugs: #47 to #51.
 
 ## How to build, run, test
 
@@ -178,7 +177,7 @@ have no status, so the check must allow for that.
 
 ## Known issues and risks
 
-There are 41 open issues. Where each risk sits in the code: [architecture-overview.md](./architecture-overview.md#riskiest-areas).
+There are 40 open issues. Where each risk sits in the code: [architecture-overview.md](./architecture-overview.md#riskiest-areas).
 
 | Area | The problem, in short | Issues |
 |---|---|---|
@@ -186,7 +185,7 @@ There are 41 open issues. Where each risk sits in the code: [architecture-overvi
 | Chat access | Some replies reveal whether a chat exists | #59 |
 | Groups | Members are never asked to accept, live delivery doesn't match who is in the group, and the size limit isn't enforced | #5, #14, #16, #17, #28, #68 |
 | Invite codes | Anyone can decrypt a code, the invite endpoints lack permission checks, and entries left by forged joins before #9 was fixed are still stored | #15, #29, #30, #69 |
-| Accounts | Deleting an account leaves old references, emails are case-sensitive, usernames aren't unique, and signup logs personal data | #35, #36, #65 |
+| Accounts | Deleting an account leaves old references, emails are case-sensitive, and usernames aren't unique | #35, #36 |
 | Contacts and blocking | Blocks aren't enforced in chats, your contacts list includes people you blocked, and blocks written during a deploy can be missed | #27, #38, #39, #62, #63 |
 | Online status and privacy | Online status is unreliable, and privacy settings aren't applied | #31, #32 |
 | Messages and data | Reaction counts drift, history doesn't show who reacted by name, writes can half-finish, and some lists grow without limit | #25, #37, #42, #75 |
