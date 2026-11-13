@@ -14,10 +14,11 @@ and with a link to exactly one feature state.md. Updated by /close-increment and
 - **Feature:** none yet (set by `/feature-docs start`) · #40, part 1 on
   `fix/40-ws-frame-and-rate-limits` (verify `--full` passes, not pushed): frame size and
   request rate limits ([protocol](./WEBSOCKET_PROTOCOL.md#stay-connected),
-  [app changes](../Android/_docs/08_SERVER_CHANGES.md)). Left on #40: `set_typing`'s
-  MongoDB write, mention lookups, `CheckOrigin`, login/signup limits. Also to do: confirm
-  #72 on Render with a message saved before PR #74
-- **Next step:** `/code-review`, then push and open the PR (`Refs #40`, not `Fixes`)
+  [app changes](../Android/_docs/08_SERVER_CHANGES.md)). Code review done, fixes in. Left
+  on #40: a per-user limit (one account can open many sockets), `set_typing`'s MongoDB
+  write, mention lookups, `CheckOrigin`, login/signup limits. Also to do: confirm #72 on
+  Render with a message saved before PR #74
+- **Next step:** `/security-review`, then push and open the PR (`Refs #40`, not `Fixes`)
 - **Updated:** 2026-11-13 on `fix/40-ws-frame-and-rate-limits`
 
 ## Where things stand
