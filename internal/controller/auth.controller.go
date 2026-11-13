@@ -81,7 +81,7 @@ func Signup(c *gin.Context) {
 		return
 	}
 
-	log.WithField("user", user).Info("user created successfully")
+	log.WithField("user", user.ID.Hex()).Info("user created successfully")
 	utils.SuccessResponse(c, "User created successfully", user)
 }
 
