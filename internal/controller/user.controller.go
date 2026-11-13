@@ -31,7 +31,7 @@ func GetProfile(ctx *gin.Context) {
 	objectID, err := bson.ObjectIDFromHex(userID.(string))
 	if err != nil {
 		log.Debug("invalid user id format")
-		utils.ErrorResponse(ctx, http.StatusBadRequest, "invalid user id format", err.Error())
+		utils.ErrorResponse(ctx, http.StatusBadRequest, "invalid user id format", nil)
 		return
 	}
 
@@ -56,7 +56,7 @@ func UpdateProfile(ctx *gin.Context) {
 	var updateReq models.UpdateUserRequest
 	if err := ctx.ShouldBindJSON(&updateReq); err != nil {
 		log.Debug("invalid request format")
-		utils.ErrorResponse(ctx, http.StatusBadRequest, "invalid request format", err.Error())
+		utils.ErrorResponse(ctx, http.StatusBadRequest, "invalid request format", bindErrorDetail(err))
 		return
 	}
 
@@ -70,7 +70,7 @@ func UpdateProfile(ctx *gin.Context) {
 	objectID, err := bson.ObjectIDFromHex(userID.(string))
 	if err != nil {
 		log.Debug("invalid user id format")
-		utils.ErrorResponse(ctx, http.StatusBadRequest, "invalid user id format", err.Error())
+		utils.ErrorResponse(ctx, http.StatusBadRequest, "invalid user id format", nil)
 		return
 	}
 

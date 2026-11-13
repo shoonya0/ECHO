@@ -46,6 +46,21 @@ says why. The reasons are the REST codes above.
 
 Details: [WEBSOCKET_PROTOCOL.md](../../_docs/WEBSOCKET_PROTOCOL.md#stay-connected).
 
+## Error details (#41)
+
+- REST: the `error` field of a `400` is now `"field: rule; field: rule"` (JSON paths, such
+  as `password: min=8`), `"age: wrong type"`, or `"request body is not valid JSON for this
+  endpoint"`, not Gin's raw text. Show it in debug builds only; for users, map the endpoint
+  and status to your own text.
+- WebSocket: messages are fixed texts. `invite_user` failures now come with
+  `INVALID_CHAT_ID`, `PERMISSION_DENIED` (not a member), `INVALID_USER_ID` or
+  `INVALID_REQUEST` (already in the chat). `INVITE_FAILED` is left for the rest, including
+  a conflict with another change to the chat: retry it. `INVALID_CONTENT` for a bad
+  `messageType` no longer repeats the value. Branch on `code`.
+
+Details: [rest-api.md](../../_docs/rest-api.md#the-basics),
+[WEBSOCKET_PROTOCOL.md](../../_docs/WEBSOCKET_PROTOCOL.md#error-codes).
+
 ## WebSocket limits (#40)
 
 | Server behaviour | What the app should do |

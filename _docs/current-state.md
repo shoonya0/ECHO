@@ -1,6 +1,6 @@
 # ECHO: current state
 
-A one-page snapshot of where the project stands. Last checked on 2026-11-12 at `d9f19ae`
+A one-page snapshot of where the project stands. Last checked on 2026-11-13 at `dad9640`
 on `main`. To learn what the product does, read
 [product-overview.md](./product-overview.md). For the code, read
 [architecture-overview.md](./architecture-overview.md).
@@ -11,15 +11,12 @@ on `main`. To learn what the product does, read
 and with a link to exactly one feature state.md. Updated by /close-increment and
 /feature-docs update. -->
 
-- **Feature:** none yet (set by `/feature-docs start`) · #40, part 1 on
-  `fix/40-ws-frame-and-rate-limits` (verify `--full` passes, PR open): frame size and
-  request rate limits ([protocol](./WEBSOCKET_PROTOCOL.md#stay-connected),
-  [app changes](../Android/_docs/08_SERVER_CHANGES.md)). Code review fixes in; security review found nothing. Left
-  on #40: a per-user limit (one account can open many sockets), `set_typing`'s MongoDB
-  write, mention lookups, `CheckOrigin`, login/signup limits. Also to do: confirm #72 on
-  Render with a message saved before PR #74
+- **Feature:** none yet (set by `/feature-docs start`) · #41 on `fix/41-hide-internal-errors`
+  (verify `--full` passes, both reviews done, PR open): no reply carries `err.Error()`
+  ([REST](./rest-api.md#the-basics), [app changes](../Android/_docs/08_SERVER_CHANGES.md)).
+  Still to do: confirm #72 on Render with a message saved before PR #74
 - **Next step:** CI green, then ask before merging the PR (it deploys to Render)
-- **Updated:** 2026-11-13 on `fix/40-ws-frame-and-rate-limits`
+- **Updated:** 2026-11-13 on `fix/41-hide-internal-errors`
 
 ## Where things stand
 
@@ -34,6 +31,12 @@ declining a group invite. The full list is in
 
 ## Recently finished
 
+- **#40 part 1 (PR #80):** a WebSocket frame over 64 KiB closes with `1009`, and each
+  connection gets 20 requests a second (bursts of 40, pings included). A request over that
+  isn't handled and gets `RATE_LIMITED` ([protocol](./WEBSOCKET_PROTOCOL.md#stay-connected),
+  [app changes](../Android/_docs/08_SERVER_CHANGES.md)). Security review: nothing found.
+  Still open on #40: a per-user limit (one account can open many sockets), `set_typing`'s
+  MongoDB write, mention lookups, `CheckOrigin`, and login/signup limits.
 - **Render (2026-11-12):** `STATS_TOKEN` is set (the Blueprint generated it), and
   `GET chats/hub/stats` with `X-Stats-Token` returns `200`. The MongoDB password,
   `JWT_SECRET` and `STATS_TOKEN` were rotated after being exposed, so every login before
@@ -110,9 +113,6 @@ declining a group invite. The full list is in
   crash the server that way, and inactive-client cleanup can no longer deadlock.
 - **PR #46:** rewrote these docs in plain language and corrected what didn't match the
   code. Checking the docs against the code found five new bugs: #47 to #51.
-- **#18 (PR #45):** group creators now get the `owner` role, so adding and removing group
-  members works again. Groups created before the fix are repaired when the server starts.
-  CI now runs the database tests against a real MongoDB.
 
 ## How to build, run, test
 
@@ -190,7 +190,7 @@ There are 41 open issues. Where each risk sits in the code: [architecture-overvi
 | Contacts and blocking | Blocks aren't enforced in chats, your contacts list includes people you blocked, and blocks written during a deploy can be missed | #27, #38, #39, #62, #63 |
 | Online status and privacy | Online status is unreliable, and privacy settings aren't applied | #31, #32 |
 | Messages and data | Reaction counts drift, history doesn't show who reacted by name, writes can half-finish, and some lists grow without limit | #25, #37, #42, #75 |
-| Limits and errors | No rate or size limits on the WebSocket; some replies expose internal error text | #40, #41 |
+| Limits and errors | WebSocket limits are per connection, not per user, and `set_typing` still writes to MongoDB; no limits on login and signup | #40 |
 | WebSocket replies and events | Replies and events are inconsistent or leave out details, which affects the Android plan, and uppercase chat IDs lose live events | #47, #48, #50, #51, #60 |
 
 ## Next task

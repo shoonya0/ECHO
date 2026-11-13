@@ -184,5 +184,8 @@ An `error` event has a `code` and a readable `message`.
 | `CHANNEL_FULL` | Your outgoing queue is full, so a reply was dropped |
 | `USER_NOT_AUTHENTICATED` | The server couldn't find your user |
 
-Some error messages still contain internal text (#41). Build your app on `code`, not on
-`message`.
+Error messages are fixed texts and never contain internal errors (#41). They may still
+change, so build your app on `code`, not on `message`. `invite_user` answers with the
+specific code when it can: `INVALID_CHAT_ID`, `PERMISSION_DENIED`, `INVALID_USER_ID`, or
+`INVALID_REQUEST` when the users are already in the chat. Its `INVITE_FAILED` can mean the
+chat changed at the same time, so retry it once.

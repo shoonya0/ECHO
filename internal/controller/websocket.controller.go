@@ -232,18 +232,8 @@ func handleClientRead(ctx context.Context, client *models.Client) {
 		var request models.MessageRequest // Parse the message into a MessageRequest
 		if err := json.Unmarshal(message, &request); err != nil {
 			wsLog().Printf("Failed to unmarshal message from client %s: %v", client.ID, err)
-			errorMsg := models.WebSocketMessage{
-				Type: models.WSMessageTypeError,
-				Data: models.ErrorMessage{
-					Code:    "PARSE_ERROR",
-					Message: "Failed to parse message: " + err.Error(),
-				},
-				Timestamp: time.Now(),
-			}
-			if !client.TrySend(errorMsg) {
-				wsLog().Printf("Cannot send error message to client %s, closing connection", client.ID)
-			}
-			continue // SAFE: connection is still valid, just skip this bad message
+			sendErrorResponse(client, "", "PARSE_ERROR", "Message is not valid JSON") // no decoder text (#41)
+			continue                                                                  // SAFE: connection is still valid, just skip this bad message
 		}
 
 		client.Touch() // Update client activity
@@ -322,8 +312,8 @@ func handleSendMessage(ctx context.Context, client *models.Client, request model
 		return
 	}
 
-	if err := validateMessageContent(request); err != nil { // Validate message content and type
-		sendErrorResponse(client, request.RequestID, "INVALID_CONTENT", err.Error())
+	if problem := validateMessageContent(request); problem != "" { // Validate message content and type
+		sendErrorResponse(client, request.RequestID, "INVALID_CONTENT", problem)
 		return
 	}
 
@@ -552,13 +542,7 @@ func handleAddReaction(client *models.Client, request models.MessageRequest) {
 	err = services.AddMessageReaction(chatID, msgObjectID, client.UserID, emoji) // Add reaction through service layer
 	if err != nil {
 		wsLog().Printf("Failed to add reaction: %v", err)
-		errCode := "REACTION_FAILED"
-		errMsg := "Failed to add reaction"
-		if err.Error() == "message not found" {
-			errCode = "MESSAGE_NOT_FOUND"
-			errMsg = "Message not found"
-		}
-		sendChatError(client, request.RequestID, err, errCode, errMsg)
+		sendChatError(client, request.RequestID, err, "REACTION_FAILED", "Failed to add reaction")
 		return
 	}
 
@@ -628,13 +612,7 @@ func handleRemoveReaction(client *models.Client, request models.MessageRequest) 
 	err = services.RemoveMessageReaction(chatID, msgObjectID, client.UserID, emoji) // Remove reaction through service layer
 	if err != nil {
 		wsLog().Printf("Failed to remove reaction: %v", err)
-		errCode := "REACTION_FAILED"
-		errMsg := "Failed to remove reaction"
-		if err.Error() == "message not found" {
-			errCode = "MESSAGE_NOT_FOUND"
-			errMsg = "Message not found"
-		}
-		sendChatError(client, request.RequestID, err, errCode, errMsg)
+		sendChatError(client, request.RequestID, err, "REACTION_FAILED", "Failed to remove reaction")
 		return
 	}
 
@@ -742,7 +720,7 @@ func handleInviteUser(ctx context.Context, client *models.Client, request models
 	err = services.AddGroupMember(ctx, client.UserID, chatID, userIDs)
 	if err != nil {
 		wsLog().Printf("Failed to add group members: %v", err)
-		sendErrorResponse(client, request.RequestID, "INVITE_FAILED", "Failed to invite users: "+err.Error())
+		sendInviteError(client, request.RequestID, err)
 		return
 	}
 
@@ -923,10 +901,12 @@ func validateMessagePermissions(ctx context.Context, userID bson.ObjectID, chatI
 	}
 }
 
-// validateMessageContent validates message content and attachments
-func validateMessageContent(request models.MessageRequest) error {
+// validateMessageContent checks message content and attachments. It returns the
+// problem as a fixed text for the client, or "" when there is none. The text
+// never includes request values or internal errors (#41).
+func validateMessageContent(request models.MessageRequest) string {
 	if len(request.Content) > 4000 { // 4KB limit
-		return fmt.Errorf("message content too long (max 4000 characters)")
+		return "message content too long (max 4000 characters)"
 	}
 
 	validTypes := map[string]bool{
@@ -938,27 +918,27 @@ func validateMessageContent(request models.MessageRequest) error {
 	}
 
 	if request.MessageType != "" && !validTypes[request.MessageType] {
-		return fmt.Errorf("invalid message type: %s", request.MessageType)
+		return "invalid message type"
 	}
 
 	if len(request.Attachments) > 10 { // Max 10 attachments
-		return fmt.Errorf("too many attachments (max 10)")
+		return "too many attachments (max 10)"
 	}
 
 	for _, attachment := range request.Attachments {
 		if attachment.Size > 50*1024*1024 { // 50MB limit
-			return fmt.Errorf("attachment too large (max 50MB)")
+			return "attachment too large (max 50MB)"
 		}
 		if attachment.URL == "" || attachment.OriginalName == "" {
-			return fmt.Errorf("invalid attachment data")
+			return "invalid attachment data"
 		}
 	}
 
 	if len(request.Mentions) > 20 { // Max 20 mentions
-		return fmt.Errorf("too many mentions (max 20)")
+		return "too many mentions (max 20)"
 	}
 
-	return nil
+	return ""
 }
 
 // sendSuccessResponse sends a success response to the client
@@ -991,6 +971,25 @@ func sendChatError(client *models.Client, requestID string, err error, code, mes
 		code, message = "MESSAGE_NOT_FOUND", "Message not found"
 	case errors.Is(err, services.ErrInvalidEmoji):
 		code, message = "INVALID_REQUEST", "Invalid emoji"
+	}
+	sendErrorResponse(client, requestID, code, message)
+}
+
+// sendInviteError answers a failed AddGroupMember with a fixed text (#41). The
+// handler has already checked the caller's role, so ErrPermissionDenied here
+// means the chat changed during the add: it keeps INVITE_FAILED, which the
+// client may retry.
+func sendInviteError(client *models.Client, requestID string, err error) {
+	code, message := "INVITE_FAILED", "Failed to invite users"
+	switch {
+	case errors.Is(err, services.ErrChatNotFound):
+		code, message = "INVALID_CHAT_ID", "Chat not found"
+	case errors.Is(err, services.ErrNotParticipant):
+		code, message = "PERMISSION_DENIED", "You are not a participant of this chat"
+	case errors.Is(err, services.ErrAlreadyParticipant):
+		code, message = "INVALID_REQUEST", "Users are already in the chat"
+	case errors.Is(err, services.ErrUserNotFound):
+		code, message = "INVALID_USER_ID", "User not found"
 	}
 	sendErrorResponse(client, requestID, code, message)
 }

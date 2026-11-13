@@ -43,7 +43,7 @@ func Signup(c *gin.Context) {
 	var req SignupRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		log.WithError(err).Debug("invalid request")
-		utils.ErrorResponse(c, http.StatusBadRequest, "invalid request", err.Error())
+		utils.ErrorResponse(c, http.StatusBadRequest, "invalid request", bindErrorDetail(err))
 		return
 	}
 
@@ -93,7 +93,7 @@ func Login(c *gin.Context) {
 	var req LoginRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		log.Debug("invalid request")
-		utils.ErrorResponse(c, http.StatusBadRequest, "invalid request", err.Error())
+		utils.ErrorResponse(c, http.StatusBadRequest, "invalid request", bindErrorDetail(err))
 		return
 	}
 
