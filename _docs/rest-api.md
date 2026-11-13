@@ -17,7 +17,11 @@ loading old messages. For live chat, use the [WebSocket](./WEBSOCKET_PROTOCOL.md
 { "success": false, "message": "Chat not found" }
 ```
 
-Some failures add an `error` field with more detail.
+Some failures add an `error` field with more detail. It never holds internal error text
+(#41). For a body that fails validation it names each field and rule, by the field's JSON
+name: `"email: required; displayName: required"`. A body that isn't JSON, or has a field of
+the wrong type, gets `"request body is not valid JSON for this endpoint"`. A bad ID in the
+path has no `error` field; `message` says which ID is wrong.
 
 **Token problems** return `401` in a different shape:
 

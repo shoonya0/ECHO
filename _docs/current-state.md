@@ -11,10 +11,12 @@ on `main`. To learn what the product does, read
 and with a link to exactly one feature state.md. Updated by /close-increment and
 /feature-docs update. -->
 
-- **Feature:** none yet (set by `/feature-docs start`) · #40 part 1 merged (PR #80).
+- **Feature:** none yet (set by `/feature-docs start`) · #41 on `fix/41-hide-internal-errors`
+  (verify `--full` passes, not pushed): no reply carries `err.Error()` any more
+  ([REST](./rest-api.md#the-basics), [app changes](../Android/_docs/08_SERVER_CHANGES.md)).
   Still to do: confirm #72 on Render with a message saved before PR #74
-- **Next step:** pick the next issue from [Known issues](#known-issues-and-risks)
-- **Updated:** 2026-11-13 on `main` (uncommitted; commit on the next work branch)
+- **Next step:** `/code-review`, then push and open the PR (`Fixes #41`)
+- **Updated:** 2026-11-13 on `fix/41-hide-internal-errors`
 
 ## Where things stand
 
@@ -188,7 +190,7 @@ There are 41 open issues. Where each risk sits in the code: [architecture-overvi
 | Contacts and blocking | Blocks aren't enforced in chats, your contacts list includes people you blocked, and blocks written during a deploy can be missed | #27, #38, #39, #62, #63 |
 | Online status and privacy | Online status is unreliable, and privacy settings aren't applied | #31, #32 |
 | Messages and data | Reaction counts drift, history doesn't show who reacted by name, writes can half-finish, and some lists grow without limit | #25, #37, #42, #75 |
-| Limits and errors | No rate or size limits on the WebSocket; some replies expose internal error text | #40, #41 |
+| Limits and errors | WebSocket limits are per connection, not per user, and `set_typing` still writes to MongoDB; no limits on login and signup | #40 |
 | WebSocket replies and events | Replies and events are inconsistent or leave out details, which affects the Android plan, and uppercase chat IDs lose live events | #47, #48, #50, #51, #60 |
 
 ## Next task
