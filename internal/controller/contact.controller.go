@@ -24,7 +24,7 @@ func authUserID(ctx *gin.Context) (bson.ObjectID, bool) {
 	}
 	id, err := bson.ObjectIDFromHex(raw.(string))
 	if err != nil {
-		utils.ErrorResponse(ctx, http.StatusBadRequest, "invalid user id format", err.Error())
+		utils.ErrorResponse(ctx, http.StatusBadRequest, "invalid user id format", nil)
 		return bson.ObjectID{}, false
 	}
 	return id, true
@@ -44,7 +44,7 @@ func paramObjectID(ctx *gin.Context, param string) (bson.ObjectID, bool) {
 	raw := ctx.Param(param)
 	id, err := bson.ObjectIDFromHex(raw)
 	if err != nil {
-		utils.ErrorResponse(ctx, http.StatusBadRequest, "invalid "+param+" format", err.Error())
+		utils.ErrorResponse(ctx, http.StatusBadRequest, "invalid "+param+" format", nil)
 		return bson.ObjectID{}, false
 	}
 	return id, true

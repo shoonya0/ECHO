@@ -61,7 +61,7 @@ func CreateGroupChatHTTP(ctx *gin.Context) {
 
 	if err := ctx.ShouldBindJSON(&request); err != nil {
 		log.Debug("invalid request data ", err)
-		utils.ErrorResponse(ctx, http.StatusBadRequest, "Invalid request data", err.Error())
+		utils.ErrorResponse(ctx, http.StatusBadRequest, "Invalid request data", bindErrorDetail(err))
 		return
 	}
 
@@ -102,7 +102,7 @@ func AddGroupMembersHTTP(ctx *gin.Context) {
 
 	if err := ctx.ShouldBindJSON(&request); err != nil {
 		log.Debug("invalid request data ", err)
-		utils.ErrorResponse(ctx, http.StatusBadRequest, "Invalid request data", err.Error())
+		utils.ErrorResponse(ctx, http.StatusBadRequest, "Invalid request data", bindErrorDetail(err))
 		return
 	}
 
@@ -116,7 +116,7 @@ func AddGroupMembersHTTP(ctx *gin.Context) {
 	chatID, err := bson.ObjectIDFromHex(chatIDStr)
 	if err != nil {
 		log.Debug("invalid chat ID format")
-		utils.ErrorResponse(ctx, http.StatusBadRequest, "Invalid chat ID format", err.Error())
+		utils.ErrorResponse(ctx, http.StatusBadRequest, "Invalid chat ID format", nil)
 		return
 	}
 
@@ -125,7 +125,7 @@ func AddGroupMembersHTTP(ctx *gin.Context) {
 		userID, err := bson.ObjectIDFromHex(userIDStr)
 		if err != nil {
 			log.Debug("invalid user ID format")
-			utils.ErrorResponse(ctx, http.StatusBadRequest, "Invalid user ID format", err.Error())
+			utils.ErrorResponse(ctx, http.StatusBadRequest, "Invalid user ID format", nil)
 			return
 		}
 		userIDs = append(userIDs, userID)
@@ -278,7 +278,7 @@ func CreateInvite(ctx *gin.Context) {
 	chatID, err := bson.ObjectIDFromHex(chatIDStr)
 	if err != nil {
 		log.Debug("invalid chat ID format")
-		utils.ErrorResponse(ctx, http.StatusBadRequest, "Invalid chat ID format", err.Error())
+		utils.ErrorResponse(ctx, http.StatusBadRequest, "Invalid chat ID format", nil)
 		return
 	}
 
@@ -317,7 +317,7 @@ func GetGroupInvites(ctx *gin.Context) {
 	chatID, err := bson.ObjectIDFromHex(chatIDStr)
 	if err != nil {
 		log.Debug("invalid chat ID format")
-		utils.ErrorResponse(ctx, http.StatusBadRequest, "Invalid chat ID format", err.Error())
+		utils.ErrorResponse(ctx, http.StatusBadRequest, "Invalid chat ID format", nil)
 		return
 	}
 
@@ -422,7 +422,7 @@ func SendInviteToUser(ctx *gin.Context) {
 	targetUserID, err := bson.ObjectIDFromHex(userIDStr)
 	if err != nil {
 		log.Debug("invalid user ID format: " + err.Error())
-		utils.ErrorResponse(ctx, http.StatusBadRequest, "Invalid user ID format", err.Error())
+		utils.ErrorResponse(ctx, http.StatusBadRequest, "Invalid user ID format", nil)
 		return
 	}
 
