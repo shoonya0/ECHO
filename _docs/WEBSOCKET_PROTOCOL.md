@@ -187,4 +187,5 @@ An `error` event has a `code` and a readable `message`.
 Error messages are fixed texts and never contain internal errors (#41). They may still
 change, so build your app on `code`, not on `message`. `invite_user` answers with the
 specific code when it can: `INVALID_CHAT_ID`, `PERMISSION_DENIED`, `INVALID_USER_ID`, or
-`INVALID_REQUEST` when the users are already in the chat.
+`INVALID_REQUEST` when the users are already in the chat. Its `INVITE_FAILED` can mean the
+chat changed at the same time, so retry it once.
