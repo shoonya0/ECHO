@@ -52,9 +52,11 @@ When you connect, the server:
   down), the connection stays open and is checked again later.
 
 - Limits per connection (#40): a frame over 64 KiB closes the connection with `1009`.
-  Up to 20 requests a second are handled, with bursts of up to 40. A request over that
-  gets a `RATE_LIMITED` error with its `requestId` and is not carried out; the connection
-  stays open, so wait a moment and retry.
+  Up to 20 requests a second are handled, with bursts of up to 40; your pings count too,
+  and a ping over the limit gets no pong. A request over the limit is not carried out and
+  gets a `RATE_LIMITED` error with its `requestId`, unless your outgoing queue is half
+  full, in which case it gets no reply. The connection stays open, so wait a moment and
+  retry.
 
 After a reconnect, load recent messages over REST. The server doesn't replay what you
 missed (#43).

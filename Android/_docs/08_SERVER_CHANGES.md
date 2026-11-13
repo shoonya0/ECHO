@@ -51,6 +51,6 @@ Details: [WEBSOCKET_PROTOCOL.md](../../_docs/WEBSOCKET_PROTOCOL.md#stay-connecte
 | Server behaviour | What the app should do |
 |---|---|
 | A frame over 64 KiB closes the socket with `1009` | Keep requests small (message content is at most 4000 bytes anyway). Treat `1009` as a bug, not a reason to retry the same frame. |
-| Over 20 requests a second (bursts of 40), a request gets an `error` with code `RATE_LIMITED` and its `requestId`, and isn't carried out | Debounce `set_typing` and batch `mark_read`. On `RATE_LIMITED`, retry that request after a short backoff. The socket stays open. |
+| Over 20 requests a second (bursts of 40, pings included), a request isn't carried out. It gets an `error` with code `RATE_LIMITED` and its `requestId`, or no reply at all while the server's queue for this socket is busy | Debounce `set_typing` and batch `mark_read`. On `RATE_LIMITED`, or a request timeout, retry after a short backoff. The socket stays open. Don't send WebSocket pings more often than every few seconds. |
 
 Details: [WEBSOCKET_PROTOCOL.md](../../_docs/WEBSOCKET_PROTOCOL.md#stay-connected).
