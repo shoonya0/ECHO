@@ -28,6 +28,7 @@ func serveReadLoop(t *testing.T) *websocket.Conn {
 		client := &models.Client{ID: "c1", UserID: bson.NewObjectID(), Connection: conn, Send: make(chan models.WebSocketMessage, 10)}
 		go handleClientWrite(client)
 		handleClientRead(r.Context(), client)
+		client.CloseSend() // stop the writer, so it doesn't outlive the test
 	}))
 	t.Cleanup(server.Close)
 
@@ -79,35 +80,71 @@ func TestFrameAtTheLimitIsAnswered(t *testing.T) {
 // Requests over the rate limit get RATE_LIMITED with their requestId and are
 // not handled; the connection stays open (#40).
 func TestRequestsOverTheRateLimitAreRefused(t *testing.T) {
+	useNonRefillingLimiter(t)
 	conn := serveReadLoop(t)
 
-	// One request at a time, so the server's queue of 10 never drops a reply. The
-	// round trips take a few milliseconds, which refills at most a token or two.
-	const slack = 5
-	firstLimited := -1
-	for i := range requestBurst + slack + 1 {
+	// One request at a time, so the server's queue of 10 never drops a reply.
+	for i := range requestBurst {
 		id := fmt.Sprintf("r%d", i)
-		reply := roundTrip(t, conn, id)
-		if reply.RequestID != id {
-			t.Fatalf("request %s answered as %q", id, reply.RequestID)
-		}
-		if reply.Code == "RATE_LIMITED" {
-			firstLimited = i
-			break
-		}
-		if reply.Code != "UNKNOWN_REQUEST" {
-			t.Fatalf("request %s got %q", id, reply.Code)
+		if reply := roundTrip(t, conn, id); reply.RequestID != id || reply.Code != "UNKNOWN_REQUEST" {
+			t.Fatalf("request %s of the burst got %q %q", id, reply.RequestID, reply.Code)
 		}
 	}
-	if firstLimited < requestBurst {
-		t.Fatalf("first RATE_LIMITED at request %d, want at least the burst of %d", firstLimited, requestBurst)
+	// Over the burst, and the connection stays open for the next one.
+	for _, id := range []string{"over1", "over2"} {
+		if reply := roundTrip(t, conn, id); reply.RequestID != id || reply.Code != "RATE_LIMITED" {
+			t.Fatalf("request %s got %q %q, want RATE_LIMITED", id, reply.RequestID, reply.Code)
+		}
 	}
+}
 
-	// Still open: after the bucket refills, a request is handled again.
-	time.Sleep(200 * time.Millisecond)
-	if reply := roundTrip(t, conn, "after"); reply.Code != "UNKNOWN_REQUEST" {
-		t.Fatalf("after refill got %q, want UNKNOWN_REQUEST", reply.Code)
+// Pings take tokens too: over the limit, the server stops answering them, so a
+// ping flood can't make it write without limit (#40).
+func TestPingsOverTheRateLimitGetNoPong(t *testing.T) {
+	useNonRefillingLimiter(t)
+	conn := serveReadLoop(t)
+
+	pongs := 0
+	conn.SetPongHandler(func(string) error { pongs++; return nil })
+	for i := range requestBurst + 10 {
+		if err := conn.WriteControl(websocket.PingMessage, nil, time.Now().Add(time.Second)); err != nil {
+			t.Fatalf("ping %d: %v", i, err)
+		}
 	}
+	// The server reads frames in order, so this request's reply comes after every
+	// pong it sent; reading it runs the pong handler for each of them.
+	if reply := roundTrip(t, conn, "last"); reply.Code != "RATE_LIMITED" {
+		t.Fatalf("request after the pings got %q, want RATE_LIMITED", reply.Code)
+	}
+	if pongs != requestBurst {
+		t.Fatalf("got %d pongs, want %d (one per token)", pongs, requestBurst)
+	}
+}
+
+// RATE_LIMITED replies use at most half the send queue, so they never push out
+// the client's chat events.
+func TestRateLimitedRepliesLeaveRoomInTheQueue(t *testing.T) {
+	client := &models.Client{ID: "c1", Send: make(chan models.WebSocketMessage, 10)}
+	frame := []byte(`{"type":"send_message","requestId":"r1"}`)
+
+	for range 20 {
+		refuseRateLimited(client, frame)
+	}
+	if got := len(client.Send); got != 5 {
+		t.Fatalf("queue holds %d replies, want 5 (half of 10)", got)
+	}
+	if reply := <-client.Send; reply.RequestID != "r1" {
+		t.Fatalf("reply has requestId %q, want r1", reply.RequestID)
+	}
+}
+
+// useNonRefillingLimiter gives connections opened during the test a bucket of
+// requestBurst tokens that never refills.
+func useNonRefillingLimiter(t *testing.T) {
+	t.Helper()
+	previous := newConnectionLimiter
+	newConnectionLimiter = func() *requestLimiter { return newRequestLimiter(0, requestBurst, time.Now()) }
+	t.Cleanup(func() { newConnectionLimiter = previous })
 }
 
 // roundTrip sends a request the server doesn't know and reads the reply.

@@ -2,7 +2,11 @@ package controller
 
 import (
 	"encoding/json"
+	"errors"
+	"net"
 	"time"
+
+	"github.com/gorilla/websocket"
 
 	"github.com/shoonya0/ECHO/internal/models"
 )
@@ -46,9 +50,37 @@ func (l *requestLimiter) allow(now time.Time) bool {
 	return true
 }
 
+// newConnectionLimiter makes each connection's bucket. Tests replace it with one
+// that never refills, so they don't depend on timing.
+var newConnectionLimiter = func() *requestLimiter {
+	return newRequestLimiter(requestsPerSecond, requestBurst, time.Now())
+}
+
+// limitedPingHandler answers pings like gorilla's default handler, but each ping
+// takes a token, so a ping flood can't make the server write without limit.
+// gorilla calls it from ReadMessage, on the read loop that owns limiter.
+func limitedPingHandler(conn *websocket.Conn, limiter *requestLimiter) func(string) error {
+	return func(data string) error {
+		if !limiter.allow(time.Now()) {
+			return nil // over the limit: no pong
+		}
+		err := conn.WriteControl(websocket.PongMessage, []byte(data), time.Now().Add(time.Second))
+		var netErr net.Error
+		if errors.Is(err, websocket.ErrCloseSent) || errors.As(err, &netErr) {
+			return nil // as gorilla's default: the read loop sees the broken connection
+		}
+		return err
+	}
+}
+
 // refuseRateLimited answers a request that went over the limit, with its
-// requestId when the frame has one, so the client can match the reply.
+// requestId when the frame has one, so the client can match the reply. It
+// answers only while the send queue is under half full, so these replies never
+// push out the client's chat events; otherwise the frame is dropped unread.
 func refuseRateLimited(client *models.Client, frame []byte) {
+	if len(client.Send) >= cap(client.Send)/2 {
+		return
+	}
 	var request struct {
 		RequestID string `json:"requestId"`
 	}

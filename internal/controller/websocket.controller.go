@@ -190,7 +190,8 @@ func handleClientRead(ctx context.Context, client *models.Client) {
 	}()
 
 	client.Connection.SetReadLimit(maxFrameBytes) // a bigger frame closes with 1009 (#40)
-	limiter := newRequestLimiter(requestsPerSecond, requestBurst, time.Now())
+	limiter := newConnectionLimiter()
+	client.Connection.SetPingHandler(limitedPingHandler(client.Connection, limiter))
 
 	client.Connection.SetReadDeadline(time.Now().Add(60 * time.Second)) // Set read deadline and pong handler
 	client.Connection.SetPongHandler(func(string) error {
