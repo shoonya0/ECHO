@@ -735,7 +735,7 @@ func AddMessageReaction(chatID, messageID, userID bson.ObjectID, emoji string) e
 	}
 
 	if result.MatchedCount == 0 {
-		return fmt.Errorf("message not found")
+		return ErrMessageNotFound
 	}
 
 	return nil
@@ -784,7 +784,7 @@ func RemoveMessageReaction(chatID, messageID, userID bson.ObjectID, emoji string
 	}
 
 	if result.MatchedCount == 0 {
-		return fmt.Errorf("message not found")
+		return ErrMessageNotFound
 	}
 
 	// Clean up empty reaction if count is 0
