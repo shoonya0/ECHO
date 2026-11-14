@@ -799,7 +799,7 @@ func handleRemoveUser(ctx context.Context, client *models.Client, request models
 	}
 
 	// Remove members through service layer (validates permissions, chat type, etc.)
-	err = services.RemoveGroupMember(ctx, client.UserID, chatID, userIDs)
+	removedIDs, err := services.RemoveGroupMember(ctx, client.UserID, chatID, userIDs)
 	if err != nil {
 		wsLog().Printf("Failed to remove group members: %v", err)
 
@@ -821,9 +821,10 @@ func handleRemoveUser(ctx context.Context, client *models.Client, request models
 		return
 	}
 
-	// Build removed user ID strings
-	removedIDStrings := make([]string, len(userIDs))
-	for i, id := range userIDs {
+	// Report only the users actually removed, not skipped ones such as the
+	// actor (#28).
+	removedIDStrings := make([]string, len(removedIDs))
+	for i, id := range removedIDs {
 		removedIDStrings[i] = id.Hex()
 	}
 
@@ -853,7 +854,7 @@ func handleRemoveUser(ctx context.Context, client *models.Client, request models
 		"removedUsers": removedIDStrings,
 	})
 
-	wsLog().Printf("Client %s removed %d users from chat %s", client.ID, len(userIDs), request.ChatID)
+	wsLog().Printf("Client %s removed %d users from chat %s", client.ID, len(removedIDs), request.ChatID)
 }
 
 // handleUpdateChat processes chat update requests

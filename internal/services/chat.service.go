@@ -919,8 +919,10 @@ func AddGroupMember(ctx context.Context, userID bson.ObjectID, chatID bson.Objec
 }
 
 // RemoveGroupMember removes one or more participants from a group chat.
-// The acting user must be an owner or admin of the chat.
-func RemoveGroupMember(ctx context.Context, actingUserID bson.ObjectID, chatID bson.ObjectID, targetUserIDs []bson.ObjectID) error {
+// The acting user must be an owner or admin of the chat, and only the owner
+// can remove an owner. Targets not in the chat, and the actor, are skipped.
+// It returns the IDs that were removed.
+func RemoveGroupMember(ctx context.Context, actingUserID bson.ObjectID, chatID bson.ObjectID, targetUserIDs []bson.ObjectID) ([]bson.ObjectID, error) {
 
 	// Verify chat exists and is a group
 	chatFilter := bson.M{
@@ -932,44 +934,74 @@ func RemoveGroupMember(ctx context.Context, actingUserID bson.ObjectID, chatID b
 	err := database.DB.Collection(string(constants.ChatColl)).FindOne(ctx, chatFilter, options.FindOne().SetProjection(bson.M{
 		"participants": 1,
 		"ownerId":      1,
-		"adminIds":     1,
 	})).Decode(&chat)
 	if err != nil {
 		if err == mongo.ErrNoDocuments {
-			return fmt.Errorf("%w", ErrChatNotFound)
+			return nil, fmt.Errorf("%w", ErrChatNotFound)
 		}
-		return fmt.Errorf("failed to get chat: %w", err)
+		return nil, fmt.Errorf("failed to get chat: %w", err)
 	}
 
 	// Verify acting user is a participant
 	actingParticipant, ok := chat.Participants[actingUserID]
 	if !ok {
-		return fmt.Errorf("%w", ErrNotParticipant)
+		return nil, fmt.Errorf("%w", ErrNotParticipant)
 	}
 
 	// Must be owner or admin
 	if actingParticipant.Role != string(constants.ChatRoleOwner) && actingParticipant.Role != string(constants.ChatRoleAdmin) {
-		return fmt.Errorf("%w: only owners and admins can remove members", ErrPermissionDenied)
+		return nil, fmt.Errorf("%w: only owners and admins can remove members", ErrPermissionDenied)
 	}
 
-	// Build $unset entries for participants to remove
+	// Only the owner may remove an owner (#28). A request that names an owner
+	// is refused as a whole, so nobody is half-removed.
+	actorIsOwner := actingParticipant.Role == string(constants.ChatRoleOwner)
+	actorRoles := []string{string(constants.ChatRoleOwner), string(constants.ChatRoleAdmin)}
+	if actorIsOwner {
+		actorRoles = []string{string(constants.ChatRoleOwner)}
+	}
+
+	// The update filter repeats the checks made on the read above, so a
+	// demotion or a removal between the read and the write can't be ignored.
+	updateFilter := bson.M{
+		"_id":      chatID,
+		"chatType": string(constants.ChatTypeGroup),
+		"participants." + actingUserID.Hex() + ".role": bson.M{"$in": actorRoles},
+	}
 	unsetEntries := bson.M{}
-	userFilter := bson.M{"_id": bson.M{"$in": targetUserIDs}}
-	userUpdate := bson.M{"$unset": bson.M{}}
+	var removedIDs []bson.ObjectID
 
 	for _, targetID := range targetUserIDs {
-		if _, isParticipant := chat.Participants[targetID]; !isParticipant {
+		target, isParticipant := chat.Participants[targetID]
+		if !isParticipant {
 			continue // Skip users not in the chat
 		}
 		if targetID == actingUserID {
 			continue // Cannot remove self
 		}
-		unsetEntries["participants."+targetID.Hex()] = ""
-		userUpdate["$unset"].(bson.M)["chats."+chatID.Hex()] = ""
+		// ownerId also counts: groups from before #18 may not have the owner role
+		// backfilled on their creator.
+		isOwner := target.Role == string(constants.ChatRoleOwner) || targetID == chat.OwnerID
+		if isOwner && !actorIsOwner {
+			return nil, fmt.Errorf("%w: only the owner can remove an owner", ErrPermissionDenied)
+		}
+		key := "participants." + targetID.Hex()
+		if _, seen := unsetEntries[key]; seen {
+			continue // Listed twice
+		}
+		updateFilter[key] = bson.M{"$exists": true}
+		if !actorIsOwner {
+			updateFilter[key+".role"] = bson.M{"$ne": string(constants.ChatRoleOwner)}
+		}
+		unsetEntries[key] = ""
+		removedIDs = append(removedIDs, targetID)
 	}
 
 	if len(unsetEntries) == 0 {
-		return fmt.Errorf("%w", ErrNoValidParticipants)
+		return nil, fmt.Errorf("%w", ErrNoValidParticipants)
+	}
+	if !actorIsOwner {
+		updateFilter["ownerId"] = bson.M{"$nin": removedIDs}
 	}
 
 	// Update chat: remove participants + decrement count
@@ -983,18 +1015,26 @@ func RemoveGroupMember(ctx context.Context, actingUserID bson.ObjectID, chatID b
 		},
 	}
 
-	_, err = database.DB.Collection(string(constants.ChatColl)).UpdateOne(ctx, bson.M{"_id": chatID}, chatUpdate)
+	res, err := database.DB.Collection(string(constants.ChatColl)).UpdateOne(ctx, updateFilter, chatUpdate)
 	if err != nil {
-		return fmt.Errorf("failed to update chat: %w", err)
+		return nil, fmt.Errorf("failed to update chat: %w", err)
 	}
+	if res.MatchedCount == 0 {
+		return nil, fmt.Errorf("%w: chat changed while removing members", ErrPermissionDenied)
+	}
+
+	// Only the users actually removed lose their chat ref; the actor and
+	// skipped targets keep theirs (#28).
+	userFilter := bson.M{"_id": bson.M{"$in": removedIDs}}
+	userUpdate := bson.M{"$unset": bson.M{"chats." + chatID.Hex(): ""}}
 
 	// Remove chat ref from each removed user
 	_, err = database.DB.Collection(string(constants.UserColl)).UpdateMany(ctx, userFilter, userUpdate)
 	if err != nil {
-		return fmt.Errorf("failed to update users: %w", err)
+		return nil, fmt.Errorf("failed to update users: %w", err)
 	}
 
-	return nil
+	return removedIDs, nil
 }
 
 // ================ Invites ================
