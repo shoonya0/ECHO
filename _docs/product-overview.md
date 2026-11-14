@@ -39,7 +39,7 @@ Checked against the code at `17ec08b`. Issue numbers were last updated on 2026-1
 | Accounts | Sign up, log in (lasts 7 days), log out | Works | A ban made in the database takes up to 30 seconds to apply, and about a minute to close an open WebSocket. Also #36, #65. |
 | Profiles | View, edit and delete your profile; view other people's | Works | Deleting a profile leaves old references behind (#35). |
 | Finding people | Get suggestions of people to add | Works | The "nearby" and "popular" lists are empty placeholders. |
-| Contacts | Send, accept and decline requests; remove; favorites; block and unblock | Partly works | Blocks aren't enforced in chats (#27). Also #38, #39, #62, #63. |
+| Contacts | Send, accept and decline requests; remove; favorites; block and unblock | Partly works | Blocks aren't enforced in chats (#27). Also #39, #62, #63. |
 | Direct chats | Start a chat with one person | Works | Someone already online gets no live messages from a new chat until they reconnect (#49). |
 | Group chats | Create a group; add and remove members | Partly works | Added members are never asked to accept (#5) and get no live messages (#17). Removed members keep getting them until they reconnect (#14). Also #16, #68. |
 | Invite codes | Create, list, delete and send codes; join with a code | Partly works | Some invite routes lack permission checks (#30). |

@@ -11,11 +11,12 @@ on `main`. To learn what the product does, read
 and with a link to exactly one feature state.md. Updated by /close-increment and
 /feature-docs update. -->
 
-- **Feature:** none yet · nothing in progress. #28 merged in PR #94. Still to do: confirm
-  #72 on Render with a message saved before PR #74
-- **Next step:** pick the next issue from [Known issues](#known-issues-and-risks); #30 needs
-  a decision first: who may create and delete invites
-- **Updated:** 2026-11-14 on `main` at `9177e93`
+- **Feature:** none yet · #38 on `fix/38-self-targets`: a contact request or direct chat
+  with yourself gets `400` (`INVALID_USER_ID` over the WebSocket). Still to do: confirm
+  #72 on Render with a message saved before PR #74; #30 needs a decision on who may
+  create and delete invites
+- **Next step:** verify, push, open the PR, then ask before merging (it deploys to Render)
+- **Updated:** 2026-11-14 on `fix/38-self-targets`
 
 ## Where things stand
 
@@ -181,7 +182,7 @@ There are 36 open issues. Where each risk sits in the code: [architecture-overvi
 | Groups | Members are never asked to accept, live delivery doesn't match who is in the group, and the size limit isn't enforced | #5, #14, #16, #17, #68 |
 | Invite codes | The invite endpoints lack permission checks, and entries left by forged joins before #9 was fixed are still stored | #30, #69 |
 | Accounts | Deleting an account leaves old references, emails are case-sensitive, and usernames aren't unique | #35, #36 |
-| Contacts and blocking | Blocks aren't enforced in chats, your contacts list includes people you blocked, and blocks written during a deploy can be missed | #27, #38, #39, #62, #63 |
+| Contacts and blocking | Blocks aren't enforced in chats, your contacts list includes people you blocked, and blocks written during a deploy can be missed | #27, #39, #62, #63 |
 | Online status and privacy | Online status is unreliable, and privacy settings aren't applied | #31, #32 |
 | Messages and data | Reaction counts drift, history doesn't show who reacted by name, writes can half-finish, and some lists grow without limit | #25, #37, #42, #75 |
 | Limits and errors | WebSocket limits are per connection, not per user, and `set_typing` still writes to MongoDB; no limits on login and signup | #40 |

@@ -47,7 +47,8 @@ them, or creates one, and starts following it on this connection.
 { "type": "join_chat", "senderId": "<the other person's user ID>", "requestId": "r2" }
 ```
 
-- `senderId` is required. It is the *other* person, not you.
+- `senderId` is required. It is the *other* person, not you: your own ID gets
+  `INVALID_USER_ID` (#38).
 - `chatId` is ignored, so you can't use this request to follow a group (#48).
 
 **You get:** a `join` event, and no `response`. Read the chat's ID from the event's
