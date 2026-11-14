@@ -90,6 +90,10 @@ func GetChat(ctx context.Context, chatInfo models.ChatInfo) (models.Chat, error)
 	var chat models.Chat
 
 	err := database.DB.Collection(string(constants.ChatColl)).FindOne(ctx, chatFilter, options.FindOne().SetProjection(chatProjection)).Decode(&chat)
+	if errors.Is(err, mongo.ErrNoDocuments) {
+		// Callers tell "no such chat" from a failed lookup by this error (#83).
+		return chat, ErrChatNotFound
+	}
 	if err != nil {
 		return chat, fmt.Errorf("failed to get chat: %w", err)
 	}

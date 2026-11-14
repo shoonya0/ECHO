@@ -1,6 +1,6 @@
 # ECHO: current state
 
-A one-page snapshot of where the project stands. Last checked on 2026-11-14 at `db27a81`
+A one-page snapshot of where the project stands. Last checked on 2026-11-14 at `c3a17af`
 on `main`. To learn what the product does, read
 [product-overview.md](./product-overview.md). For the code, read
 [architecture-overview.md](./architecture-overview.md).
@@ -11,11 +11,10 @@ on `main`. To learn what the product does, read
 and with a link to exactly one feature state.md. Updated by /close-increment and
 /feature-docs update. -->
 
-- **Feature:** none yet (set by `/feature-docs start`) · #84 on `fix/84-auth-log-user-id`:
-  the auth middleware logs the user's ID only, not the email and username. Still to do:
-  confirm #72 on Render with a message saved before PR #74
+- **Feature:** none yet · #83 on `fix/83-invite-getchat-error`: a failed `invite_user`
+  chat lookup is `INVITE_FAILED`, not "Chat not found". Still to do: confirm #72 on Render
 - **Next step:** verify, push, open the PR, then ask before merging (it deploys to Render)
-- **Updated:** 2026-11-14 on `fix/84-auth-log-user-id`
+- **Updated:** 2026-11-14 on `fix/83-invite-getchat-error`
 
 ## Where things stand
 
@@ -30,6 +29,9 @@ declining a group invite. The full list is in
 
 ## Recently finished
 
+- **#84 (PR #86):** the auth middleware logs the user's ID only, not the email and
+  username it wrote at Debug on every request. The WebSocket connect log still holds the
+  username at Info (no issue filed yet).
 - **#39 part 1 (PR #85):** `limit=0` no longer crashes the contact lists with a `500`;
   `limit` is kept in 1..100 ([REST](./rest-api.md#contacts)). Still open on #39: the lists
   aren't cut to `limit`, which needs a cursor first.
@@ -175,7 +177,7 @@ have no status, so the check must allow for that.
 
 ## Known issues and risks
 
-There are 41 open issues. Where each risk sits in the code: [architecture-overview.md](./architecture-overview.md#riskiest-areas).
+There are 40 open issues. Where each risk sits in the code: [architecture-overview.md](./architecture-overview.md#riskiest-areas).
 
 | Area | The problem, in short | Issues |
 |---|---|---|
@@ -188,7 +190,7 @@ There are 41 open issues. Where each risk sits in the code: [architecture-overvi
 | Online status and privacy | Online status is unreliable, and privacy settings aren't applied | #31, #32 |
 | Messages and data | Reaction counts drift, history doesn't show who reacted by name, writes can half-finish, and some lists grow without limit | #25, #37, #42, #75 |
 | Limits and errors | WebSocket limits are per connection, not per user, and `set_typing` still writes to MongoDB; no limits on login and signup | #40 |
-| WebSocket replies and events | Replies and events are inconsistent or leave out details, which affects the Android plan, uppercase chat IDs lose live events, and `invite_user` reports a database failure as "Chat not found" | #47, #48, #50, #51, #60, #83 |
+| WebSocket replies and events | Replies and events are inconsistent or leave out details, which affects the Android plan, and uppercase chat IDs lose live events | #47, #48, #50, #51, #60 |
 
 ## Next task
 

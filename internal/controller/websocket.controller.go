@@ -695,7 +695,7 @@ func handleInviteUser(ctx context.Context, client *models.Client, request models
 	chat, err := services.GetChat(ctx, models.ChatInfo{ChatID: chatID})
 	if err != nil {
 		wsLog().Printf("Failed to get chat for invite: %v", err)
-		sendErrorResponse(client, request.RequestID, "INVALID_CHAT_ID", "Chat not found")
+		sendInviteError(client, request.RequestID, err)
 		return
 	}
 
