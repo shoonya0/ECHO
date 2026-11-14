@@ -82,6 +82,8 @@ Details: [rest-api.md](../../_docs/rest-api.md#groups).
 - If your role or the group changed while the request ran, the reply is also
   `PERMISSION_DENIED`. Reload the group before retrying.
 - Listing yourself among the users no longer takes the group off your own chat list.
+- The reply's `removedUsers` now lists only the people removed. Before, it echoed every ID
+  sent, including you and people not in the group; update the member list from it.
 
 Details: [websocket-requests.md](../../_docs/websocket-requests.md#remove_user).
 

@@ -177,7 +177,7 @@ Removes people from a group. You must be the group's `owner` or an `admin`.
 - Removed people keep getting live events until they reconnect (#14).
 
 **You get:** a `response` with `action: "users_removed"`, `chatId` and `removedUsers`. That
-list holds every valid ID you sent, including people who were skipped. A `chat_updated`
+list holds only the people who were removed, not those who were skipped (#28). A `chat_updated`
 event goes to the chat.
 
 **Errors:** `INVALID_REQUEST` (also when nobody could be removed), `INVALID_CHAT_ID`,
