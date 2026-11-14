@@ -64,7 +64,7 @@ func TestRemoveGroupMemberRules(t *testing.T) {
 	}
 
 	t.Run("admin cannot remove the owner", func(t *testing.T) {
-		err := RemoveGroupMember(ctx, admin, chatID, []bson.ObjectID{owner})
+		_, err := RemoveGroupMember(ctx, admin, chatID, []bson.ObjectID{owner})
 		if !errors.Is(err, ErrPermissionDenied) {
 			t.Fatalf("err = %v, want ErrPermissionDenied", err)
 		}
@@ -74,7 +74,7 @@ func TestRemoveGroupMemberRules(t *testing.T) {
 	})
 
 	t.Run("a request that includes the owner removes nobody", func(t *testing.T) {
-		err := RemoveGroupMember(ctx, admin, chatID, []bson.ObjectID{member2, owner})
+		_, err := RemoveGroupMember(ctx, admin, chatID, []bson.ObjectID{member2, owner})
 		if !errors.Is(err, ErrPermissionDenied) {
 			t.Fatalf("err = %v, want ErrPermissionDenied", err)
 		}
@@ -84,8 +84,12 @@ func TestRemoveGroupMemberRules(t *testing.T) {
 	})
 
 	t.Run("listing yourself keeps your own chat entry", func(t *testing.T) {
-		if err := RemoveGroupMember(ctx, admin, chatID, []bson.ObjectID{admin, member}); err != nil {
+		removed, err := RemoveGroupMember(ctx, admin, chatID, []bson.ObjectID{admin, member})
+		if err != nil {
 			t.Fatalf("RemoveGroupMember: %v", err)
+		}
+		if len(removed) != 1 || removed[0] != member {
+			t.Fatalf("removed = %v, want only %s", removed, member.Hex())
 		}
 		if inGroup(t, member) || hasChatRef(t, member) {
 			t.Fatal("member is still in the group")
@@ -96,7 +100,7 @@ func TestRemoveGroupMemberRules(t *testing.T) {
 	})
 
 	t.Run("owner removes an admin", func(t *testing.T) {
-		if err := RemoveGroupMember(ctx, owner, chatID, []bson.ObjectID{admin2}); err != nil {
+		if _, err := RemoveGroupMember(ctx, owner, chatID, []bson.ObjectID{admin2}); err != nil {
 			t.Fatalf("RemoveGroupMember: %v", err)
 		}
 		if inGroup(t, admin2) || hasChatRef(t, admin2) {
@@ -105,9 +109,34 @@ func TestRemoveGroupMemberRules(t *testing.T) {
 	})
 
 	t.Run("member cannot remove anyone", func(t *testing.T) {
-		err := RemoveGroupMember(ctx, member2, chatID, []bson.ObjectID{admin})
+		_, err := RemoveGroupMember(ctx, member2, chatID, []bson.ObjectID{admin})
 		if !errors.Is(err, ErrPermissionDenied) {
 			t.Fatalf("err = %v, want ErrPermissionDenied", err)
+		}
+	})
+
+	// A group from before #18 may store its creator as ownerId with a
+	// non-owner role. An admin still can't remove them.
+	t.Run("admin cannot remove an ownerId whose role isn't owner", func(t *testing.T) {
+		legacyID := bson.NewObjectID()
+		if _, err := chats.InsertOne(ctx, bson.M{
+			"_id":      legacyID,
+			"chatType": string(constants.ChatTypeGroup),
+			"ownerId":  owner,
+			"participants": bson.M{
+				owner.Hex(): role(constants.ChatRoleAdmin),
+				admin.Hex(): role(constants.ChatRoleAdmin),
+			},
+		}); err != nil {
+			t.Fatalf("insert legacy chat: %v", err)
+		}
+		_, err := RemoveGroupMember(ctx, admin, legacyID, []bson.ObjectID{owner})
+		if !errors.Is(err, ErrPermissionDenied) {
+			t.Fatalf("err = %v, want ErrPermissionDenied", err)
+		}
+		n, err := chats.CountDocuments(ctx, bson.M{"_id": legacyID, "participants." + owner.Hex(): bson.M{"$exists": true}})
+		if err != nil || n != 1 {
+			t.Fatalf("legacy owner still in the group: n=%d err=%v", n, err)
 		}
 	})
 }

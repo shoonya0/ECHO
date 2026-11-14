@@ -921,7 +921,8 @@ func AddGroupMember(ctx context.Context, userID bson.ObjectID, chatID bson.Objec
 // RemoveGroupMember removes one or more participants from a group chat.
 // The acting user must be an owner or admin of the chat, and only the owner
 // can remove an owner. Targets not in the chat, and the actor, are skipped.
-func RemoveGroupMember(ctx context.Context, actingUserID bson.ObjectID, chatID bson.ObjectID, targetUserIDs []bson.ObjectID) error {
+// It returns the IDs that were removed.
+func RemoveGroupMember(ctx context.Context, actingUserID bson.ObjectID, chatID bson.ObjectID, targetUserIDs []bson.ObjectID) ([]bson.ObjectID, error) {
 
 	// Verify chat exists and is a group
 	chatFilter := bson.M{
@@ -933,24 +934,23 @@ func RemoveGroupMember(ctx context.Context, actingUserID bson.ObjectID, chatID b
 	err := database.DB.Collection(string(constants.ChatColl)).FindOne(ctx, chatFilter, options.FindOne().SetProjection(bson.M{
 		"participants": 1,
 		"ownerId":      1,
-		"adminIds":     1,
 	})).Decode(&chat)
 	if err != nil {
 		if err == mongo.ErrNoDocuments {
-			return fmt.Errorf("%w", ErrChatNotFound)
+			return nil, fmt.Errorf("%w", ErrChatNotFound)
 		}
-		return fmt.Errorf("failed to get chat: %w", err)
+		return nil, fmt.Errorf("failed to get chat: %w", err)
 	}
 
 	// Verify acting user is a participant
 	actingParticipant, ok := chat.Participants[actingUserID]
 	if !ok {
-		return fmt.Errorf("%w", ErrNotParticipant)
+		return nil, fmt.Errorf("%w", ErrNotParticipant)
 	}
 
 	// Must be owner or admin
 	if actingParticipant.Role != string(constants.ChatRoleOwner) && actingParticipant.Role != string(constants.ChatRoleAdmin) {
-		return fmt.Errorf("%w: only owners and admins can remove members", ErrPermissionDenied)
+		return nil, fmt.Errorf("%w: only owners and admins can remove members", ErrPermissionDenied)
 	}
 
 	// Only the owner may remove an owner (#28). A request that names an owner
@@ -979,8 +979,11 @@ func RemoveGroupMember(ctx context.Context, actingUserID bson.ObjectID, chatID b
 		if targetID == actingUserID {
 			continue // Cannot remove self
 		}
-		if target.Role == string(constants.ChatRoleOwner) && !actorIsOwner {
-			return fmt.Errorf("%w: only the owner can remove an owner", ErrPermissionDenied)
+		// ownerId also counts: groups from before #18 may not have the owner role
+		// backfilled on their creator.
+		isOwner := target.Role == string(constants.ChatRoleOwner) || targetID == chat.OwnerID
+		if isOwner && !actorIsOwner {
+			return nil, fmt.Errorf("%w: only the owner can remove an owner", ErrPermissionDenied)
 		}
 		key := "participants." + targetID.Hex()
 		if _, seen := unsetEntries[key]; seen {
@@ -995,7 +998,10 @@ func RemoveGroupMember(ctx context.Context, actingUserID bson.ObjectID, chatID b
 	}
 
 	if len(unsetEntries) == 0 {
-		return fmt.Errorf("%w", ErrNoValidParticipants)
+		return nil, fmt.Errorf("%w", ErrNoValidParticipants)
+	}
+	if !actorIsOwner {
+		updateFilter["ownerId"] = bson.M{"$nin": removedIDs}
 	}
 
 	// Update chat: remove participants + decrement count
@@ -1011,10 +1017,10 @@ func RemoveGroupMember(ctx context.Context, actingUserID bson.ObjectID, chatID b
 
 	res, err := database.DB.Collection(string(constants.ChatColl)).UpdateOne(ctx, updateFilter, chatUpdate)
 	if err != nil {
-		return fmt.Errorf("failed to update chat: %w", err)
+		return nil, fmt.Errorf("failed to update chat: %w", err)
 	}
 	if res.MatchedCount == 0 {
-		return fmt.Errorf("%w: chat changed while removing members", ErrPermissionDenied)
+		return nil, fmt.Errorf("%w: chat changed while removing members", ErrPermissionDenied)
 	}
 
 	// Only the users actually removed lose their chat ref; the actor and
@@ -1025,10 +1031,10 @@ func RemoveGroupMember(ctx context.Context, actingUserID bson.ObjectID, chatID b
 	// Remove chat ref from each removed user
 	_, err = database.DB.Collection(string(constants.UserColl)).UpdateMany(ctx, userFilter, userUpdate)
 	if err != nil {
-		return fmt.Errorf("failed to update users: %w", err)
+		return nil, fmt.Errorf("failed to update users: %w", err)
 	}
 
-	return nil
+	return removedIDs, nil
 }
 
 // ================ Invites ================
