@@ -190,11 +190,7 @@ func AuthMiddleware(ctx *gin.Context) {
 	ctx.Set("user", user)
 	ctx.Set("jwtClaims", claims)
 
-	log.WithFields(map[string]interface{}{
-		"userId":   user.ID.Hex(),
-		"email":    user.Email,
-		"username": user.Username,
-	}).Debug("User authenticated successfully")
+	log.WithField("userId", user.ID.Hex()).Debug("User authenticated successfully")
 
 	ctx.Next()
 }
