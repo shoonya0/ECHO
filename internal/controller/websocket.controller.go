@@ -43,6 +43,15 @@ var upgrader = websocket.Upgrader{
 // wsLog returns the shared logger for connection-level WebSocket events.
 func wsLog() *logrus.Logger { return logger.Base() }
 
+// connectionLogFields names a new connection in the logs by IDs only. It is
+// logged at Info on every connect, so it must hold no personal data (#88).
+func connectionLogFields(user models.LoginUserResponse, client *models.Client) logrus.Fields {
+	return logrus.Fields{
+		string(constants.UserIDKey):   user.ID.Hex(),
+		string(constants.ClientIDKey): client.ID,
+	}
+}
+
 // HandleWebSocketChat upgrades the request to a WebSocket and serves the chat
 // protocol until the client disconnects.
 func HandleWebSocketChat(ctx *gin.Context) {
@@ -117,11 +126,7 @@ func HandleWebSocketChat(ctx *gin.Context) {
 		DeviceInfo: user.Presence.DeviceInfo,
 	})
 
-	log.WithFields(map[string]interface{}{
-		string(constants.UserIDKey):   user.ID.Hex(),
-		string(constants.UsernameKey): user.Username,
-		string(constants.ClientIDKey): client.ID,
-	}).Info("New WebSocket connection established")
+	log.WithFields(connectionLogFields(user, client)).Info("New WebSocket connection established")
 
 	go func() {
 		handleClientWrite(client) // Handle writing in a simple goroutine
