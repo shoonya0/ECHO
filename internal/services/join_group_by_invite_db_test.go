@@ -105,7 +105,7 @@ func TestJoinGroupByInviteRequiresStoredInvite(t *testing.T) {
 		chatID bson.ObjectID
 		code   string
 	}{
-		{"forged code that decrypts but isn't stored", groupID, mint(t, groupID).InviteCode},
+		{"code that isn't stored", groupID, mint(t, groupID).InviteCode},
 		{"deleted code", groupID, deleted.InviteCode},
 		{"stored code past its stored expiry", groupID, expired.InviteCode},
 		{"code stored on a direct chat", directID, onDirect.InviteCode},

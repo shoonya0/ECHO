@@ -1058,7 +1058,7 @@ func GetGroupInvites(ctx context.Context, userID bson.ObjectID, chatID bson.Obje
 }
 
 func DeleteInvite(ctx context.Context, userID bson.ObjectID, inviteID string) error {
-	chatID, _, err := parseInviteCode(inviteID)
+	chatID, _, err := findInvite(ctx, inviteID)
 	if err != nil {
 		return err
 	}
@@ -1086,7 +1086,7 @@ func DeleteInvite(ctx context.Context, userID bson.ObjectID, inviteID string) er
 }
 
 func GetJoinedUsersByInvite(ctx context.Context, userID bson.ObjectID, inviteID string) ([]bson.ObjectID, error) {
-	chatID, _, err := parseInviteCode(inviteID)
+	chatID, _, err := findInvite(ctx, inviteID)
 	if err != nil {
 		return nil, err
 	}
@@ -1114,7 +1114,7 @@ func GetJoinedUsersByInvite(ctx context.Context, userID bson.ObjectID, inviteID 
 }
 
 func SendInviteToUser(ctx context.Context, actingUserID bson.ObjectID, inviteID string, targetUserID bson.ObjectID, creatingGroup bool) error {
-	chatID, expireTime, err := parseInviteCode(inviteID)
+	chatID, expireTime, err := findInvite(ctx, inviteID)
 	if err != nil {
 		return err
 	}
@@ -1160,13 +1160,11 @@ func SendInviteToUser(ctx context.Context, actingUserID bson.ObjectID, inviteID 
 	return nil
 }
 
-// JoinGroupByInvite adds userID to the group named in the invite code. The
-// code must be stored on that group, not deleted and not expired: decrypting
-// alone proves nothing, since anyone holding the key can mint a code. Only the
-// stored expiry is checked. A real code carries the same expiry, and comparing
-// it with this server's clock could reject a fresh code minted on another one.
+// JoinGroupByInvite adds userID to the group that stores the invite code. The
+// code must not be deleted or past its stored expiry, and the chat must be a
+// group.
 func JoinGroupByInvite(ctx context.Context, userID bson.ObjectID, inviteID string) error {
-	chatObjectID, _, err := parseInviteCode(inviteID)
+	chatObjectID, _, err := findInvite(ctx, inviteID)
 	if err != nil {
 		return err
 	}
@@ -1280,30 +1278,40 @@ func GetAllInvitesOfUser(ctx context.Context, userID bson.ObjectID) ([]models.Ch
 	return result.ChatInvitations, nil
 }
 
-// parseInviteCode decodes an invite code produced by utils.NewInviteCodeWithDefaults.
-// The plaintext is "<chatID>_<userID>_<displayName>_<expiry RFC3339>"; the display
-// name may itself contain underscores, so the expiry is taken after the last one.
-func parseInviteCode(inviteCode string) (bson.ObjectID, time.Time, error) {
-	raw, err := hex.DecodeString(inviteCode)
-	if err != nil {
-		return bson.ObjectID{}, time.Time{}, fmt.Errorf("%w: failed to decode invite ID: %v", ErrInvalidInvite, err)
+// maxInviteCodeLen bounds the codes findInvite looks up. New codes have 32 hex
+// characters; codes made before #15 hold the encrypted chat ID, creator and
+// expiry, and stay well under this.
+const maxInviteCodeLen = 512
+
+// findInvite returns the chat that stores inviteCode and that code's stored
+// expiry. Codes are opaque (#15): nothing is read from the code itself, so a
+// code that isn't stored on a chat, or isn't hex at all, is ErrInvalidInvite.
+// A deleted code is still found; the callers that care check that.
+func findInvite(ctx context.Context, inviteCode string) (bson.ObjectID, time.Time, error) {
+	if inviteCode == "" || len(inviteCode) > maxInviteCodeLen {
+		return bson.ObjectID{}, time.Time{}, fmt.Errorf("%w: bad invite code length", ErrInvalidInvite)
+	}
+	if _, err := hex.DecodeString(inviteCode); err != nil {
+		return bson.ObjectID{}, time.Time{}, fmt.Errorf("%w: invite code is not hex", ErrInvalidInvite)
 	}
 
-	info, err := utils.Decrypt(raw)
+	var chat struct {
+		ID         bson.ObjectID            `bson:"_id"`
+		InviteCode []models.InviteCodeEmbed `bson:"inviteCode"`
+	}
+	err := database.DB.Collection(string(constants.ChatColl)).FindOne(ctx,
+		bson.M{"inviteCode.inviteCode": inviteCode},
+		options.FindOne().SetProjection(bson.M{"_id": 1, "inviteCode.$": 1}),
+	).Decode(&chat)
+	if errors.Is(err, mongo.ErrNoDocuments) {
+		return bson.ObjectID{}, time.Time{}, fmt.Errorf("%w: invite code not found", ErrInvalidInvite)
+	}
 	if err != nil {
-		return bson.ObjectID{}, time.Time{}, fmt.Errorf("%w: failed to decrypt invite ID: %v", ErrInvalidInvite, err)
+		return bson.ObjectID{}, time.Time{}, fmt.Errorf("failed to find invite: %w", err)
+	}
+	if len(chat.InviteCode) == 0 {
+		return bson.ObjectID{}, time.Time{}, fmt.Errorf("%w: invite code not found", ErrInvalidInvite)
 	}
 
-	chatIDStr, _, _ := strings.Cut(info, "_")
-	chatID, err := bson.ObjectIDFromHex(chatIDStr)
-	if err != nil {
-		return bson.ObjectID{}, time.Time{}, fmt.Errorf("%w: failed to parse chat ID from invite: %v", ErrInvalidInvite, err)
-	}
-
-	expiresAt, err := time.Parse(time.RFC3339, info[strings.LastIndex(info, "_")+1:])
-	if err != nil {
-		return bson.ObjectID{}, time.Time{}, fmt.Errorf("%w: failed to parse expire time: %v", ErrInvalidInvite, err)
-	}
-
-	return chatID, expiresAt, nil
+	return chat.ID, chat.InviteCode[0].ExpiredDate, nil
 }
