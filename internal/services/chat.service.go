@@ -329,7 +329,7 @@ func CreateGroupChat(ctx context.Context, chatName, description string, particip
 	chat.Settings.MaxParticipants = 100
 
 	// Create invite code
-	invite, ok := utils.NewInviteCodeWithDefaults(creator, chat.ChatID, time.Now().Add(24*time.Hour))
+	invite, ok := utils.NewInviteCodeWithDefaults(time.Now().Add(24 * time.Hour))
 	if !ok {
 		return nil, fmt.Errorf("failed to create invite code")
 	}
@@ -1015,12 +1015,7 @@ func CreateInvite(ctx context.Context, userID bson.ObjectID, chatID bson.ObjectI
 		return "", fmt.Errorf("%w", ErrChatNotFound)
 	}
 
-	user, ok := ctx.Value(constants.UserDataKey).(models.LoginUserResponse)
-	if !ok {
-		return "", fmt.Errorf("user not found")
-	}
-
-	invite, ok := utils.NewInviteCodeWithDefaults(user, chatID, time.Now().Add(24*time.Hour))
+	invite, ok := utils.NewInviteCodeWithDefaults(time.Now().Add(24 * time.Hour))
 	if !ok {
 		return "", fmt.Errorf("failed to create invite code")
 	}
@@ -1286,7 +1281,8 @@ const maxInviteCodeLen = 512
 // findInvite returns the chat that stores inviteCode and that code's stored
 // expiry. Codes are opaque (#15): nothing is read from the code itself, so a
 // code that isn't stored on a chat, or isn't hex at all, is ErrInvalidInvite.
-// A deleted code is still found; the callers that care check that.
+// A deleted code is still found: JoinGroupByInvite refuses it in its update
+// filter, but SendInviteToUser doesn't check it yet.
 func findInvite(ctx context.Context, inviteCode string) (bson.ObjectID, time.Time, error) {
 	if inviteCode == "" || len(inviteCode) > maxInviteCodeLen {
 		return bson.ObjectID{}, time.Time{}, fmt.Errorf("%w: bad invite code length", ErrInvalidInvite)

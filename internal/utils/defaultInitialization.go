@@ -151,13 +151,12 @@ func NewParticipantWithDefaults(role string, requestStatus string, onlineStatus 
 // inviteCodeBytes is the number of random bytes in an invite code (#15).
 const inviteCodeBytes = 16
 
-// NewInviteCodeWithDefaults makes a new active invite code for chatID that
-// expires at expireTime. The code is inviteCodeBytes random bytes, hex-encoded:
+// NewInviteCodeWithDefaults makes a new active invite code that expires at
+// expireTime. The code is inviteCodeBytes random bytes, hex-encoded:
 // it carries nothing, and the invite routes find the group by the stored code.
 // Before #15 it was the chat ID, the creator's ID and display name and the
-// expiry, encrypted with a key that was in this public repo. user is unused
-// now; it stays so callers don't change.
-func NewInviteCodeWithDefaults(user models.LoginUserResponse, chatID bson.ObjectID, expireTime time.Time) (models.InviteCodeEmbed, bool) {
+// expiry, encrypted with a key that was in this public repo.
+func NewInviteCodeWithDefaults(expireTime time.Time) (models.InviteCodeEmbed, bool) {
 
 	raw := make([]byte, inviteCodeBytes)
 	if _, err := rand.Read(raw); err != nil {

@@ -43,10 +43,9 @@ func TestJoinGroupByInviteRequiresStoredInvite(t *testing.T) {
 	unlisted := newUser(t, nil)
 	listed := newUser(t, bson.M{groupID.Hex(): 5})
 
-	creator := models.LoginUserResponse{ID: owner}
 	mint := func(t *testing.T, chatID bson.ObjectID) models.InviteCodeEmbed {
 		t.Helper()
-		invite, ok := utils.NewInviteCodeWithDefaults(creator, chatID, time.Now().Add(time.Hour))
+		invite, ok := utils.NewInviteCodeWithDefaults(time.Now().Add(time.Hour))
 		if !ok {
 			t.Fatal("mint invite code")
 		}
