@@ -43,10 +43,9 @@ func TestJoinGroupByInviteRequiresStoredInvite(t *testing.T) {
 	unlisted := newUser(t, nil)
 	listed := newUser(t, bson.M{groupID.Hex(): 5})
 
-	creator := models.LoginUserResponse{ID: owner}
 	mint := func(t *testing.T, chatID bson.ObjectID) models.InviteCodeEmbed {
 		t.Helper()
-		invite, ok := utils.NewInviteCodeWithDefaults(creator, chatID, time.Now().Add(time.Hour))
+		invite, ok := utils.NewInviteCodeWithDefaults(time.Now().Add(time.Hour))
 		if !ok {
 			t.Fatal("mint invite code")
 		}
@@ -105,7 +104,7 @@ func TestJoinGroupByInviteRequiresStoredInvite(t *testing.T) {
 		chatID bson.ObjectID
 		code   string
 	}{
-		{"forged code that decrypts but isn't stored", groupID, mint(t, groupID).InviteCode},
+		{"code that isn't stored", groupID, mint(t, groupID).InviteCode},
 		{"deleted code", groupID, deleted.InviteCode},
 		{"stored code past its stored expiry", groupID, expired.InviteCode},
 		{"code stored on a direct chat", directID, onDirect.InviteCode},

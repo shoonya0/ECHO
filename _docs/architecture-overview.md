@@ -46,7 +46,7 @@ flowchart TD
 | `internal/realtime` | The WebSocket hub, Redis pub/sub and in-memory presence | database, models, services |
 | `internal/models` | Data shapes: MongoDB documents, API payloads, WebSocket messages | — |
 | `internal/database` | MongoDB and Redis connections, index definitions | config |
-| `internal/utils` | Tokens, reply helpers, default values, invite code encryption | config, models |
+| `internal/utils` | Tokens, reply helpers, default values, random invite codes | config, models |
 | `internal/testutil` | Test helpers shared across packages (throwaway test database) | database |
 
 `constants` and `logger` are used almost everywhere, so the table leaves them out.
@@ -120,4 +120,3 @@ Take extra care when changing these places.
 | Block model | Blocks aren't enforced in chats; the startup block migration runs only once | `internal/services/chat.service.go`, `internal/services/migrations.go` | #27, #63 |
 | Account deletion | Deleting an account leaves its ID behind in chats and contact lists | `internal/services/user.service.go:108` | #35 |
 | Writes across several documents | No transactions, so an update can half-finish | `services/chat.service.go`, `contact.service.go` | #37 |
-| Invite codes | The encryption key is in the public source code, so anyone can read a code | `internal/utils/defaultInitialization.go:155` | #15 |

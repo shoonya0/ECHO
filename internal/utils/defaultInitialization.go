@@ -1,12 +1,8 @@
 package utils
 
 import (
-	"crypto/aes"
-	"crypto/cipher"
 	"crypto/rand"
 	"encoding/hex"
-	"fmt"
-	"io"
 	"time"
 
 	"github.com/shoonya0/ECHO/internal/constants"
@@ -152,67 +148,21 @@ func NewParticipantWithDefaults(role string, requestStatus string, onlineStatus 
 	}
 }
 
-const secretKey = "thisIsASecureAndLongKeyForAES256"
+// inviteCodeBytes is the number of random bytes in an invite code (#15).
+const inviteCodeBytes = 16
 
-// Encrypt a byte slice using AES-256 GCM.
-func Encrypt(data []byte) ([]byte, error) {
-	key := []byte(secretKey)
-	block, err := aes.NewCipher(key)
-	if err != nil {
-		return nil, err
-	}
+// NewInviteCodeWithDefaults makes a new active invite code that expires at
+// expireTime. The code is inviteCodeBytes random bytes, hex-encoded:
+// it carries nothing, and the invite routes find the group by the stored code.
+// Before #15 it was the chat ID, the creator's ID and display name and the
+// expiry, encrypted with a key that was in this public repo.
+func NewInviteCodeWithDefaults(expireTime time.Time) (models.InviteCodeEmbed, bool) {
 
-	gcm, err := cipher.NewGCM(block)
-	if err != nil {
-		return nil, err
-	}
-
-	nonce := make([]byte, gcm.NonceSize())
-	if _, err := io.ReadFull(rand.Reader, nonce); err != nil {
-		return nil, err
-	}
-
-	ciphertext := gcm.Seal(nonce, nonce, data, nil)
-	return ciphertext, nil
-}
-
-// Decrypt a byte slice using AES-256 GCM.
-func Decrypt(data []byte) (string, error) {
-	key := []byte(secretKey)
-	block, err := aes.NewCipher(key)
-	if err != nil {
-		return "", err
-	}
-
-	gcm, err := cipher.NewGCM(block)
-	if err != nil {
-		return "", err
-	}
-
-	nonceSize := gcm.NonceSize()
-	if len(data) < nonceSize {
-		return "", fmt.Errorf("ciphertext too short")
-	}
-
-	nonce, ciphertext := data[:nonceSize], data[nonceSize:]
-	plaintext, err := gcm.Open(nil, nonce, ciphertext, nil)
-	if err != nil {
-		return "", err
-	}
-
-	return string(plaintext), nil
-}
-
-func NewInviteCodeWithDefaults(user models.LoginUserResponse, chatID bson.ObjectID, expireTime time.Time) (models.InviteCodeEmbed, bool) {
-
-	dataString := fmt.Sprintf("%s_%s_%s_%s", chatID.Hex(), user.ID.Hex(), user.Profile.DisplayName, expireTime.Format(time.RFC3339))
-
-	encryptedData, err := Encrypt([]byte(dataString))
-	if err != nil {
+	raw := make([]byte, inviteCodeBytes)
+	if _, err := rand.Read(raw); err != nil {
 		return models.InviteCodeEmbed{}, false
 	}
-
-	inviteCode := hex.EncodeToString(encryptedData)
+	inviteCode := hex.EncodeToString(raw)
 
 	status := "active"
 	deleted := false

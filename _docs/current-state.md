@@ -1,6 +1,6 @@
 # ECHO: current state
 
-A one-page snapshot of where the project stands. Last checked on 2026-11-14 at `ba62d09`
+A one-page snapshot of where the project stands. Last checked on 2026-11-14 at `acc7e48`
 on `main`. To learn what the product does, read
 [product-overview.md](./product-overview.md). For the code, read
 [architecture-overview.md](./architecture-overview.md).
@@ -11,10 +11,12 @@ on `main`. To learn what the product does, read
 and with a link to exactly one feature state.md. Updated by /close-increment and
 /feature-docs update. -->
 
-- **Feature:** none yet · #88 on `fix/88-ws-connect-log-user-id`: the WebSocket connect
-  log names the user by ID only. Still to do: confirm #72 on Render
-- **Next step:** verify, push, open the PR, then ask before merging (it deploys to Render)
-- **Updated:** 2026-11-14 on `fix/88-ws-connect-log-user-id`
+- **Feature:** none yet · #15 on `fix/15-opaque-invite-codes`: invite codes are 16 random
+  bytes, and the routes find the group by the stored code; the AES key is gone
+  ([REST](./rest-api.md#groups), [app changes](../Android/_docs/08_SERVER_CHANGES.md)).
+  Still to do: confirm #72 on Render with a message saved before PR #74
+- **Next step:** `/code-review` and `/security-review`, then push, PR, and ask before merging
+- **Updated:** 2026-11-14 on `fix/15-opaque-invite-codes`
 
 ## Where things stand
 
@@ -29,6 +31,8 @@ declining a group invite. The full list is in
 
 ## Recently finished
 
+- **#88 (PR #89):** the WebSocket connect log names the user by ID only. With #65 and
+  #84, no log line writes an email or username any more.
 - **#83 (PR #87):** `invite_user` answers a failed chat lookup (timeout, MongoDB down) with
   the retryable `INVITE_FAILED`; only a chat that doesn't exist is `INVALID_CHAT_ID`.
   `GetChat` now returns `ErrChatNotFound` for a missing chat.
@@ -101,13 +105,6 @@ declining a group invite. The full list is in
   an `X-Stats-Token` header that matches the new `STATS_TOKEN` setting, and it is off while
   that is unset. Every refusal is `404`. The reply no longer lists the Redis channels, which
   named every online user and active chat. `render.yaml` asks Render to generate the token.
-- **#9 (PR #66):** joining a group needs an invite code that is stored on that group, not deleted
-  and not expired. Before, any code that decrypted worked, and the key is public (#15). A
-  connection now follows only chats that list the user in `participants`, so `chats`
-  entries planted by forged codes before the fix give no live messages. Codes that can't
-  be decoded return 400 on every invite route. Joining twice returns 409 instead of 500,
-  and retrying a join that failed halfway finishes it. The code is carried over from
-  PR #12, which branched before the docs rewrite. The code review found #67, #68 and #69.
 
 ## How to build, run, test
 
@@ -180,7 +177,7 @@ There are 40 open issues. Where each risk sits in the code: [architecture-overvi
 | Live connections | The server can leak resources or stall under load, missed live messages can't be detected, and open connections miss new chats, and a restart of a running hub doubles its loops | #20, #21, #22, #43, #49, #54, #55, #79 |
 | Chat access | Some replies reveal whether a chat exists | #59 |
 | Groups | Members are never asked to accept, live delivery doesn't match who is in the group, and the size limit isn't enforced | #5, #14, #16, #17, #28, #68 |
-| Invite codes | Anyone can decrypt a code, the invite endpoints lack permission checks, and entries left by forged joins before #9 was fixed are still stored | #15, #29, #30, #69 |
+| Invite codes | The invite endpoints lack permission checks, and entries left by forged joins before #9 was fixed are still stored | #29, #30, #69 |
 | Accounts | Deleting an account leaves old references, emails are case-sensitive, and usernames aren't unique | #35, #36 |
 | Contacts and blocking | Blocks aren't enforced in chats, your contacts list includes people you blocked, and blocks written during a deploy can be missed | #27, #38, #39, #62, #63 |
 | Online status and privacy | Online status is unreliable, and privacy settings aren't applied | #31, #32 |
