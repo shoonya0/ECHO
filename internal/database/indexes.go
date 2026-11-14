@@ -21,10 +21,20 @@ type collectionIndexes struct {
 
 // indexSpecs lists the secondary indexes each collection needs, keyed by the
 // queries that use them. It is a slice so collections are always built in the
-// same order. The chats collection has none: its lookups either filter on _id
-// or on the dynamic participants.<userID> keys, which cannot be indexed with a
-// fixed key.
+// same order. Most chats lookups filter on _id or on the dynamic
+// participants.<userID> keys, which cannot be indexed with a fixed key.
 var indexSpecs = []collectionIndexes{
+	{
+		coll: constants.ChatColl,
+		models: []mongo.IndexModel{
+			// Invite routes find the group by its stored code (#15). Not unique:
+			// codes are 16 random bytes, and most chats have no codes at all.
+			{
+				Keys:    bson.D{{Key: "inviteCode.inviteCode", Value: 1}},
+				Options: options.Index().SetName("inviteCode.inviteCode_1"),
+			},
+		},
+	},
 	{
 		coll: constants.MessageColl,
 		models: []mongo.IndexModel{
