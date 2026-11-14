@@ -74,6 +74,17 @@ Details: [rest-api.md](../../_docs/rest-api.md#the-basics),
 
 Details: [rest-api.md](../../_docs/rest-api.md#groups).
 
+## Removing group members (#28)
+
+- `remove_user` refuses to remove the group's owner unless the owner sends it: the reply is
+  `PERMISSION_DENIED` and nobody in the request is removed. Hide "Remove" on the owner for
+  admins.
+- If your role or the group changed while the request ran, the reply is also
+  `PERMISSION_DENIED`. Reload the group before retrying.
+- Listing yourself among the users no longer takes the group off your own chat list.
+
+Details: [websocket-requests.md](../../_docs/websocket-requests.md#remove_user).
+
 ## WebSocket limits (#40)
 
 | Server behaviour | What the app should do |

@@ -14,7 +14,7 @@ and with a link to exactly one feature state.md. Updated by /close-increment and
 - **Feature:** none yet · #28 on `fix/28-remove-member-rules`: an admin can't remove the
   owner, `remove_user` no longer drops the actor's own chat entry, and the role check is
   part of the write. Still to do: confirm #72 on Render with a message saved before PR #74
-- **Next step:** failing test, fix, verify, PR, then ask before merging
+- **Next step:** verify, push, open the PR, then ask before merging (it deploys to Render)
 - **Updated:** 2026-11-14 on `fix/28-remove-member-rules`
 
 ## Where things stand
@@ -172,7 +172,7 @@ There are 37 open issues. Where each risk sits in the code: [architecture-overvi
 |---|---|---|
 | Live connections | The server can leak resources or stall under load, missed live messages can't be detected, and open connections miss new chats, and a restart of a running hub doubles its loops | #20, #21, #22, #43, #49, #54, #55, #79 |
 | Chat access | Some replies reveal whether a chat exists | #59 |
-| Groups | Members are never asked to accept, live delivery doesn't match who is in the group, and the size limit isn't enforced | #5, #14, #16, #17, #28, #68 |
+| Groups | Members are never asked to accept, live delivery doesn't match who is in the group, and the size limit isn't enforced | #5, #14, #16, #17, #68 |
 | Invite codes | The invite endpoints lack permission checks, and entries left by forged joins before #9 was fixed are still stored | #30, #69 |
 | Accounts | Deleting an account leaves old references, emails are case-sensitive, and usernames aren't unique | #35, #36 |
 | Contacts and blocking | Blocks aren't enforced in chats, your contacts list includes people you blocked, and blocks written during a deploy can be missed | #27, #38, #39, #62, #63 |

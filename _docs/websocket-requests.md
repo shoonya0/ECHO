@@ -168,9 +168,13 @@ Removes people from a group. You must be the group's `owner` or an `admin`.
 }
 ```
 
-- People not in the group, and you yourself, are skipped.
+- People not in the group, and you yourself, are skipped. You keep your own place and chat
+  list entry (#28).
+- Only the `owner` can remove an `owner`. If an admin names the owner, the request gets
+  `PERMISSION_DENIED` and nobody is removed. It also gets `PERMISSION_DENIED` if your role
+  or the group changed while it ran; read the group again before retrying.
 - Removed people lose their place in the group and the chat is taken off their chat list.
-- Removed people keep getting live events until they reconnect (#14). See also #28.
+- Removed people keep getting live events until they reconnect (#14).
 
 **You get:** a `response` with `action: "users_removed"`, `chatId` and `removedUsers`. That
 list holds every valid ID you sent, including people who were skipped. A `chat_updated`
