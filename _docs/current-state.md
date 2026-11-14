@@ -1,6 +1,6 @@
 # ECHO: current state
 
-A one-page snapshot of where the project stands. Last checked on 2026-11-13 at `2999955`
+A one-page snapshot of where the project stands. Last checked on 2026-11-14 at `db27a81`
 on `main`. To learn what the product does, read
 [product-overview.md](./product-overview.md). For the code, read
 [architecture-overview.md](./architecture-overview.md).
@@ -11,12 +11,11 @@ on `main`. To learn what the product does, read
 and with a link to exactly one feature state.md. Updated by /close-increment and
 /feature-docs update. -->
 
-- **Feature:** none yet (set by `/feature-docs start`) · #39 part 1 on
-  `fix/39-contact-limit-zero`: `limit=0` no longer crashes the contact lists; `limit` is
-  kept in 1..100 ([REST](./rest-api.md#contacts)). Part 2, cutting the lists to `limit`,
-  needs a cursor and stays open. Still to do: confirm #72 on Render (message from before PR #74)
+- **Feature:** none yet (set by `/feature-docs start`) · #84 on `fix/84-auth-log-user-id`:
+  the auth middleware logs the user's ID only, not the email and username. Still to do:
+  confirm #72 on Render with a message saved before PR #74
 - **Next step:** verify, push, open the PR, then ask before merging (it deploys to Render)
-- **Updated:** 2026-11-14 on `fix/39-contact-limit-zero`
+- **Updated:** 2026-11-14 on `fix/84-auth-log-user-id`
 
 ## Where things stand
 
@@ -31,6 +30,9 @@ declining a group invite. The full list is in
 
 ## Recently finished
 
+- **#39 part 1 (PR #85):** `limit=0` no longer crashes the contact lists with a `500`;
+  `limit` is kept in 1..100 ([REST](./rest-api.md#contacts)). Still open on #39: the lists
+  aren't cut to `limit`, which needs a cursor first.
 - **#65 (PR #82):** signup logs the new user's ID only. Before, it logged the whole user:
   the email on the server, and also the password hash under the text formatter. Checking
   the other log lines found #84 (email in a Debug line); the #41 review found #83.
@@ -108,11 +110,6 @@ declining a group invite. The full list is in
   [scripts/audits/34-reused-signup-ids.js](../scripts/audits/34-reused-signup-ids.js)
   (PR #73) ran on production on 2026-11-12: 1 user checked, 0 flagged, 0 it couldn't
   judge, so no account took over an ID.
-- **#26 (PR #61):** blocks are one-sided. They are stored in `contactInfo.blocked` (shown to the
-  blocker) and `contactInfo.blockedBy` (never sent to clients), so only the blocker can lift
-  a block and the blocked person can't see it. Blocking twice, or unblocking someone you
-  didn't block, now returns 409. Old blocks become mutual blocks when the server starts. A
-  retried block or unblock repairs a half-finished one. The code review found #62 and #63.
 
 ## How to build, run, test
 
@@ -186,7 +183,7 @@ There are 41 open issues. Where each risk sits in the code: [architecture-overvi
 | Chat access | Some replies reveal whether a chat exists | #59 |
 | Groups | Members are never asked to accept, live delivery doesn't match who is in the group, and the size limit isn't enforced | #5, #14, #16, #17, #28, #68 |
 | Invite codes | Anyone can decrypt a code, the invite endpoints lack permission checks, and entries left by forged joins before #9 was fixed are still stored | #15, #29, #30, #69 |
-| Accounts | Deleting an account leaves old references, emails are case-sensitive, usernames aren't unique, and a Debug log line holds the email | #35, #36, #84 |
+| Accounts | Deleting an account leaves old references, emails are case-sensitive, and usernames aren't unique | #35, #36 |
 | Contacts and blocking | Blocks aren't enforced in chats, your contacts list includes people you blocked, and blocks written during a deploy can be missed | #27, #38, #39, #62, #63 |
 | Online status and privacy | Online status is unreliable, and privacy settings aren't applied | #31, #32 |
 | Messages and data | Reaction counts drift, history doesn't show who reacted by name, writes can half-finish, and some lists grow without limit | #25, #37, #42, #75 |
