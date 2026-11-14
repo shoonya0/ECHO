@@ -1,6 +1,6 @@
 # ECHO: current state
 
-A one-page snapshot of where the project stands. Last checked on 2026-11-14 at `c3a17af`
+A one-page snapshot of where the project stands. Last checked on 2026-11-14 at `ba62d09`
 on `main`. To learn what the product does, read
 [product-overview.md](./product-overview.md). For the code, read
 [architecture-overview.md](./architecture-overview.md).
@@ -11,10 +11,10 @@ on `main`. To learn what the product does, read
 and with a link to exactly one feature state.md. Updated by /close-increment and
 /feature-docs update. -->
 
-- **Feature:** none yet · #83 on `fix/83-invite-getchat-error`: a failed `invite_user`
-  chat lookup is `INVITE_FAILED`, not "Chat not found". Still to do: confirm #72 on Render
+- **Feature:** none yet · #88 on `fix/88-ws-connect-log-user-id`: the WebSocket connect
+  log names the user by ID only. Still to do: confirm #72 on Render
 - **Next step:** verify, push, open the PR, then ask before merging (it deploys to Render)
-- **Updated:** 2026-11-14 on `fix/83-invite-getchat-error`
+- **Updated:** 2026-11-14 on `fix/88-ws-connect-log-user-id`
 
 ## Where things stand
 
@@ -29,9 +29,12 @@ declining a group invite. The full list is in
 
 ## Recently finished
 
+- **#83 (PR #87):** `invite_user` answers a failed chat lookup (timeout, MongoDB down) with
+  the retryable `INVITE_FAILED`; only a chat that doesn't exist is `INVALID_CHAT_ID`.
+  `GetChat` now returns `ErrChatNotFound` for a missing chat.
 - **#84 (PR #86):** the auth middleware logs the user's ID only, not the email and
   username it wrote at Debug on every request. The WebSocket connect log still holds the
-  username at Info (no issue filed yet).
+  username at Info (#88).
 - **#39 part 1 (PR #85):** `limit=0` no longer crashes the contact lists with a `500`;
   `limit` is kept in 1..100 ([REST](./rest-api.md#contacts)). Still open on #39: the lists
   aren't cut to `limit`, which needs a cursor first.
@@ -105,13 +108,6 @@ declining a group invite. The full list is in
   be decoded return 400 on every invite route. Joining twice returns 409 instead of 500,
   and retrying a join that failed halfway finishes it. The code is carried over from
   PR #12, which branched before the docs rewrite. The code review found #67, #68 and #69.
-- **#34 (PR #64):** signup now always generates the user ID on the server. An `_id` in the
-  request is ignored, so nobody can sign up with a deleted user's ID and take over their
-  chats. The reply now returns the stored ID instead of `000000000000000000000000`. The
-  code review found #65. The audit
-  [scripts/audits/34-reused-signup-ids.js](../scripts/audits/34-reused-signup-ids.js)
-  (PR #73) ran on production on 2026-11-12: 1 user checked, 0 flagged, 0 it couldn't
-  judge, so no account took over an ID.
 
 ## How to build, run, test
 
