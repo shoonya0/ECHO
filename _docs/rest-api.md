@@ -98,8 +98,9 @@ All of these start with `users/contacts`.
 | `POST /favorite/:userId` | Adds to favorites |
 | `DELETE /favorite/:userId` | Removes from favorites |
 
-The five lists accept `limit` (default 10). Don't send `limit=0`: it crashes the request
-(#39).
+The five lists accept `limit`, 1 to 100 (default 10). A value below 1 or not a number
+counts as 10, and anything over 100 as 100. The lists aren't cut to `limit` yet: you get
+every entry, and `pagination.limit` only echoes the value (#39).
 
 ## Chats
 
