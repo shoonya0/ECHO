@@ -42,7 +42,7 @@ Checked against the code at `17ec08b`. Issue numbers were last updated on 2026-1
 | Contacts | Send, accept and decline requests; remove; favorites; block and unblock | Partly works | Blocks aren't enforced in chats (#27). Also #38, #39, #62, #63. |
 | Direct chats | Start a chat with one person | Works | Someone already online gets no live messages from a new chat until they reconnect (#49). |
 | Group chats | Create a group; add and remove members | Partly works | Added members are never asked to accept (#5) and get no live messages (#17). Removed members keep getting them until they reconnect (#14). Also #16, #28, #68. |
-| Invite codes | Create, list, delete and send codes; join with a code | Partly works | Anyone can decrypt a code and read the creator's ID and name (#15). Also #29, #30. |
+| Invite codes | Create, list, delete and send codes; join with a code | Partly works | Some invite routes lack permission checks (#30), and one shows the wrong code's users (#29). |
 | Live messages | Send and receive instantly | Works | Missed messages can't be detected (#43). |
 | Message history | Load old messages, page by page | Works | |
 | Typing, read receipts, reactions | See who is typing, who has read a message, and emoji reactions | Partly works | Reaction counts can drift (#25). History shows who reacted by ID only, not by name (#75). |
@@ -80,7 +80,7 @@ Checked against the code at `17ec08b`. Issue numbers were last updated on 2026-1
 - **Hub statistics** are for operators. They need the server's `STATS_TOKEN` as well as a
   login, and they show counts only.
 
-Open security bugs: #15, #59.
+Open security bugs: #59.
 
 ## Performance
 

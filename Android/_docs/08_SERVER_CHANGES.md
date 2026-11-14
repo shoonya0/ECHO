@@ -61,6 +61,17 @@ Details: [WEBSOCKET_PROTOCOL.md](../../_docs/WEBSOCKET_PROTOCOL.md#stay-connecte
 Details: [rest-api.md](../../_docs/rest-api.md#the-basics),
 [WEBSOCKET_PROTOCOL.md](../../_docs/WEBSOCKET_PROTOCOL.md#error-codes).
 
+## Invite codes (#15)
+
+- New invite codes are 32 random hex characters. Before, they were much longer and held the
+  group ID and the creator's ID and name, encrypted with a key anyone could read. Store and
+  show a code as an opaque string; don't parse it or assume its length.
+- Codes made before the change keep working until they expire (24 hours).
+- A code that isn't stored on any group now gets `400 Invalid invite` on every invite
+  route, not `200` or `500`.
+
+Details: [rest-api.md](../../_docs/rest-api.md#groups).
+
 ## WebSocket limits (#40)
 
 | Server behaviour | What the app should do |
