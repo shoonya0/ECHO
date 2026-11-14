@@ -1,6 +1,6 @@
 # ECHO: current state
 
-A one-page snapshot of where the project stands. Last checked on 2026-11-13 at `c20d168`
+A one-page snapshot of where the project stands. Last checked on 2026-11-13 at `2999955`
 on `main`. To learn what the product does, read
 [product-overview.md](./product-overview.md). For the code, read
 [architecture-overview.md](./architecture-overview.md).
@@ -11,11 +11,12 @@ on `main`. To learn what the product does, read
 and with a link to exactly one feature state.md. Updated by /close-increment and
 /feature-docs update. -->
 
-- **Feature:** none yet (set by `/feature-docs start`) · #65 on `fix/65-signup-log-user-id`:
-  signup logs the new user's ID only, not the whole user. Still to do: confirm #72 on
-  Render with a message saved before PR #74
+- **Feature:** none yet (set by `/feature-docs start`) · #39 part 1 on
+  `fix/39-contact-limit-zero`: `limit=0` no longer crashes the contact lists; `limit` is
+  kept in 1..100 ([REST](./rest-api.md#contacts)). Part 2, cutting the lists to `limit`,
+  needs a cursor and stays open. Still to do: confirm #72 on Render (message from before PR #74)
 - **Next step:** verify, push, open the PR, then ask before merging (it deploys to Render)
-- **Updated:** 2026-11-13 on `fix/65-signup-log-user-id`
+- **Updated:** 2026-11-14 on `fix/39-contact-limit-zero`
 
 ## Where things stand
 
@@ -30,6 +31,9 @@ declining a group invite. The full list is in
 
 ## Recently finished
 
+- **#65 (PR #82):** signup logs the new user's ID only. Before, it logged the whole user:
+  the email on the server, and also the password hash under the text formatter. Checking
+  the other log lines found #84 (email in a Debug line); the #41 review found #83.
 - **#41 (PR #81):** no REST or WebSocket reply carries internal error text. A `400`'s
   `error` names each field by its JSON path and rule (`password: min=8`), and
   `invite_user` answers with specific codes ([REST](./rest-api.md#the-basics),
@@ -109,9 +113,6 @@ declining a group invite. The full list is in
   a block and the blocked person can't see it. Blocking twice, or unblocking someone you
   didn't block, now returns 409. Old blocks become mutual blocks when the server starts. A
   retried block or unblock repairs a half-finished one. The code review found #62 and #63.
-- **#23 (PR #57):** typing, read receipts and reactions now refuse non-members with
-  `PERMISSION_DENIED`, checked in the service layer. `leave_chat` is refused unless the
-  connection is in the chat's room, and `mark_read` skips IDs from other chats.
 
 ## How to build, run, test
 
@@ -177,7 +178,7 @@ have no status, so the check must allow for that.
 
 ## Known issues and risks
 
-There are 40 open issues. Where each risk sits in the code: [architecture-overview.md](./architecture-overview.md#riskiest-areas).
+There are 41 open issues. Where each risk sits in the code: [architecture-overview.md](./architecture-overview.md#riskiest-areas).
 
 | Area | The problem, in short | Issues |
 |---|---|---|
@@ -185,12 +186,12 @@ There are 40 open issues. Where each risk sits in the code: [architecture-overvi
 | Chat access | Some replies reveal whether a chat exists | #59 |
 | Groups | Members are never asked to accept, live delivery doesn't match who is in the group, and the size limit isn't enforced | #5, #14, #16, #17, #28, #68 |
 | Invite codes | Anyone can decrypt a code, the invite endpoints lack permission checks, and entries left by forged joins before #9 was fixed are still stored | #15, #29, #30, #69 |
-| Accounts | Deleting an account leaves old references, emails are case-sensitive, and usernames aren't unique | #35, #36 |
+| Accounts | Deleting an account leaves old references, emails are case-sensitive, usernames aren't unique, and a Debug log line holds the email | #35, #36, #84 |
 | Contacts and blocking | Blocks aren't enforced in chats, your contacts list includes people you blocked, and blocks written during a deploy can be missed | #27, #38, #39, #62, #63 |
 | Online status and privacy | Online status is unreliable, and privacy settings aren't applied | #31, #32 |
 | Messages and data | Reaction counts drift, history doesn't show who reacted by name, writes can half-finish, and some lists grow without limit | #25, #37, #42, #75 |
 | Limits and errors | WebSocket limits are per connection, not per user, and `set_typing` still writes to MongoDB; no limits on login and signup | #40 |
-| WebSocket replies and events | Replies and events are inconsistent or leave out details, which affects the Android plan, and uppercase chat IDs lose live events | #47, #48, #50, #51, #60 |
+| WebSocket replies and events | Replies and events are inconsistent or leave out details, which affects the Android plan, uppercase chat IDs lose live events, and `invite_user` reports a database failure as "Chat not found" | #47, #48, #50, #51, #60, #83 |
 
 ## Next task
 
