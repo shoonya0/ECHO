@@ -69,6 +69,8 @@ Details: [rest-api.md](../../_docs/rest-api.md#the-basics),
 - Codes made before the change keep working until they expire (24 hours).
 - A code that isn't stored on any group now gets `400 Invalid invite` on every invite
   route, not `200` or `500`.
+- Sending a deleted code to someone (`POST /groups/invites/:code/:userID/send`) now gets
+  `400 Invalid invite` too, as an expired one already did (#91).
 
 Details: [rest-api.md](../../_docs/rest-api.md#groups).
 

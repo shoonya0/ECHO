@@ -171,8 +171,9 @@ permission checks on these routes.
   `pending`. If an earlier join failed halfway, retrying it finishes the join and returns
   `409`.
 - Every invite route returns `400 Invalid invite` for a code that isn't stored on any
-  group. The routes other than joining still accept a deleted or expired code as if it
-  were live, and don't check your role (#30).
+  group. Sending a code to someone returns `400` if the code is deleted or expired (#91).
+  Deleting a code and listing who joined with it still accept a deleted or expired code,
+  and none of these routes check your role (#30).
 
 ## Hub statistics
 

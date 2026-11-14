@@ -1109,12 +1109,13 @@ func GetJoinedUsersByInvite(ctx context.Context, userID bson.ObjectID, inviteID 
 }
 
 func SendInviteToUser(ctx context.Context, actingUserID bson.ObjectID, inviteID string, targetUserID bson.ObjectID, creatingGroup bool) error {
-	chatID, expireTime, err := findInvite(ctx, inviteID)
+	chatID, invite, err := findInvite(ctx, inviteID)
 	if err != nil {
 		return err
 	}
 
-	if expireTime.Before(time.Now()) {
+	// A deleted or expired code can't be sent (#91).
+	if invite.Deleted || invite.ExpiredDate.Before(time.Now()) {
 		return fmt.Errorf("%w", ErrInvalidInvite)
 	}
 
@@ -1279,16 +1280,16 @@ func GetAllInvitesOfUser(ctx context.Context, userID bson.ObjectID) ([]models.Ch
 const maxInviteCodeLen = 512
 
 // findInvite returns the chat that stores inviteCode and that code's stored
-// expiry. Codes are opaque (#15): nothing is read from the code itself, so a
+// entry. Codes are opaque (#15): nothing is read from the code itself, so a
 // code that isn't stored on a chat, or isn't hex at all, is ErrInvalidInvite.
-// A deleted code is still found: JoinGroupByInvite refuses it in its update
-// filter, but SendInviteToUser doesn't check it yet.
-func findInvite(ctx context.Context, inviteCode string) (bson.ObjectID, time.Time, error) {
+// A deleted or expired code is still found: JoinGroupByInvite refuses it in its
+// update filter, and SendInviteToUser checks the returned entry.
+func findInvite(ctx context.Context, inviteCode string) (bson.ObjectID, models.InviteCodeEmbed, error) {
 	if inviteCode == "" || len(inviteCode) > maxInviteCodeLen {
-		return bson.ObjectID{}, time.Time{}, fmt.Errorf("%w: bad invite code length", ErrInvalidInvite)
+		return bson.ObjectID{}, models.InviteCodeEmbed{}, fmt.Errorf("%w: bad invite code length", ErrInvalidInvite)
 	}
 	if _, err := hex.DecodeString(inviteCode); err != nil {
-		return bson.ObjectID{}, time.Time{}, fmt.Errorf("%w: invite code is not hex", ErrInvalidInvite)
+		return bson.ObjectID{}, models.InviteCodeEmbed{}, fmt.Errorf("%w: invite code is not hex", ErrInvalidInvite)
 	}
 
 	var chat struct {
@@ -1300,14 +1301,14 @@ func findInvite(ctx context.Context, inviteCode string) (bson.ObjectID, time.Tim
 		options.FindOne().SetProjection(bson.M{"_id": 1, "inviteCode.$": 1}),
 	).Decode(&chat)
 	if errors.Is(err, mongo.ErrNoDocuments) {
-		return bson.ObjectID{}, time.Time{}, fmt.Errorf("%w: invite code not found", ErrInvalidInvite)
+		return bson.ObjectID{}, models.InviteCodeEmbed{}, fmt.Errorf("%w: invite code not found", ErrInvalidInvite)
 	}
 	if err != nil {
-		return bson.ObjectID{}, time.Time{}, fmt.Errorf("failed to find invite: %w", err)
+		return bson.ObjectID{}, models.InviteCodeEmbed{}, fmt.Errorf("failed to find invite: %w", err)
 	}
 	if len(chat.InviteCode) == 0 {
-		return bson.ObjectID{}, time.Time{}, fmt.Errorf("%w: invite code not found", ErrInvalidInvite)
+		return bson.ObjectID{}, models.InviteCodeEmbed{}, fmt.Errorf("%w: invite code not found", ErrInvalidInvite)
 	}
 
-	return chat.ID, chat.InviteCode[0].ExpiredDate, nil
+	return chat.ID, chat.InviteCode[0], nil
 }
