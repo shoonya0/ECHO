@@ -1,6 +1,6 @@
 # ECHO: current state
 
-A one-page snapshot of where the project stands. Last checked on 2026-11-14 at `0751845`
+A one-page snapshot of where the project stands. Last checked on 2026-11-14 at `e081f99`
 on `main`. To learn what the product does, read
 [product-overview.md](./product-overview.md). For the code, read
 [architecture-overview.md](./architecture-overview.md).
@@ -11,12 +11,11 @@ on `main`. To learn what the product does, read
 and with a link to exactly one feature state.md. Updated by /close-increment and
 /feature-docs update. -->
 
-- **Feature:** none yet · #91 on `fix/91-deleted-invite-send`: sending a deleted invite
-  code returns `400` instead of pushing a pending invitation for it
-  ([REST](./rest-api.md#groups)). Still to do: confirm #72 on Render with a message saved
-  before PR #74
-- **Next step:** verify, push, open the PR, then ask before merging (it deploys to Render)
-- **Updated:** 2026-11-14 on `fix/91-deleted-invite-send`
+- **Feature:** none yet · #29 on `fix/29-joined-users-by-invite`: the joined-users route
+  returns the list of the invite that was asked for. Still to do: confirm #72 on Render
+  with a message saved before PR #74
+- **Next step:** failing test, fix, verify, PR, then ask before merging
+- **Updated:** 2026-11-14 on `fix/29-joined-users-by-invite`
 
 ## Where things stand
 
@@ -31,6 +30,8 @@ declining a group invite. The full list is in
 
 ## Recently finished
 
+- **#91 (PR #92):** sending a deleted invite code returns `400` instead of giving the
+  target user a pending invitation for it.
 - **#15 (PR #90):** invite codes are 16 random bytes (32 hex characters) with nothing
   inside; the AES key that was in the repo is gone. The invite routes find the group by
   the stored code (indexed), so old codes work until they expire, and a code that isn't
@@ -176,14 +177,14 @@ have no status, so the check must allow for that.
 
 ## Known issues and risks
 
-There are 38 open issues. Where each risk sits in the code: [architecture-overview.md](./architecture-overview.md#riskiest-areas).
+There are 37 open issues. Where each risk sits in the code: [architecture-overview.md](./architecture-overview.md#riskiest-areas).
 
 | Area | The problem, in short | Issues |
 |---|---|---|
 | Live connections | The server can leak resources or stall under load, missed live messages can't be detected, and open connections miss new chats, and a restart of a running hub doubles its loops | #20, #21, #22, #43, #49, #54, #55, #79 |
 | Chat access | Some replies reveal whether a chat exists | #59 |
 | Groups | Members are never asked to accept, live delivery doesn't match who is in the group, and the size limit isn't enforced | #5, #14, #16, #17, #28, #68 |
-| Invite codes | The invite endpoints lack permission checks, a deleted code can still be sent, and entries left by forged joins before #9 was fixed are still stored | #29, #30, #69, #91 |
+| Invite codes | The invite endpoints lack permission checks, and entries left by forged joins before #9 was fixed are still stored | #29, #30, #69 |
 | Accounts | Deleting an account leaves old references, emails are case-sensitive, and usernames aren't unique | #35, #36 |
 | Contacts and blocking | Blocks aren't enforced in chats, your contacts list includes people you blocked, and blocks written during a deploy can be missed | #27, #38, #39, #62, #63 |
 | Online status and privacy | Online status is unreliable, and privacy settings aren't applied | #31, #32 |
