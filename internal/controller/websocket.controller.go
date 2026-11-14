@@ -399,6 +399,10 @@ func handleJoinChat(ctx context.Context, client *models.Client, request models.M
 	}
 
 	chat, err := services.CreateDirectChat(ctx, targetUserID) // create a new chat if it doesn't exist
+	if errors.Is(err, services.ErrSelfDirectChat) {
+		sendErrorResponse(client, request.RequestID, "INVALID_USER_ID", "Cannot open a direct chat with yourself")
+		return
+	}
 	if err != nil {
 		log.WithError(err).Error("Failed to create chat")
 		sendErrorResponse(client, request.RequestID, "CHAT_CREATION_FAILED", "Failed to create chat")
