@@ -205,6 +205,11 @@ func CreateDirectChat(ctx context.Context, targetUserID bson.ObjectID) (*models.
 	if user == (models.LoginUserResponse{}) {
 		return nil, fmt.Errorf("invalid user data")
 	}
+	// A chat with yourself would have one participant: both entries share
+	// one map key (#38).
+	if user.ID == targetUserID {
+		return nil, fmt.Errorf("%w", ErrSelfDirectChat)
+	}
 
 	filter := bson.M{
 		"chatType": "direct",
