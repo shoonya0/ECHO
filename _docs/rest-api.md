@@ -145,7 +145,7 @@ Only participants can read a chat. Everyone else gets `404 Chat not found`.
 | `GET groups/:groupID/invites` | Lists a group's invite codes |
 | `GET groups/invites` | Lists invites sent to you |
 | `DELETE groups/invites/:inviteID` | Deletes an invite code |
-| `GET groups/invites/:inviteID/joined` | Shows who joined with a code (see #29) |
+| `GET groups/invites/:inviteID/joined` | Shows who joined with that code |
 | `POST groups/invites/:inviteID/:userID/send` | Sends a code to someone |
 | `POST groups/join/:inviteCode` | Joins a group with a code |
 
