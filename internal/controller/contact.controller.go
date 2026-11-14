@@ -30,13 +30,14 @@ func authUserID(ctx *gin.Context) (bson.ObjectID, bool) {
 	return id, true
 }
 
-// parseLimit reads the "limit" query parameter, defaulting to 10 if absent or unparseable.
+// parseLimit reads the "limit" query parameter: 10 when absent, unparseable
+// or below 1, and at most 100 (#39).
 func parseLimit(ctx *gin.Context) int {
 	limit, err := strconv.Atoi(ctx.Query("limit"))
-	if err != nil {
+	if err != nil || limit < 1 {
 		return 10
 	}
-	return limit
+	return min(limit, 100)
 }
 
 // paramObjectID returns the ObjectID for a named path parameter.

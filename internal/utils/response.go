@@ -34,7 +34,12 @@ func ErrorResponse(c *gin.Context, statusCode int, message string, err interface
 }
 
 // PaginatedResponse sends a standardized paginated response
+// A limit below 1 reports 0 pages instead of dividing by zero (#39).
 func PaginatedResponse(c *gin.Context, message string, data interface{}, limit, total int) {
+	totalPages := 0
+	if limit > 0 {
+		totalPages = (total + limit - 1) / limit
+	}
 	response := APIResponse{
 		Success: true,
 		Message: message,
@@ -43,7 +48,7 @@ func PaginatedResponse(c *gin.Context, message string, data interface{}, limit, 
 			"pagination": map[string]interface{}{
 				"limit":       limit,
 				"total":       total,
-				"total_pages": (total + limit - 1) / limit,
+				"total_pages": totalPages,
 			},
 		},
 	}
