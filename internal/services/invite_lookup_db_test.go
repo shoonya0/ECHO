@@ -92,6 +92,19 @@ func TestInviteRoutesFindTheGroupByTheStoredCode(t *testing.T) {
 		}
 	})
 
+	// #91: sending a deleted code used to succeed and push a pending
+	// invitation for the revoked code to the target user.
+	t.Run("send a deleted code", func(t *testing.T) {
+		err := SendInviteToUser(ctx, owner, opaque, target, false)
+		if !errors.Is(err, ErrInvalidInvite) {
+			t.Fatalf("err = %v, want ErrInvalidInvite", err)
+		}
+		n, err := users.CountDocuments(ctx, bson.M{"_id": target, "chatInvitations.token": opaque})
+		if err != nil || n != 0 {
+			t.Fatalf("target holds the deleted code: n=%d err=%v", n, err)
+		}
+	})
+
 	for _, code := range []string{"0123456789abcdef0123456789abcdef", "not-hex", ""} {
 		t.Run("unknown code "+code, func(t *testing.T) {
 			if err := JoinGroupByInvite(ctx, bson.NewObjectID(), code); !errors.Is(err, ErrInvalidInvite) {
