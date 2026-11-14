@@ -1,6 +1,6 @@
 # ECHO: current state
 
-A one-page snapshot of where the project stands. Last checked on 2026-11-14 at `6fb1165`
+A one-page snapshot of where the project stands. Last checked on 2026-11-14 at `9177e93`
 on `main`. To learn what the product does, read
 [product-overview.md](./product-overview.md). For the code, read
 [architecture-overview.md](./architecture-overview.md).
@@ -11,11 +11,11 @@ on `main`. To learn what the product does, read
 and with a link to exactly one feature state.md. Updated by /close-increment and
 /feature-docs update. -->
 
-- **Feature:** none yet · #28 on `fix/28-remove-member-rules`: an admin can't remove the
-  owner, `remove_user` no longer drops the actor's own chat entry, and the role check is
-  part of the write. Still to do: confirm #72 on Render with a message saved before PR #74
-- **Next step:** verify, push, open the PR, then ask before merging (it deploys to Render)
-- **Updated:** 2026-11-14 on `fix/28-remove-member-rules`
+- **Feature:** none yet · nothing in progress. #28 merged in PR #94. Still to do: confirm
+  #72 on Render with a message saved before PR #74
+- **Next step:** pick the next issue from [Known issues](#known-issues-and-risks); #30 needs
+  a decision first: who may create and delete invites
+- **Updated:** 2026-11-14 on `main` at `9177e93`
 
 ## Where things stand
 
@@ -30,6 +30,12 @@ declining a group invite. The full list is in
 
 ## Recently finished
 
+- **#28 (PR #94):** only the owner can remove the owner (also when the owner is only
+  stored as `ownerId`); a request naming the owner removes nobody. Listing yourself no
+  longer drops the group from your chat list, `removedUsers` lists only the people removed,
+  and the role is re-checked in the write ([requests](./websocket-requests.md#remove_user),
+  [app changes](../Android/_docs/08_SERVER_CHANGES.md)). The code review's other points
+  (a race reported as `PERMISSION_DENIED`, the second write not checked, #37) were left.
 - **#29 (PR #93):** the joined-users route returns the list of the code that was asked
   for, not the group's first code.
 - **#91 (PR #92):** sending a deleted invite code returns `400` instead of giving the
@@ -166,7 +172,7 @@ have no status, so the check must allow for that.
 
 ## Known issues and risks
 
-There are 37 open issues. Where each risk sits in the code: [architecture-overview.md](./architecture-overview.md#riskiest-areas).
+There are 36 open issues. Where each risk sits in the code: [architecture-overview.md](./architecture-overview.md#riskiest-areas).
 
 | Area | The problem, in short | Issues |
 |---|---|---|
