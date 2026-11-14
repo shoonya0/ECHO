@@ -1,6 +1,6 @@
 # ECHO: current state
 
-A one-page snapshot of where the project stands. Last checked on 2026-11-14 at `e081f99`
+A one-page snapshot of where the project stands. Last checked on 2026-11-14 at `6fb1165`
 on `main`. To learn what the product does, read
 [product-overview.md](./product-overview.md). For the code, read
 [architecture-overview.md](./architecture-overview.md).
@@ -11,11 +11,11 @@ on `main`. To learn what the product does, read
 and with a link to exactly one feature state.md. Updated by /close-increment and
 /feature-docs update. -->
 
-- **Feature:** none yet · #29 on `fix/29-joined-users-by-invite`: the joined-users route
-  returns the list of the invite that was asked for. Still to do: confirm #72 on Render
-  with a message saved before PR #74
-- **Next step:** verify, push, open the PR, then ask before merging (it deploys to Render)
-- **Updated:** 2026-11-14 on `fix/29-joined-users-by-invite`
+- **Feature:** none yet · #28 on `fix/28-remove-member-rules`: an admin can't remove the
+  owner, `remove_user` no longer drops the actor's own chat entry, and the role check is
+  part of the write. Still to do: confirm #72 on Render with a message saved before PR #74
+- **Next step:** failing test, fix, verify, PR, then ask before merging
+- **Updated:** 2026-11-14 on `fix/28-remove-member-rules`
 
 ## Where things stand
 
@@ -30,6 +30,8 @@ declining a group invite. The full list is in
 
 ## Recently finished
 
+- **#29 (PR #93):** the joined-users route returns the list of the code that was asked
+  for, not the group's first code.
 - **#91 (PR #92):** sending a deleted invite code returns `400` instead of giving the
   target user a pending invitation for it.
 - **#15 (PR #90):** invite codes are 16 random bytes (32 hex characters) with nothing
@@ -99,15 +101,6 @@ declining a group invite. The full list is in
   during a deploy) is repaired when someone first reacts to it, so there is no startup
   migration. Old messages nobody has reacted to still show `reactions: null` in history
   ([rest-api.md](./rest-api.md#messages)). The live check found #75.
-- **#58 (PR #71):** `add_reaction` and `remove_reaction` refuse an emoji that has `.`,
-  `$`, a NUL character or invalid UTF-8, isn't made of emoji characters, or is over 64
-  bytes, with `INVALID_REQUEST`, before anything is written. Before, a member could send
-  `ok.details` and wipe that part of a reaction for everyone. Every standard emoji passes,
-  including joined ones such as 👩‍💻; the first 10-byte limit refused 1,615 of the 3,963.
-  A live check found a separate bug, filed as #72: every message is saved with
-  `reactions: null`, so adding a reaction to a real message always fails
-  (`REACTION_FAILED`). The local database has no stored reactions at all, so nothing there
-  was damaged. The code review moved the #34 audit script to PR #73.
 
 ## How to build, run, test
 
@@ -173,7 +166,7 @@ have no status, so the check must allow for that.
 
 ## Known issues and risks
 
-There are 38 open issues. Where each risk sits in the code: [architecture-overview.md](./architecture-overview.md#riskiest-areas).
+There are 37 open issues. Where each risk sits in the code: [architecture-overview.md](./architecture-overview.md#riskiest-areas).
 
 | Area | The problem, in short | Issues |
 |---|---|---|
