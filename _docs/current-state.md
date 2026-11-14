@@ -11,10 +11,12 @@ on `main`. To learn what the product does, read
 and with a link to exactly one feature state.md. Updated by /close-increment and
 /feature-docs update. -->
 
-- **Feature:** none yet · nothing in progress. #15 merged in PR #90. Still to do: confirm
-  #72 on Render with a message saved before PR #74
-- **Next step:** pick the next issue from [Known issues](#known-issues-and-risks)
-- **Updated:** 2026-11-14 on `main` at `0751845`
+- **Feature:** none yet · #91 on `fix/91-deleted-invite-send`: sending a deleted invite
+  code returns `400` instead of pushing a pending invitation for it
+  ([REST](./rest-api.md#groups)). Still to do: confirm #72 on Render with a message saved
+  before PR #74
+- **Next step:** verify, push, open the PR, then ask before merging (it deploys to Render)
+- **Updated:** 2026-11-14 on `fix/91-deleted-invite-send`
 
 ## Where things stand
 
