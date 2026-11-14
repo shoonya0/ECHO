@@ -1096,12 +1096,14 @@ func GetJoinedUsersByInvite(ctx context.Context, userID bson.ObjectID, inviteID 
 
 	chat := models.Chat{}
 
-	err = database.DB.Collection(string(constants.ChatColl)).FindOne(ctx, filter, options.FindOne().SetProjection(bson.M{"inviteCode": 1})).Decode(&chat)
+	// "inviteCode.$" returns only the entry that matched inviteID, not the
+	// chat's first invite (#29).
+	err = database.DB.Collection(string(constants.ChatColl)).FindOne(ctx, filter, options.FindOne().SetProjection(bson.M{"inviteCode.$": 1})).Decode(&chat)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get joined users by invite: %w", err)
 	}
 
-	if len(chat.InviteCode) == 0 {
+	if len(chat.InviteCode) == 0 || chat.InviteCode[0].UserIDs == nil {
 		return []bson.ObjectID{}, nil
 	}
 

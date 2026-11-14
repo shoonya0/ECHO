@@ -69,6 +69,18 @@ func TestInviteRoutesFindTheGroupByTheStoredCode(t *testing.T) {
 		}
 	})
 
+	// #29: the route returned the chat's first invite's list (opaque's
+	// [joiner]) for every code. Nobody joined with legacy.
+	t.Run("joined users of the second code", func(t *testing.T) {
+		ids, err := GetJoinedUsersByInvite(ctx, owner, legacy)
+		if err != nil {
+			t.Fatalf("GetJoinedUsersByInvite: %v", err)
+		}
+		if len(ids) != 0 {
+			t.Fatalf("joined = %v, want none", ids)
+		}
+	})
+
 	t.Run("send a code in the old format", func(t *testing.T) {
 		if err := SendInviteToUser(ctx, owner, legacy, target, false); err != nil {
 			t.Fatalf("SendInviteToUser: %v", err)
