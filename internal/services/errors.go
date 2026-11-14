@@ -19,6 +19,8 @@ var (
 	ErrAlreadyBlocked         = errors.New("user is already blocked")
 	ErrAlreadyUnblocked       = errors.New("user is already unblocked")
 	ErrSelfBlock              = errors.New("cannot block yourself")
+	ErrSelfContactRequest     = errors.New("cannot send a contact request to yourself")
+	ErrSelfDirectChat         = errors.New("cannot open a direct chat with yourself")
 	ErrRequestAlreadySent     = errors.New("contact request already sent")
 	ErrNoValidParticipants    = errors.New("no valid participants to remove")
 	ErrNotParticipant         = errors.New("you are not a participant of this chat")

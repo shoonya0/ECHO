@@ -87,6 +87,14 @@ Details: [rest-api.md](../../_docs/rest-api.md#groups).
 
 Details: [websocket-requests.md](../../_docs/websocket-requests.md#remove_user).
 
+## Yourself as a target (#38)
+
+- A contact request to yourself, or `POST chats/direct/<your ID>`, now gets `400`. Before,
+  it went through and stored broken data. `join_chat` with your own `senderId` gets
+  `INVALID_USER_ID`. Don't offer "Add contact" or "Message" on your own profile.
+
+Details: [rest-api.md](../../_docs/rest-api.md#contacts).
+
 ## WebSocket limits (#40)
 
 | Server behaviour | What the app should do |

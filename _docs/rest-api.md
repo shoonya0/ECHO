@@ -91,7 +91,7 @@ All of these start with `users/contacts`.
 | `GET /sent-requests` | Requests you sent |
 | `GET /blocked` | People you blocked |
 | `GET /favorites` | Your favorites |
-| `POST /:targetUserId` | Sends a contact request |
+| `POST /:targetUserId` | Sends a contact request. `400` if the target is you (#38). |
 | `PUT /:requestId?action=accepted` | Accepts a request. Use `action=declined` to decline. |
 | `DELETE /:contactId` | Removes a contact |
 | `POST /blockUnblock/:userId` | Blocks or unblocks someone (`action=block` or `action=unblock`; block is the default). Only the person who blocked can unblock. `409` if already blocked, or if you didn't block them. The block never appears in the blocked person's lists or suggestions, but their contact requests to you fail with `403`. |
@@ -106,7 +106,7 @@ every entry, and `pagination.limit` only echoes the value (#39).
 
 | Route | What it does |
 |---|---|
-| `POST chats/direct/:userId` | Opens a direct chat. If you already have one with this person, you get that one back. |
+| `POST chats/direct/:userId` | Opens a direct chat. If you already have one with this person, you get that one back. `400` if `userId` is you (#38). |
 | `POST chats/group` | Creates a group. Send `name`, `participants` (user IDs, at least one valid) and optionally `description`. |
 | `GET chats/hub/stats` | Live statistics, for operators only (see [below](#hub-statistics)) |
 

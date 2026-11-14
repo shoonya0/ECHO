@@ -180,6 +180,10 @@ func checkContactRequest(user *models.User, target bson.ObjectID) error {
 
 // SendContactRequest sends a contact request from userID to targetUserID.
 func SendContactRequest(ctx context.Context, userID, targetUserID bson.ObjectID) error {
+	if userID == targetUserID {
+		return fmt.Errorf("%w", ErrSelfContactRequest) // #38
+	}
+
 	user, err := fetchUserContact(ctx, userID)
 	if err != nil {
 		return err

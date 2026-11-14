@@ -1,6 +1,6 @@
 # ECHO: current state
 
-A one-page snapshot of where the project stands. Last checked on 2026-11-14 at `6fb1165`
+A one-page snapshot of where the project stands. Last checked on 2026-11-14 at `9177e93`
 on `main`. To learn what the product does, read
 [product-overview.md](./product-overview.md). For the code, read
 [architecture-overview.md](./architecture-overview.md).
@@ -11,11 +11,12 @@ on `main`. To learn what the product does, read
 and with a link to exactly one feature state.md. Updated by /close-increment and
 /feature-docs update. -->
 
-- **Feature:** none yet · #28 on `fix/28-remove-member-rules`: an admin can't remove the
-  owner, `remove_user` no longer drops the actor's own chat entry, and the role check is
-  part of the write. Still to do: confirm #72 on Render with a message saved before PR #74
+- **Feature:** none yet · #38 on `fix/38-self-targets`: a contact request or direct chat
+  with yourself gets `400` (`INVALID_USER_ID` over the WebSocket). Still to do: confirm
+  #72 on Render with a message saved before PR #74; #30 needs a decision on who may
+  create and delete invites
 - **Next step:** verify, push, open the PR, then ask before merging (it deploys to Render)
-- **Updated:** 2026-11-14 on `fix/28-remove-member-rules`
+- **Updated:** 2026-11-14 on `fix/38-self-targets`
 
 ## Where things stand
 
@@ -30,6 +31,12 @@ declining a group invite. The full list is in
 
 ## Recently finished
 
+- **#28 (PR #94):** only the owner can remove the owner (also when the owner is only
+  stored as `ownerId`); a request naming the owner removes nobody. Listing yourself no
+  longer drops the group from your chat list, `removedUsers` lists only the people removed,
+  and the role is re-checked in the write ([requests](./websocket-requests.md#remove_user),
+  [app changes](../Android/_docs/08_SERVER_CHANGES.md)). The code review's other points
+  (a race reported as `PERMISSION_DENIED`, the second write not checked, #37) were left.
 - **#29 (PR #93):** the joined-users route returns the list of the code that was asked
   for, not the group's first code.
 - **#91 (PR #92):** sending a deleted invite code returns `400` instead of giving the
@@ -166,7 +173,7 @@ have no status, so the check must allow for that.
 
 ## Known issues and risks
 
-There are 37 open issues. Where each risk sits in the code: [architecture-overview.md](./architecture-overview.md#riskiest-areas).
+There are 36 open issues. Where each risk sits in the code: [architecture-overview.md](./architecture-overview.md#riskiest-areas).
 
 | Area | The problem, in short | Issues |
 |---|---|---|
@@ -175,7 +182,7 @@ There are 37 open issues. Where each risk sits in the code: [architecture-overvi
 | Groups | Members are never asked to accept, live delivery doesn't match who is in the group, and the size limit isn't enforced | #5, #14, #16, #17, #68 |
 | Invite codes | The invite endpoints lack permission checks, and entries left by forged joins before #9 was fixed are still stored | #30, #69 |
 | Accounts | Deleting an account leaves old references, emails are case-sensitive, and usernames aren't unique | #35, #36 |
-| Contacts and blocking | Blocks aren't enforced in chats, your contacts list includes people you blocked, and blocks written during a deploy can be missed | #27, #38, #39, #62, #63 |
+| Contacts and blocking | Blocks aren't enforced in chats, your contacts list includes people you blocked, and blocks written during a deploy can be missed | #27, #39, #62, #63 |
 | Online status and privacy | Online status is unreliable, and privacy settings aren't applied | #31, #32 |
 | Messages and data | Reaction counts drift, history doesn't show who reacted by name, writes can half-finish, and some lists grow without limit | #25, #37, #42, #75 |
 | Limits and errors | WebSocket limits are per connection, not per user, and `set_typing` still writes to MongoDB; no limits on login and signup | #40 |

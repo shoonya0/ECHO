@@ -138,6 +138,10 @@ func MapServiceErrorToHTTP(err error) (int, string) {
 		return http.StatusConflict, "User is already unblocked"
 	case errors.Is(err, services.ErrSelfBlock):
 		return http.StatusBadRequest, "Cannot block yourself"
+	case errors.Is(err, services.ErrSelfContactRequest):
+		return http.StatusBadRequest, "Cannot send a contact request to yourself"
+	case errors.Is(err, services.ErrSelfDirectChat):
+		return http.StatusBadRequest, "Cannot open a direct chat with yourself"
 	case errors.Is(err, services.ErrRequestAlreadySent):
 		return http.StatusConflict, "Contact request already sent"
 	case errors.Is(err, services.ErrNoValidParticipants):
