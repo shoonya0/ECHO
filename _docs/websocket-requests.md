@@ -4,8 +4,8 @@ Everything an app can send over the WebSocket. Start with
 [WEBSOCKET_PROTOCOL.md](./WEBSOCKET_PROTOCOL.md) if you haven't read it. What the server
 sends back is in [websocket-events.md](./websocket-events.md).
 
-Every request is a JSON text frame with a `type`. You can add `requestId`, your own label
-for matching the reply. Many requests put their details in `metadata`.
+Every request is a JSON text frame with a `type` and an optional `requestId` to match the
+reply. Details often go in `metadata`. `chatId` may be any case; events use lowercase (#60).
 
 **Blocks (#27):** in a direct chat where either person blocked the other, `send_message`,
 `set_typing`, `mark_read`, `add_reaction` and `remove_reaction` get `PERMISSION_DENIED`
