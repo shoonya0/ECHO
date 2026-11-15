@@ -133,8 +133,9 @@ longest is 35 bytes). Letters, spaces, line breaks, invisible characters, `.`, `
 invalid UTF-8 are refused with `INVALID_REQUEST`, and nothing changes. The server doesn't
 check that the value is exactly one emoji, so `👍👍` is accepted.
 
-**You get:** a `response` with `action` set to `reaction_added` or `reaction_removed`. A
-`reaction` event goes to the chat. See #25.
+**You get:** a `response` with `action` set to `reaction_added` or `reaction_removed`, and
+a `reaction` event to the chat if something changed. A repeat add, or a remove of an emoji
+you didn't add, changes nothing and sends no event (#25). `count` equals `users`' length.
 
 **Errors:** `INVALID_REQUEST`, `INVALID_CHAT_ID`, `INVALID_MESSAGE_ID`,
 `PERMISSION_DENIED`, `MESSAGE_NOT_FOUND`, `REACTION_FAILED`.

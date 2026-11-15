@@ -145,7 +145,8 @@ couldn't read your message. All codes are listed in
 }
 ```
 
-`action` is `add` or `remove`.
+`action` is `add` or `remove`. It is only sent when the reaction really changed, so the
+app can add or take away one for `userId` without checking (#25).
 
 ## `join` and `leave`: someone started or stopped following
 
