@@ -412,6 +412,20 @@ func isBlockedEitherWay(user *models.User, target bson.ObjectID) bool {
 	return contains(user.ContactInfo.Blocked, target) || contains(user.ContactInfo.BlockedBy, target)
 }
 
+// IsBlockedBetween reports whether either user has blocked the other (#27). It reads
+// each side's own contactInfo.blocked, which BlockUnblockUser writes first, so a block
+// whose second write (the other side's blockedBy) never landed still counts.
+func IsBlockedBetween(ctx context.Context, a, b bson.ObjectID) (bool, error) {
+	n, err := database.DB.Collection(string(constants.UserColl)).CountDocuments(ctx, bson.M{"$or": []bson.M{
+		{"_id": a, "contactInfo.blocked": b},
+		{"_id": b, "contactInfo.blocked": a},
+	}}, options.Count().SetLimit(1))
+	if err != nil {
+		return false, fmt.Errorf("failed to check blocks: %w", err)
+	}
+	return n > 0, nil
+}
+
 // AddToFavorites adds a user to the current user's favorites.
 func AddToFavorites(ctx context.Context, userID, targetUserID bson.ObjectID) error {
 	user, err := fetchUserContact(ctx, userID)

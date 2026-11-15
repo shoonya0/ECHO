@@ -210,6 +210,14 @@ func CreateDirectChat(ctx context.Context, targetUserID bson.ObjectID) (*models.
 	if user.ID == targetUserID {
 		return nil, fmt.Errorf("%w", ErrSelfDirectChat)
 	}
+	// Neither side of a block may open the chat, new or existing (#27).
+	blocked, err := IsBlockedBetween(ctx, user.ID, targetUserID)
+	if err != nil {
+		return nil, err
+	}
+	if blocked {
+		return nil, fmt.Errorf("%w", ErrBlocked)
+	}
 
 	filter := bson.M{
 		"chatType": "direct",
@@ -227,7 +235,7 @@ func CreateDirectChat(ctx context.Context, targetUserID bson.ObjectID) (*models.
 
 	existingChat := models.Chat{}
 
-	err := database.DB.Collection(string(constants.ChatColl)).FindOne(ctx, filter, options.FindOne().SetProjection(chatProjection)).Decode(&existingChat)
+	err = database.DB.Collection(string(constants.ChatColl)).FindOne(ctx, filter, options.FindOne().SetProjection(chatProjection)).Decode(&existingChat)
 	if err != nil {
 		if err == mongo.ErrNoDocuments {
 			targetUser, err := GetUserByID(ctx, targetUserID)
