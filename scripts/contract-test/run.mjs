@@ -182,8 +182,20 @@ const sent = await wsStep("send_message", wsA, { type: "send_message", chatId, c
 await wsStep("send_message group", wsA, { type: "send_message", chatId: groupId, content: "hi group", requestId: "r2g" }, sockets, 800);
 await wsStep("set_typing", wsA, { type: "set_typing", chatId, metadata: { isTyping: true }, requestId: "r3" }, sockets);
 
-const msgs = await call("chat messages", "GET", `/messages/${chatId}/messages?limit=50&offset=0`, { token: tA, expect: 200 });
+await wsStep("send_message second", wsA, { type: "send_message", chatId, content: "second, so history has two pages of one", requestId: "r2b" }, sockets, 800);
+
+// History pages with a cursor: the first page has no cursor, and the next (older) page
+// passes pagination.nextCursor as ?before=. offset was dropped and gets 400 (#67).
+const msgs = await call("chat messages", "GET", `/messages/${chatId}/messages?limit=50`, { token: tA, expect: 200 });
 const messageId = msgs.data?.messages?.[0]?._id ?? msgs.data?.messages?.[0]?.id;
+const firstPage = await call("chat messages page 1", "GET", `/messages/${chatId}/messages?limit=1`, { token: tA, expect: 200 });
+const cursor = firstPage.data?.pagination?.nextCursor;
+if (cursor) {
+  await call("chat messages page 2", "GET", `/messages/${chatId}/messages?limit=1&before=${encodeURIComponent(cursor)}`, { token: tA, expect: 200 });
+} else {
+  record("chat messages page 2", { status: "no nextCursor" }, 200);
+}
+await call("chat messages offset", "GET", `/messages/${chatId}/messages?limit=50&offset=0`, { token: tA, expect: 400 });
 
 await wsStep("mark_read", wsB, { type: "mark_read", chatId, metadata: { messageIds: [messageId] }, requestId: "r4" }, sockets);
 await wsStep("add_reaction", wsB, { type: "add_reaction", chatId, metadata: { messageId, emoji: "👍" }, requestId: "r5" }, sockets);
