@@ -46,7 +46,7 @@ The `response` comes in three shapes, so read them carefully.
   "type": "response",
   "data": {
     "success": true,
-    "data": { "action": "reaction_added", "messageId": "<messageId>", "emoji": "👍" },
+    "data": { "action": "reaction_added", "messageId": "<messageId>", "emoji": "👍", "changed": true },
     "requestId": "r6"
   },
   "requestId": "r6"
@@ -145,7 +145,8 @@ couldn't read your message. All codes are listed in
 }
 ```
 
-`action` is `add` or `remove`.
+`action` is `add` or `remove`. It is only sent when the reaction really changed, so the
+app can add or take away one for `userId` without checking (#25).
 
 ## `join` and `leave`: someone started or stopped following
 

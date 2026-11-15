@@ -556,37 +556,41 @@ func handleAddReaction(client *models.Client, request models.MessageRequest) {
 		return
 	}
 
-	err = services.AddMessageReaction(chatID, msgObjectID, client.UserID, emoji) // Add reaction through service layer
+	changed, err := services.AddMessageReaction(chatID, msgObjectID, client.UserID, emoji) // Add reaction through service layer
 	if err != nil {
 		wsLog().Printf("Failed to add reaction: %v", err)
 		sendChatError(client, request.RequestID, err, "REACTION_FAILED", "Failed to add reaction")
 		return
 	}
 
-	reactionEvent := models.WebSocketMessage{ // Broadcast reaction to chat
-		Type:   models.WSMessageTypeReaction,
-		ChatID: request.ChatID,
-		UserID: client.UserID.Hex(),
-		Data: models.MessageReaction{
-			MessageID: messageID,
-			UserID:    client.UserID.Hex(),
-			Username:  getUsernameFromClient(client),
-			Emoji:     emoji,
-			Action:    "add",
+	// A user who had already reacted changed nothing, so the chat isn't told (#25).
+	if changed {
+		reactionEvent := models.WebSocketMessage{ // Broadcast reaction to chat
+			Type:   models.WSMessageTypeReaction,
+			ChatID: request.ChatID,
+			UserID: client.UserID.Hex(),
+			Data: models.MessageReaction{
+				MessageID: messageID,
+				UserID:    client.UserID.Hex(),
+				Username:  getUsernameFromClient(client),
+				Emoji:     emoji,
+				Action:    "add",
+				Timestamp: time.Now(),
+			},
 			Timestamp: time.Now(),
-		},
-		Timestamp: time.Now(),
-	}
+		}
 
-	err = services.BroadcastToChat(request.ChatID, reactionEvent) // Broadcast reaction to chat
-	if err != nil {
-		wsLog().Printf("Failed to broadcast reaction: %v", err)
+		err = services.BroadcastToChat(request.ChatID, reactionEvent) // Broadcast reaction to chat
+		if err != nil {
+			wsLog().Printf("Failed to broadcast reaction: %v", err)
+		}
 	}
 
 	sendSuccessResponse(client, request.RequestID, map[string]interface{}{ // Send success response
 		"action":    "reaction_added",
 		"messageId": messageID,
 		"emoji":     emoji,
+		"changed":   changed,
 	})
 
 	wsLog().Printf("Client %s added reaction %s to message %s", client.ID, emoji, messageID)
@@ -626,37 +630,41 @@ func handleRemoveReaction(client *models.Client, request models.MessageRequest) 
 		return
 	}
 
-	err = services.RemoveMessageReaction(chatID, msgObjectID, client.UserID, emoji) // Remove reaction through service layer
+	changed, err := services.RemoveMessageReaction(chatID, msgObjectID, client.UserID, emoji) // Remove reaction through service layer
 	if err != nil {
 		wsLog().Printf("Failed to remove reaction: %v", err)
 		sendChatError(client, request.RequestID, err, "REACTION_FAILED", "Failed to remove reaction")
 		return
 	}
 
-	reactionEvent := models.WebSocketMessage{ // Broadcast reaction removal to chat
-		Type:   models.WSMessageTypeReaction,
-		ChatID: request.ChatID,
-		UserID: client.UserID.Hex(),
-		Data: models.MessageReaction{
-			MessageID: messageID,
-			UserID:    client.UserID.Hex(),
-			Username:  getUsernameFromClient(client),
-			Emoji:     emoji,
-			Action:    "remove",
+	// A user who hadn't reacted changed nothing, so the chat isn't told (#25).
+	if changed {
+		reactionEvent := models.WebSocketMessage{ // Broadcast reaction removal to chat
+			Type:   models.WSMessageTypeReaction,
+			ChatID: request.ChatID,
+			UserID: client.UserID.Hex(),
+			Data: models.MessageReaction{
+				MessageID: messageID,
+				UserID:    client.UserID.Hex(),
+				Username:  getUsernameFromClient(client),
+				Emoji:     emoji,
+				Action:    "remove",
+				Timestamp: time.Now(),
+			},
 			Timestamp: time.Now(),
-		},
-		Timestamp: time.Now(),
-	}
+		}
 
-	err = services.BroadcastToChat(request.ChatID, reactionEvent)
-	if err != nil {
-		wsLog().Printf("Failed to broadcast reaction removal: %v", err)
+		err = services.BroadcastToChat(request.ChatID, reactionEvent)
+		if err != nil {
+			wsLog().Printf("Failed to broadcast reaction removal: %v", err)
+		}
 	}
 
 	sendSuccessResponse(client, request.RequestID, map[string]interface{}{ // Send success response
 		"action":    "reaction_removed",
 		"messageId": messageID,
 		"emoji":     emoji,
+		"changed":   changed,
 	})
 
 	wsLog().Printf("Client %s removed reaction %s from message %s", client.ID, emoji, messageID)

@@ -750,137 +750,123 @@ func isEmojiRune(r rune) bool {
 	return false
 }
 
-// AddMessageReaction adds a reaction to a message
-func AddMessageReaction(chatID, messageID, userID bson.ObjectID, emoji string) error {
+// AddMessageReaction adds userID's emoji reaction to a message. It reports
+// whether anything changed: false when the user had already reacted with that
+// emoji, so the caller doesn't announce a reaction that was already there.
+func AddMessageReaction(chatID, messageID, userID bson.ObjectID, emoji string) (bool, error) {
 	ctx := context.Background()
 
 	if err := validateEmoji(emoji); err != nil {
-		return err
+		return false, err
 	}
 
 	if err := RequireChatAccess(ctx, chatID, userID); err != nil {
-		return err
+		return false, err
 	}
 
-	if err := repairNullReactions(ctx, chatID, messageID); err != nil {
-		return err
-	}
-
-	// Update message with new reaction
+	// Only a user who hasn't reacted yet matches, so repeating an add changes
+	// nothing (#25). The count is set from the users list in the same write,
+	// which also corrects a count that drifted before the fix. Being a pipeline,
+	// the update can also create the emoji inside reactions: null, which every
+	// message saved before #72 has.
+	path := "reactions." + emoji
 	filter := bson.M{
-		"_id":    messageID,
-		"chatId": chatID,
+		"_id":           messageID,
+		"chatId":        chatID,
+		path + ".users": bson.M{"$ne": userID},
+	}
+	update := mongo.Pipeline{
+		{{Key: "$set", Value: bson.D{
+			{Key: path + ".users", Value: bson.M{"$concatArrays": bson.A{
+				bson.M{"$ifNull": bson.A{"$" + path + ".users", bson.A{}}},
+				bson.A{userID},
+			}}},
+			{Key: path + ".details." + userID.Hex(), Value: bson.M{"$literal": ""}}, // Will be filled with username
+			{Key: "updatedAt", Value: time.Now()},
+		}}},
+		reactionCountStage(path),
 	}
 
-	update := bson.M{
-		"$addToSet": bson.M{
-			"reactions." + emoji + ".users": userID,
-		},
-		"$inc": bson.M{
-			"reactions." + emoji + ".count": 1,
-		},
-		"$set": bson.M{
-			"reactions." + emoji + ".details." + userID.Hex(): "", // Will be filled with username
-			"updatedAt": time.Now(),
-		},
-	}
-
-	result, err := database.DB.Collection(string(constants.MessageColl)).UpdateOne(ctx, filter, update)
-	if err != nil {
-		return fmt.Errorf("failed to add reaction: %w", err)
-	}
-
-	if result.MatchedCount == 0 {
-		return ErrMessageNotFound
-	}
-
-	return nil
+	return applyReactionChange(ctx, chatID, messageID, filter, update, "failed to add reaction")
 }
 
-// RemoveMessageReaction removes a reaction from a message
-func RemoveMessageReaction(chatID, messageID, userID bson.ObjectID, emoji string) error {
+// RemoveMessageReaction removes userID's emoji reaction from a message. It
+// reports whether anything changed: false when the user hadn't reacted with
+// that emoji. The emoji is removed from the message with its last user.
+func RemoveMessageReaction(chatID, messageID, userID bson.ObjectID, emoji string) (bool, error) {
 	ctx := context.Background()
 
 	if err := validateEmoji(emoji); err != nil {
-		return err
+		return false, err
 	}
 
 	if err := RequireChatAccess(ctx, chatID, userID); err != nil {
-		return err
+		return false, err
 	}
 
-	if err := repairNullReactions(ctx, chatID, messageID); err != nil {
-		return err
-	}
-
-	// Remove user from reaction
+	// Only a user who has reacted matches, so a remove by anyone else can't
+	// lower the count or delete other users' reactions (#25).
+	path := "reactions." + emoji
 	filter := bson.M{
-		"_id":    messageID,
-		"chatId": chatID,
+		"_id":           messageID,
+		"chatId":        chatID,
+		path + ".users": userID,
+	}
+	update := mongo.Pipeline{
+		{{Key: "$set", Value: bson.D{
+			{Key: path + ".users", Value: bson.M{"$filter": bson.M{
+				"input": "$" + path + ".users",
+				"cond":  bson.M{"$ne": bson.A{"$$this", userID}},
+			}}},
+			{Key: "updatedAt", Value: time.Now()},
+		}}},
+		reactionCountStage(path),
+		{{Key: "$unset", Value: path + ".details." + userID.Hex()}},
+		// The emoji goes with its last user, in the same write, so nobody reads
+		// an entry with no users. It checks users, not a count that may have
+		// drifted, so it can't delete reactions that still have users.
+		{{Key: "$set", Value: bson.D{
+			{Key: path, Value: bson.M{"$cond": bson.A{
+				bson.M{"$eq": bson.A{bson.M{"$size": "$" + path + ".users"}, 0}},
+				"$$REMOVE",
+				"$" + path,
+			}}},
+		}}},
 	}
 
-	update := bson.M{
-		"$pull": bson.M{
-			"reactions." + emoji + ".users": userID,
-		},
-		"$inc": bson.M{
-			"reactions." + emoji + ".count": -1,
-		},
-		"$unset": bson.M{
-			"reactions." + emoji + ".details." + userID.Hex(): "",
-		},
-		"$set": bson.M{
-			"updatedAt": time.Now(),
-		},
-	}
-
-	result, err := database.DB.Collection(string(constants.MessageColl)).UpdateOne(ctx, filter, update)
-	if err != nil {
-		return fmt.Errorf("failed to remove reaction: %w", err)
-	}
-
-	if result.MatchedCount == 0 {
-		return ErrMessageNotFound
-	}
-
-	// Clean up empty reaction if count is 0
-	cleanupEmptyReaction(messageID, emoji)
-
-	return nil
+	return applyReactionChange(ctx, chatID, messageID, filter, update, "failed to remove reaction")
 }
 
-// repairNullReactions sets a message's reactions to {} when it is null, so the
-// reaction paths can be created in it. Every message saved before #72 has null there,
-// and so does one written by an older server copy during a deploy, which a startup
-// migration would miss. Matching nothing is normal: the message is already fine, or
-// the reaction update that follows reports that it doesn't exist.
-func repairNullReactions(ctx context.Context, chatID, messageID bson.ObjectID) error {
-	_, err := database.DB.Collection(string(constants.MessageColl)).UpdateOne(ctx,
-		bson.M{"_id": messageID, "chatId": chatID, "reactions": bson.M{"$type": "null"}},
-		bson.M{"$set": bson.M{"reactions": bson.M{}}},
-	)
-	if err != nil {
-		return fmt.Errorf("failed to prepare reactions: %w", err)
-	}
-	return nil
+// reactionCountStage sets an emoji's count from its users list, so the count
+// can't drift from who reacted (#25), and one that drifted before is corrected.
+func reactionCountStage(path string) bson.D {
+	return bson.D{{Key: "$set", Value: bson.D{
+		{Key: path + ".count", Value: bson.M{"$size": "$" + path + ".users"}},
+	}}}
 }
 
-// cleanupEmptyReaction removes reaction entry if count reaches 0
-func cleanupEmptyReaction(messageID bson.ObjectID, emoji string) {
-	ctx := context.Background()
+// applyReactionChange runs a reaction update whose filter matches only when the
+// change applies. When it matches nothing, it tells a message that doesn't exist
+// (ErrMessageNotFound) from one the change doesn't apply to (false, nil).
+func applyReactionChange(ctx context.Context, chatID, messageID bson.ObjectID, filter bson.M, update mongo.Pipeline, failure string) (bool, error) {
+	messages := database.DB.Collection(string(constants.MessageColl))
 
-	filter := bson.M{
-		"_id":                           messageID,
-		"reactions." + emoji + ".count": bson.M{"$lte": 0},
+	result, err := messages.UpdateOne(ctx, filter, update)
+	if err != nil {
+		return false, fmt.Errorf("%s: %w", failure, err)
+	}
+	if result.MatchedCount > 0 {
+		return true, nil
 	}
 
-	update := bson.M{
-		"$unset": bson.M{
-			"reactions." + emoji: "",
-		},
+	found, err := messages.CountDocuments(ctx, bson.M{"_id": messageID, "chatId": chatID}, options.Count().SetLimit(1))
+	if err != nil {
+		return false, fmt.Errorf("%s: %w", failure, err)
 	}
-
-	database.DB.Collection(string(constants.MessageColl)).UpdateOne(ctx, filter, update)
+	if found == 0 {
+		return false, ErrMessageNotFound
+	}
+	return false, nil
 }
 
 // AddGroupMember adds users to a group chat as pending members. The acting

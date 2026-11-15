@@ -110,6 +110,20 @@ Details: [rest-api.md](../../_docs/rest-api.md#contacts).
 
 Details: [websocket-requests.md](../../_docs/websocket-requests.md).
 
+## Reactions count each user once (#25)
+
+- `add_reaction` with an emoji you already reacted with, or `remove_reaction` with one you
+  didn't, still gets its `response`, but changes nothing and sends no `reaction` event.
+  Before, it changed the count and sent an event anyway. The `response` now has
+  `changed`: `true` or `false`. Only update the reaction locally when it is `true`.
+- So each `reaction` event is a real change: add or remove `userId` for that emoji. A
+  remove by someone else can no longer delete other people's reactions.
+- In history, `reactions.<emoji>.count` equals the length of `users`. Old messages whose
+  count drifted are corrected the next time someone reacts with that emoji. Prefer
+  `users` over `count` when they disagree.
+
+Details: [websocket-requests.md](../../_docs/websocket-requests.md#add_reaction-and-remove_reaction).
+
 ## WebSocket limits (#40)
 
 | Server behaviour | What the app should do |
