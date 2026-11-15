@@ -135,7 +135,8 @@ check that the value is exactly one emoji, so `👍👍` is accepted.
 
 **You get:** a `response` with `action` set to `reaction_added` or `reaction_removed`, and
 a `reaction` event to the chat if something changed. A repeat add, or a remove of an emoji
-you didn't add, changes nothing and sends no event (#25). `count` equals `users`' length.
+you didn't add, changes nothing: the `response` has `changed: false` and no event goes out
+(#25). `count` equals `users`' length.
 
 **Errors:** `INVALID_REQUEST`, `INVALID_CHAT_ID`, `INVALID_MESSAGE_ID`,
 `PERMISSION_DENIED`, `MESSAGE_NOT_FOUND`, `REACTION_FAILED`.

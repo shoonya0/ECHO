@@ -114,7 +114,8 @@ Details: [websocket-requests.md](../../_docs/websocket-requests.md).
 
 - `add_reaction` with an emoji you already reacted with, or `remove_reaction` with one you
   didn't, still gets its `response`, but changes nothing and sends no `reaction` event.
-  Before, it changed the count and sent an event anyway.
+  Before, it changed the count and sent an event anyway. The `response` now has
+  `changed`: `true` or `false`. Only update the reaction locally when it is `true`.
 - So each `reaction` event is a real change: add or remove `userId` for that emoji. A
   remove by someone else can no longer delete other people's reactions.
 - In history, `reactions.<emoji>.count` equals the length of `users`. Old messages whose

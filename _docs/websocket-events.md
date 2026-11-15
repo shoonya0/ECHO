@@ -46,7 +46,7 @@ The `response` comes in three shapes, so read them carefully.
   "type": "response",
   "data": {
     "success": true,
-    "data": { "action": "reaction_added", "messageId": "<messageId>", "emoji": "👍" },
+    "data": { "action": "reaction_added", "messageId": "<messageId>", "emoji": "👍", "changed": true },
     "requestId": "r6"
   },
   "requestId": "r6"

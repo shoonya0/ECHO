@@ -590,6 +590,7 @@ func handleAddReaction(client *models.Client, request models.MessageRequest) {
 		"action":    "reaction_added",
 		"messageId": messageID,
 		"emoji":     emoji,
+		"changed":   changed,
 	})
 
 	wsLog().Printf("Client %s added reaction %s to message %s", client.ID, emoji, messageID)
@@ -663,6 +664,7 @@ func handleRemoveReaction(client *models.Client, request models.MessageRequest) 
 		"action":    "reaction_removed",
 		"messageId": messageID,
 		"emoji":     emoji,
+		"changed":   changed,
 	})
 
 	wsLog().Printf("Client %s removed reaction %s from message %s", client.ID, emoji, messageID)
