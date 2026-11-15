@@ -91,8 +91,8 @@ MongoDB has three collections.
 **Watch out: membership is stored in two places.** `chats.participants` decides who may send
 and read. `users.chats` decides what a connection follows live, limited to chats that also
 list the user in `participants`. The two can still disagree, which
-causes #14 and #17. Choosing one is an open decision in
-[current-state.md](./current-state.md#open-decisions).
+causes #14 and #17. It was decided that `participants` is the only record
+([decisions.md](./decisions.md#where-chat-membership-is-stored)); the code doesn't do that yet.
 
 ## Target layers (not yet enforced)
 
