@@ -13,9 +13,9 @@ and with a link to exactly one feature state.md. Updated by /close-increment and
 
 - **Feature:** none yet · #27 on `fix/27-enforce-blocks-in-chats`: a block either way
   refuses opening the direct chat (`403` / `PERMISSION_DENIED` `User is blocked`) and
-  `send_message` in it. Still to do: confirm #72 on Render with a message saved before
+  sending, typing, read receipts and reactions in it (code review applied). Still to do: confirm #72 on Render with a message saved before
   PR #74; #30 needs a decision on who may create and delete invites
-- **Next step:** code review, push, open the PR, then ask before merging (it deploys to
+- **Next step:** push, open the PR, then ask before merging (it deploys to
   Render). Next issue after this: #25 (reactions can wipe other users' reactions)
 - **Updated:** 2026-11-15 on `fix/27-enforce-blocks-in-chats`
 
