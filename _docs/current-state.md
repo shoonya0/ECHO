@@ -14,10 +14,13 @@ and with a link to exactly one feature state.md. Updated by /close-increment and
 - **Feature:** none yet · #30 on `fix/30-invite-permissions`: only owners and admins may
   create, list, delete or send invite codes or see who joined; sends to unknown users or
   members get `404` / `409`, repeats add nothing, joining clears the invitation. Verified:
-  `verify.mjs --full` (DB required) and the contract test live. Still to do: confirm #72
-  on Render with a message saved before PR #74
+  `verify.mjs --full` (DB required) and the contract test live
+- **#72 on Render (paused 2026-11-15):** `/health` answers `200`, but no chat with a message
+  saved before PR #74 (`reactions: null`) is left to react to. Continue later, for example
+  by setting `reactions: null` on a test message in Atlas first
 - **Next step:** `/code-review` and `/security-review` (permission checks), then push, PR,
-  and ask before merging
+  and ask before merging. Then propose an issue: creating an invite code doesn't return it
+  (`CreateInvite` in `chat.controller.go` drops it with `_, err =`)
 - **Updated:** 2026-11-15 on `fix/30-invite-permissions`
 
 ## Where things stand
