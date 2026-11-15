@@ -896,19 +896,9 @@ func validateMessagePermissions(ctx context.Context, userID bson.ObjectID, chatI
 
 	switch chat.ChatType {
 	case string(constants.ChatTypeDirect):
-		// A block on either side stops the direct chat (#27). participant.IsBlocked
-		// is never set, so the users' block lists decide.
-		for otherID := range chat.Participants {
-			if otherID == userID {
-				continue
-			}
-			blocked, err := services.IsBlockedBetween(ctx, userID, otherID)
-			if err != nil {
-				return false, err
-			}
-			if blocked {
-				return false, fmt.Errorf("%w", services.ErrBlocked)
-			}
+		// participant.IsBlocked is never set; the users' block lists decide (#27).
+		if err := services.CheckDirectChatBlock(ctx, &chat, userID); err != nil {
+			return false, err
 		}
 		return true, nil
 
@@ -999,6 +989,8 @@ func sendChatError(client *models.Client, requestID string, err error, code, mes
 	switch {
 	case errors.Is(err, services.ErrNotParticipant):
 		code, message = "PERMISSION_DENIED", "You are not a participant of this chat"
+	case errors.Is(err, services.ErrBlocked):
+		code, message = "PERMISSION_DENIED", "User is blocked"
 	case errors.Is(err, services.ErrMessageNotFound):
 		code, message = "MESSAGE_NOT_FOUND", "Message not found"
 	case errors.Is(err, services.ErrInvalidEmoji):
