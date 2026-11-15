@@ -362,6 +362,7 @@ func handleSendMessage(ctx context.Context, client *models.Client, request model
 	wsMessage := models.WebSocketMessage{
 		Type:      models.WSMessageTypeResponse,
 		Data:      response,
+		RequestID: request.RequestID, // at the top level too, like every other reply (#47)
 		Timestamp: time.Now(),
 	}
 
