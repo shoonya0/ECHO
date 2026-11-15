@@ -1,6 +1,6 @@
 # ECHO: current state
 
-A one-page snapshot of where the project stands. Last checked on 2026-11-14 at `9177e93`
+A one-page snapshot of where the project stands. Last checked on 2026-11-14 at `eb34ba3`
 on `main`. To learn what the product does, read
 [product-overview.md](./product-overview.md). For the code, read
 [architecture-overview.md](./architecture-overview.md).
@@ -11,12 +11,13 @@ on `main`. To learn what the product does, read
 and with a link to exactly one feature state.md. Updated by /close-increment and
 /feature-docs update. -->
 
-- **Feature:** none yet · #38 on `fix/38-self-targets`: a contact request or direct chat
-  with yourself gets `400` (`INVALID_USER_ID` over the WebSocket). Still to do: confirm
-  #72 on Render with a message saved before PR #74; #30 needs a decision on who may
-  create and delete invites
-- **Next step:** verify, push, open the PR, then ask before merging (it deploys to Render)
-- **Updated:** 2026-11-14 on `fix/38-self-targets`
+- **Feature:** none yet · #27 on `fix/27-enforce-blocks-in-chats`: a block either way
+  refuses opening the direct chat (`403` / `PERMISSION_DENIED` `User is blocked`) and
+  sending, typing, read receipts and reactions in it (code review applied). Still to do: confirm #72 on Render with a message saved before
+  PR #74; #30 needs a decision on who may create and delete invites
+- **Next step:** push, open the PR, then ask before merging (it deploys to
+  Render). Next issue after this: #25 (reactions can wipe other users' reactions)
+- **Updated:** 2026-11-15 on `fix/27-enforce-blocks-in-chats`
 
 ## Where things stand
 
@@ -31,6 +32,9 @@ declining a group invite. The full list is in
 
 ## Recently finished
 
+- **#38 (PR #95):** a contact request or direct chat with yourself gets `400`
+  (`INVALID_USER_ID` from `join_chat`) instead of storing broken data
+  ([app changes](../Android/_docs/08_SERVER_CHANGES.md)).
 - **#28 (PR #94):** only the owner can remove the owner (also when the owner is only
   stored as `ownerId`); a request naming the owner removes nobody. Listing yourself no
   longer drops the group from your chat list, `removedUsers` lists only the people removed,
@@ -173,7 +177,7 @@ have no status, so the check must allow for that.
 
 ## Known issues and risks
 
-There are 36 open issues. Where each risk sits in the code: [architecture-overview.md](./architecture-overview.md#riskiest-areas).
+There are 35 open issues. Where each risk sits in the code: [architecture-overview.md](./architecture-overview.md#riskiest-areas).
 
 | Area | The problem, in short | Issues |
 |---|---|---|

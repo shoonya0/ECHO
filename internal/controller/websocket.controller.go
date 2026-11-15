@@ -306,6 +306,10 @@ func handleSendMessage(ctx context.Context, client *models.Client, request model
 	}
 
 	canSend, err := validateMessagePermissions(ctx, client.UserID, chatID) // Check if user has permission to send messages in this chat
+	if errors.Is(err, services.ErrBlocked) {
+		sendErrorResponse(client, request.RequestID, "PERMISSION_DENIED", "User is blocked")
+		return
+	}
 	if err != nil {
 		wsLog().Printf("Failed to validate message permissions: %v", err)
 		sendErrorResponse(client, request.RequestID, "PERMISSION_CHECK_FAILED", "Failed to validate permissions")
@@ -401,6 +405,10 @@ func handleJoinChat(ctx context.Context, client *models.Client, request models.M
 	chat, err := services.CreateDirectChat(ctx, targetUserID) // create a new chat if it doesn't exist
 	if errors.Is(err, services.ErrSelfDirectChat) {
 		sendErrorResponse(client, request.RequestID, "INVALID_USER_ID", "Cannot open a direct chat with yourself")
+		return
+	}
+	if errors.Is(err, services.ErrBlocked) {
+		sendErrorResponse(client, request.RequestID, "PERMISSION_DENIED", "User is blocked")
 		return
 	}
 	if err != nil {
@@ -888,6 +896,10 @@ func validateMessagePermissions(ctx context.Context, userID bson.ObjectID, chatI
 
 	switch chat.ChatType {
 	case string(constants.ChatTypeDirect):
+		// participant.IsBlocked is never set; the users' block lists decide (#27).
+		if err := services.CheckDirectChatBlock(ctx, &chat, userID); err != nil {
+			return false, err
+		}
 		return true, nil
 
 	case string(constants.ChatTypeGroup):
@@ -977,6 +989,8 @@ func sendChatError(client *models.Client, requestID string, err error, code, mes
 	switch {
 	case errors.Is(err, services.ErrNotParticipant):
 		code, message = "PERMISSION_DENIED", "You are not a participant of this chat"
+	case errors.Is(err, services.ErrBlocked):
+		code, message = "PERMISSION_DENIED", "User is blocked"
 	case errors.Is(err, services.ErrMessageNotFound):
 		code, message = "MESSAGE_NOT_FOUND", "Message not found"
 	case errors.Is(err, services.ErrInvalidEmoji):

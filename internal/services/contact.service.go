@@ -2,6 +2,7 @@ package services
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"time"
 
@@ -410,6 +411,25 @@ func relationshipLists(id bson.ObjectID) bson.M {
 // isBlockedEitherWay reports whether user blocked target or target blocked user.
 func isBlockedEitherWay(user *models.User, target bson.ObjectID) bool {
 	return contains(user.ContactInfo.Blocked, target) || contains(user.ContactInfo.BlockedBy, target)
+}
+
+// IsBlockedBetween reports whether either user has blocked the other (#27). It reads
+// each side's own contactInfo.blocked, which BlockUnblockUser writes first, so a block
+// whose second write (the other side's blockedBy) never landed still counts.
+func IsBlockedBetween(ctx context.Context, a, b bson.ObjectID) (bool, error) {
+	filter := bson.M{"$or": []bson.M{
+		{"_id": a, "contactInfo.blocked": b},
+		{"_id": b, "contactInfo.blocked": a},
+	}}
+	opts := options.FindOne().SetProjection(bson.M{"_id": 1})
+	err := database.DB.Collection(string(constants.UserColl)).FindOne(ctx, filter, opts).Err()
+	if errors.Is(err, mongo.ErrNoDocuments) {
+		return false, nil
+	}
+	if err != nil {
+		return false, fmt.Errorf("failed to check blocks: %w", err)
+	}
+	return true, nil
 }
 
 // AddToFavorites adds a user to the current user's favorites.

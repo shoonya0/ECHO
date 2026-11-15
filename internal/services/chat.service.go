@@ -143,6 +143,45 @@ func RequireChatMember(ctx context.Context, chatID, userID bson.ObjectID) error 
 	return nil
 }
 
+// RequireChatAccess is RequireChatMember for actions the other members see:
+// typing, read receipts and reactions. In a direct chat, a block either way
+// returns ErrBlocked (#27). Reading history needs membership only.
+func RequireChatAccess(ctx context.Context, chatID, userID bson.ObjectID) error {
+	var chat models.Chat
+	opts := options.FindOne().SetProjection(bson.M{"chatType": 1, "participants": 1})
+	err := database.DB.Collection(string(constants.ChatColl)).FindOne(ctx, chatMemberFilter(chatID, userID), opts).Decode(&chat)
+	if errors.Is(err, mongo.ErrNoDocuments) {
+		return fmt.Errorf("%w", ErrNotParticipant)
+	}
+	if err != nil {
+		return fmt.Errorf("failed to check chat membership: %w", err)
+	}
+	return CheckDirectChatBlock(ctx, &chat, userID)
+}
+
+// CheckDirectChatBlock returns ErrBlocked when chat is a direct chat and userID
+// and the other participant have a block between them, either way (#27). A valid
+// direct chat has one other participant, so this is one lookup; a legacy chat
+// with yourself (#38) has none and is never blocked.
+func CheckDirectChatBlock(ctx context.Context, chat *models.Chat, userID bson.ObjectID) error {
+	if chat.ChatType != string(constants.ChatTypeDirect) {
+		return nil
+	}
+	for otherID := range chat.Participants {
+		if otherID == userID {
+			continue
+		}
+		blocked, err := IsBlockedBetween(ctx, userID, otherID)
+		if err != nil {
+			return err
+		}
+		if blocked {
+			return fmt.Errorf("%w", ErrBlocked)
+		}
+	}
+	return nil
+}
+
 // GetChatMessages returns up to limit messages of a chat, newest first,
 // starting just before the before cursor (a message ID; nil for the newest
 // page). hasMore reports whether older messages exist; pass the last
@@ -210,6 +249,14 @@ func CreateDirectChat(ctx context.Context, targetUserID bson.ObjectID) (*models.
 	if user.ID == targetUserID {
 		return nil, fmt.Errorf("%w", ErrSelfDirectChat)
 	}
+	// Neither side of a block may open the chat, new or existing (#27).
+	blocked, err := IsBlockedBetween(ctx, user.ID, targetUserID)
+	if err != nil {
+		return nil, err
+	}
+	if blocked {
+		return nil, fmt.Errorf("%w", ErrBlocked)
+	}
 
 	filter := bson.M{
 		"chatType": "direct",
@@ -227,7 +274,7 @@ func CreateDirectChat(ctx context.Context, targetUserID bson.ObjectID) (*models.
 
 	existingChat := models.Chat{}
 
-	err := database.DB.Collection(string(constants.ChatColl)).FindOne(ctx, filter, options.FindOne().SetProjection(chatProjection)).Decode(&existingChat)
+	err = database.DB.Collection(string(constants.ChatColl)).FindOne(ctx, filter, options.FindOne().SetProjection(chatProjection)).Decode(&existingChat)
 	if err != nil {
 		if err == mongo.ErrNoDocuments {
 			targetUser, err := GetUserByID(ctx, targetUserID)
@@ -441,7 +488,7 @@ func SendMessage(ctx context.Context, chatID, senderID bson.ObjectID, content, m
 
 // UpdateTypingStatus updates typing indicator for a user in a chat
 func UpdateTypingStatus(ctx context.Context, chatID, userID bson.ObjectID, isTyping bool) error {
-	if err := RequireChatMember(ctx, chatID, userID); err != nil {
+	if err := RequireChatAccess(ctx, chatID, userID); err != nil {
 		return err
 	}
 
@@ -482,7 +529,7 @@ func MarkMessagesAsRead(chatID, userID bson.ObjectID, messageIDs []bson.ObjectID
 	ctx := context.Background()
 	now := time.Now()
 
-	if err := RequireChatMember(ctx, chatID, userID); err != nil {
+	if err := RequireChatAccess(ctx, chatID, userID); err != nil {
 		return err
 	}
 
@@ -711,7 +758,7 @@ func AddMessageReaction(chatID, messageID, userID bson.ObjectID, emoji string) e
 		return err
 	}
 
-	if err := RequireChatMember(ctx, chatID, userID); err != nil {
+	if err := RequireChatAccess(ctx, chatID, userID); err != nil {
 		return err
 	}
 
@@ -758,7 +805,7 @@ func RemoveMessageReaction(chatID, messageID, userID bson.ObjectID, emoji string
 		return err
 	}
 
-	if err := RequireChatMember(ctx, chatID, userID); err != nil {
+	if err := RequireChatAccess(ctx, chatID, userID); err != nil {
 		return err
 	}
 

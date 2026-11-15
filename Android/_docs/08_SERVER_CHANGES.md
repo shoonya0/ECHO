@@ -95,6 +95,21 @@ Details: [websocket-requests.md](../../_docs/websocket-requests.md#remove_user).
 
 Details: [rest-api.md](../../_docs/rest-api.md#contacts).
 
+## Blocks apply in direct chats (#27)
+
+- If either person blocked the other, `POST chats/direct/<ID>` gets `403` `User is
+  blocked`, and `join_chat` gets `PERMISSION_DENIED` with the same message. This holds
+  for a chat that already exists.
+- `send_message`, `set_typing`, `mark_read`, `add_reaction` and `remove_reaction` in
+  that direct chat get `PERMISSION_DENIED` `User is blocked`, for both the blocker and
+  the blocked person. Nothing is stored or delivered. Don't send typing or read events
+  for a blocked chat.
+- The chat and its history stay in both chat lists. Show it as read-only with a "blocked"
+  note instead of an error, and hide the message box. Unblocking makes it work again.
+- Group chats aren't affected.
+
+Details: [websocket-requests.md](../../_docs/websocket-requests.md).
+
 ## WebSocket limits (#40)
 
 | Server behaviour | What the app should do |
