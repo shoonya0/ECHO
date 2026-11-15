@@ -106,7 +106,7 @@ every entry, and `pagination.limit` only echoes the value (#39).
 
 | Route | What it does |
 |---|---|
-| `POST chats/direct/:userId` | Opens a direct chat. If you already have one with this person, you get that one back. `400` if `userId` is you (#38). |
+| `POST chats/direct/:userId` | Opens a direct chat. If you already have one with this person, you get that one back. `400` if `userId` is you (#38). `403` `User is blocked` if either of you blocked the other, even when the chat exists (#27). |
 | `POST chats/group` | Creates a group. Send `name`, `participants` (user IDs, at least one valid) and optionally `description`. |
 | `GET chats/hub/stats` | Live statistics, for operators only (see [below](#hub-statistics)) |
 

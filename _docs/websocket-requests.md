@@ -25,7 +25,7 @@ Sends a message to a chat you are in.
 
 | Field | Rule |
 |---|---|
-| `chatId` | Required. You must be a participant of the chat. |
+| `chatId` | Required. You must be a participant of the chat. In a direct chat, a block either way gets `PERMISSION_DENIED` with the message `User is blocked` (#27). |
 | `content` | Required, even for image or file messages. Up to 4000 bytes. Emoji and non-English letters use more than one byte each, so the limit in characters can be lower (#51). |
 | `messageType` | `text` (the default), `image`, `file`, `audio` or `video` |
 | `attachments` | Up to 10. Each needs `url` and `originalName`, and `size` can be up to 50 MB. ECHO stores these details only. The file itself must be hosted somewhere else. |
@@ -48,13 +48,15 @@ them, or creates one, and starts following it on this connection.
 ```
 
 - `senderId` is required. It is the *other* person, not you: your own ID gets
-  `INVALID_USER_ID` (#38).
+  `INVALID_USER_ID` (#38). If either of you has blocked the other, you get
+  `PERMISSION_DENIED` (`User is blocked`), even when the chat already exists (#27).
 - `chatId` is ignored, so you can't use this request to follow a group (#48).
 
 **You get:** a `join` event, and no `response`. Read the chat's ID from the event's
 `chatId`.
 
-**Errors:** `INVALID_USER_ID`, `CHAT_CREATION_FAILED`, `USER_NOT_AUTHENTICATED`.
+**Errors:** `INVALID_USER_ID`, `PERMISSION_DENIED`, `CHAT_CREATION_FAILED`,
+`USER_NOT_AUTHENTICATED`.
 
 ## `leave_chat`
 
