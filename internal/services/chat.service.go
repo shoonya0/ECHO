@@ -764,6 +764,14 @@ func AddMessageReaction(chatID, messageID, userID bson.ObjectID, emoji string) (
 		return false, err
 	}
 
+	// details maps each user to their username, so history can show who reacted
+	// without a lookup per ID (#75). Like the sender copied into each message, it
+	// is a copy and goes stale if the username changes (#36).
+	user, err := GetUserByID(ctx, userID)
+	if err != nil {
+		return false, fmt.Errorf("failed to get reacting user: %w", err)
+	}
+
 	// Only a user who hasn't reacted yet matches, so repeating an add changes
 	// nothing (#25). The count is set from the users list in the same write,
 	// which also corrects a count that drifted before the fix. Being a pipeline,
@@ -781,7 +789,7 @@ func AddMessageReaction(chatID, messageID, userID bson.ObjectID, emoji string) (
 				bson.M{"$ifNull": bson.A{"$" + path + ".users", bson.A{}}},
 				bson.A{userID},
 			}}},
-			{Key: path + ".details." + userID.Hex(), Value: bson.M{"$literal": ""}}, // Will be filled with username
+			{Key: path + ".details." + userID.Hex(), Value: bson.M{"$literal": user.Username}},
 			{Key: "updatedAt", Value: time.Now()},
 		}}},
 		reactionCountStage(path),
