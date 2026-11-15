@@ -306,6 +306,10 @@ func handleSendMessage(ctx context.Context, client *models.Client, request model
 	}
 
 	canSend, err := validateMessagePermissions(ctx, client.UserID, chatID) // Check if user has permission to send messages in this chat
+	if errors.Is(err, services.ErrBlocked) {
+		sendErrorResponse(client, request.RequestID, "PERMISSION_DENIED", "User is blocked")
+		return
+	}
 	if err != nil {
 		wsLog().Printf("Failed to validate message permissions: %v", err)
 		sendErrorResponse(client, request.RequestID, "PERMISSION_CHECK_FAILED", "Failed to validate permissions")
@@ -401,6 +405,10 @@ func handleJoinChat(ctx context.Context, client *models.Client, request models.M
 	chat, err := services.CreateDirectChat(ctx, targetUserID) // create a new chat if it doesn't exist
 	if errors.Is(err, services.ErrSelfDirectChat) {
 		sendErrorResponse(client, request.RequestID, "INVALID_USER_ID", "Cannot open a direct chat with yourself")
+		return
+	}
+	if errors.Is(err, services.ErrBlocked) {
+		sendErrorResponse(client, request.RequestID, "PERMISSION_DENIED", "User is blocked")
 		return
 	}
 	if err != nil {
@@ -888,6 +896,20 @@ func validateMessagePermissions(ctx context.Context, userID bson.ObjectID, chatI
 
 	switch chat.ChatType {
 	case string(constants.ChatTypeDirect):
+		// A block on either side stops the direct chat (#27). participant.IsBlocked
+		// is never set, so the users' block lists decide.
+		for otherID := range chat.Participants {
+			if otherID == userID {
+				continue
+			}
+			blocked, err := services.IsBlockedBetween(ctx, userID, otherID)
+			if err != nil {
+				return false, err
+			}
+			if blocked {
+				return false, fmt.Errorf("%w", services.ErrBlocked)
+			}
+		}
 		return true, nil
 
 	case string(constants.ChatTypeGroup):
