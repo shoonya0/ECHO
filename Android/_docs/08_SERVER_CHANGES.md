@@ -74,6 +74,18 @@ Details: [rest-api.md](../../_docs/rest-api.md#the-basics),
 
 Details: [rest-api.md](../../_docs/rest-api.md#groups).
 
+## Only owners and admins manage invite codes (#30)
+
+- Creating, listing, deleting and sending invite codes, and "who joined", now return `403`
+  for anyone but the group's owner and admins (`404` if the group doesn't exist). Show
+  those actions only to owners and admins. Joining with a code is unchanged.
+- The list includes deleted and expired codes; check `deleted` and `expiredDate`.
+- Sending a code returns `404` for an unknown user and `409` for someone already in the
+  group (both were `500`). Sending it again doesn't add a second invitation, and joining
+  removes the invitation from `GET groups/invites`.
+
+Details: [rest-api.md](../../_docs/rest-api.md#groups).
+
 ## Removing group members (#28)
 
 - `remove_user` refuses to remove the group's owner unless the owner sends it: the reply is
