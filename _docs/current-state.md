@@ -12,9 +12,12 @@ and with a link to exactly one feature state.md. Updated by /close-increment and
 /feature-docs update. -->
 
 - **Feature:** none yet · #30 on `fix/30-invite-permissions`: only owners and admins may
-  create, send, delete or list invite codes ([decided](./decisions.md)). Still to do:
-  confirm #72 on Render with a message saved before PR #74
-- **Next step:** write the failing tests for #30, then the fix
+  create, list, delete or send invite codes or see who joined; sends to unknown users or
+  members get `404` / `409`, repeats add nothing, joining clears the invitation. Verified:
+  `verify.mjs --full` (DB required) and the contract test live. Still to do: confirm #72
+  on Render with a message saved before PR #74
+- **Next step:** `/code-review` and `/security-review` (permission checks), then push, PR,
+  and ask before merging
 - **Updated:** 2026-11-15 on `fix/30-invite-permissions`
 
 ## Where things stand
