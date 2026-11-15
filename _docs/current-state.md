@@ -11,14 +11,13 @@ on `main`. To learn what the product does, read
 and with a link to exactly one feature state.md. Updated by /close-increment and
 /feature-docs update. -->
 
-- **Feature:** none yet · #25 on `fix/25-reaction-integrity`, in its PR: each user counts
-  once per emoji, a no-op add or remove replies `changed: false` and sends no event, and
-  `count` is set from `users` in one write. Code review applied (not done: odd old
-  reaction shapes, a leftover `{count: 0}` entry, the extra lookup on a no-op). Still to
-  do: confirm #72 on Render with a message saved before PR #74
-- **Next step:** ask before merging the PR (it deploys to Render). #30 needs a decision
-  first: who may create and delete invites
-- **Updated:** 2026-11-15 on `fix/25-reaction-integrity`
+- **Feature:** none yet · #75 on `fix/75-reaction-usernames`: a new reaction stores the
+  user's username in `details`; old `""` entries stay until that user reacts again.
+  Verified with `verify.mjs --full`, DB required. Still to do: confirm #72 on Render with
+  a message saved before PR #74
+- **Next step:** push, open the PR, then ask before merging (it deploys to Render). #30
+  needs a decision first: who may create and delete invites
+- **Updated:** 2026-11-15 on `fix/75-reaction-usernames`
 
 ## Where things stand
 
@@ -33,6 +32,12 @@ declining a group invite. The full list is in
 
 ## Recently finished
 
+- **#25 (PR #97):** each user counts once per emoji. A repeat add or a remove by someone
+  who never reacted changes nothing: the reply says `changed: false` and no `reaction`
+  event goes out. `count` is set from `users` in the same write, so drifted counts heal on
+  the next change ([requests](./websocket-requests.md#add_reaction-and-remove_reaction),
+  [app changes](../Android/_docs/08_SERVER_CHANGES.md)). Not done from the code review:
+  odd old reaction shapes, a leftover `{count: 0}` entry, the extra lookup on a no-op.
 - **#27 (PR #96):** a block either way closes the direct chat to both people. Opening it
   gets `403` / `PERMISSION_DENIED` `User is blocked`, and so do `send_message`,
   `set_typing`, `mark_read` and reactions; history still reads. Groups aren't affected
@@ -171,7 +176,7 @@ have no status, so the check must allow for that.
 
 ## Known issues and risks
 
-There are 34 open issues. Where each risk sits in the code: [architecture-overview.md](./architecture-overview.md#riskiest-areas).
+There are 33 open issues. Where each risk sits in the code: [architecture-overview.md](./architecture-overview.md#riskiest-areas).
 
 | Area | The problem, in short | Issues |
 |---|---|---|
@@ -182,7 +187,7 @@ There are 34 open issues. Where each risk sits in the code: [architecture-overvi
 | Accounts | Deleting an account leaves old references, emails are case-sensitive, and usernames aren't unique | #35, #36 |
 | Contacts and blocking | Your contacts list includes people you blocked, contact lists aren't cut to `limit`, and blocks written during a deploy can be missed | #39, #62, #63 |
 | Online status and privacy | Online status is unreliable, and privacy settings aren't applied | #31, #32 |
-| Messages and data | Reaction counts drift, history doesn't show who reacted by name, writes can half-finish, and some lists grow without limit | #25, #37, #42, #75 |
+| Messages and data | History doesn't show who reacted by name, writes can half-finish, and some lists grow without limit | #37, #42, #75 |
 | Limits and errors | WebSocket limits are per connection, not per user, and `set_typing` still writes to MongoDB; no limits on login and signup | #40 |
 | WebSocket replies and events | Replies and events are inconsistent or leave out details, which affects the Android plan, and uppercase chat IDs lose live events | #47, #48, #50, #51, #60 |
 

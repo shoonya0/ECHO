@@ -17,6 +17,10 @@ func TestReactionOnMissingMessageIsErrMessageNotFound(t *testing.T) {
 	ctx := useTestDB(t)
 
 	alice, chatID := bson.NewObjectID(), bson.NewObjectID()
+	// A reacting user always has an account: add looks it up for the username (#75).
+	if _, err := database.DB.Collection(string(constants.UserColl)).InsertOne(ctx, bson.M{"_id": alice, "username": "alice"}); err != nil {
+		t.Fatalf("insert user: %v", err)
+	}
 	if _, err := database.DB.Collection(string(constants.ChatColl)).InsertOne(ctx, bson.M{
 		"_id":          chatID,
 		"participants": bson.M{alice.Hex(): bson.M{"status": "accepted"}},

@@ -68,8 +68,10 @@ func TestReactionCountFollowsUsers(t *testing.T) {
 			if got.Users[i] != u {
 				t.Fatalf("👍 users = %v, want %v", got.Users, users)
 			}
-			if _, ok := got.Details[u.Hex()]; !ok {
-				t.Fatalf("👍 details = %v, want an entry for %s", got.Details, u.Hex())
+			// details holds each user's username, so history can show who
+			// reacted without looking each ID up (#75).
+			if name, ok := got.Details[u.Hex()]; !ok || name != "user-"+u.Hex() {
+				t.Fatalf("👍 details = %v, want %s -> %q", got.Details, u.Hex(), "user-"+u.Hex())
 			}
 		}
 	}
@@ -131,7 +133,7 @@ func TestReactionCountFollowsUsers(t *testing.T) {
 
 	t.Run("a count that already drifted is corrected on the next change", func(t *testing.T) {
 		m := newMessage(t, bson.M{"👍": bson.M{
-			"count": 5, "users": bson.A{alice}, "details": bson.M{alice.Hex(): ""},
+			"count": 5, "users": bson.A{alice}, "details": bson.M{alice.Hex(): "user-" + alice.Hex()},
 		}})
 		add(t, m, bob, true)
 		want(t, m, alice, bob)
@@ -141,7 +143,7 @@ func TestReactionCountFollowsUsers(t *testing.T) {
 
 	t.Run("a drifted count at 0 still has a user to keep", func(t *testing.T) {
 		m := newMessage(t, bson.M{"👍": bson.M{
-			"count": 0, "users": bson.A{alice, bob}, "details": bson.M{alice.Hex(): "", bob.Hex(): ""},
+			"count": 0, "users": bson.A{alice, bob}, "details": bson.M{alice.Hex(): "user-" + alice.Hex(), bob.Hex(): "user-" + bob.Hex()},
 		}})
 		remove(t, m, bob, true)
 		want(t, m, alice)

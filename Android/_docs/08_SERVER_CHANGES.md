@@ -122,6 +122,11 @@ Details: [websocket-requests.md](../../_docs/websocket-requests.md).
   count drifted are corrected the next time someone reacts with that emoji. Prefer
   `users` over `count` when they disagree.
 
+- `reactions.<emoji>.details` maps each user ID in `users` to that user's username
+  (#75), so history can show who reacted. Reactions stored before then have `""`; look
+  those users up by ID. The name is a copy taken when they reacted, so it can be out of
+  date after a username change.
+
 Details: [websocket-requests.md](../../_docs/websocket-requests.md#add_reaction-and-remove_reaction).
 
 ## WebSocket limits (#40)
