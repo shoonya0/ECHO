@@ -11,13 +11,13 @@ on `main`. To learn what the product does, read
 and with a link to exactly one feature state.md. Updated by /close-increment and
 /feature-docs update. -->
 
-- **Feature:** none yet · #25 on `fix/25-reaction-integrity`: each user counts once per
-  emoji, a repeat add or a stranger's remove changes nothing and sends no event, and
-  `count` is set from `users` (drifted counts heal on the next change). Verified with
-  `verify.mjs --full`, DB required. Still to do: confirm #72 on Render with a message
-  saved before PR #74
-- **Next step:** `/code-review`, then push, open the PR and ask before merging (it
-  deploys to Render). #30 needs a decision first: who may create and delete invites
+- **Feature:** none yet · #25 on `fix/25-reaction-integrity`, in its PR: each user counts
+  once per emoji, a no-op add or remove replies `changed: false` and sends no event, and
+  `count` is set from `users` in one write. Code review applied (not done: odd old
+  reaction shapes, a leftover `{count: 0}` entry, the extra lookup on a no-op). Still to
+  do: confirm #72 on Render with a message saved before PR #74
+- **Next step:** ask before merging the PR (it deploys to Render). #30 needs a decision
+  first: who may create and delete invites
 - **Updated:** 2026-11-15 on `fix/25-reaction-integrity`
 
 ## Where things stand
