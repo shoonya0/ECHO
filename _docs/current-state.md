@@ -11,11 +11,14 @@ on `main`. To learn what the product does, read
 and with a link to exactly one feature state.md. Updated by /close-increment and
 /feature-docs update. -->
 
-- **Feature:** none yet · nothing in progress. #27 merged in PR #96. Still to do: confirm
-  #72 on Render with a message saved before PR #74
-- **Next step:** #25 (one user can wipe other users' reactions, counts drift). #30 needs a
-  decision first: who may create and delete invites
-- **Updated:** 2026-11-15 on `main` at `4512d3f`
+- **Feature:** none yet · #25 on `fix/25-reaction-integrity`: each user counts once per
+  emoji, a repeat add or a stranger's remove changes nothing and sends no event, and
+  `count` is set from `users` (drifted counts heal on the next change). Verified with
+  `verify.mjs --full`, DB required. Still to do: confirm #72 on Render with a message
+  saved before PR #74
+- **Next step:** `/code-review`, then push, open the PR and ask before merging (it
+  deploys to Render). #30 needs a decision first: who may create and delete invites
+- **Updated:** 2026-11-15 on `fix/25-reaction-integrity`
 
 ## Where things stand
 
