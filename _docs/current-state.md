@@ -11,13 +11,11 @@ on `main`. To learn what the product does, read
 and with a link to exactly one feature state.md. Updated by /close-increment and
 /feature-docs update. -->
 
-- **Feature:** none yet · #27 on `fix/27-enforce-blocks-in-chats`: a block either way
-  refuses opening the direct chat (`403` / `PERMISSION_DENIED` `User is blocked`) and
-  sending, typing, read receipts and reactions in it (code review applied). Still to do: confirm #72 on Render with a message saved before
-  PR #74; #30 needs a decision on who may create and delete invites
-- **Next step:** push, open the PR, then ask before merging (it deploys to
-  Render). Next issue after this: #25 (reactions can wipe other users' reactions)
-- **Updated:** 2026-11-15 on `fix/27-enforce-blocks-in-chats`
+- **Feature:** none yet · nothing in progress. #27 merged in PR #96. Still to do: confirm
+  #72 on Render with a message saved before PR #74
+- **Next step:** #25 (one user can wipe other users' reactions, counts drift). #30 needs a
+  decision first: who may create and delete invites
+- **Updated:** 2026-11-15 on `main` at `4512d3f`
 
 ## Where things stand
 
@@ -32,6 +30,11 @@ declining a group invite. The full list is in
 
 ## Recently finished
 
+- **#27 (PR #96):** a block either way closes the direct chat to both people. Opening it
+  gets `403` / `PERMISSION_DENIED` `User is blocked`, and so do `send_message`,
+  `set_typing`, `mark_read` and reactions; history still reads. Groups aren't affected
+  ([requests](./websocket-requests.md), [app changes](../Android/_docs/08_SERVER_CHANGES.md)).
+  Not done from the code review: contact requests still miss a half-written block.
 - **#38 (PR #95):** a contact request or direct chat with yourself gets `400`
   (`INVALID_USER_ID` from `join_chat`) instead of storing broken data
   ([app changes](../Android/_docs/08_SERVER_CHANGES.md)).
@@ -92,20 +95,8 @@ declining a group invite. The full list is in
   read loop finishes the close handshake within 5 seconds instead of at its 60-second
   deadline. The middleware and the re-check share one check (`services.CheckSession`). The
   code review found #79; the security review found nothing.
-- **#33 (PR #77):** a token stops working when its
-  account is banned, deactivated or deleted after login. Before, the middleware trusted
-  the account status copied into the 7-day token. Every request now reads the account
-  (`services.CheckAccountAccess`), cached in Redis for 30 seconds, and refuses it with
-  `403` `ACCOUNT_BANNED` or `ACCOUNT_INACTIVE` (as Login does) or `401`
-  `ACCOUNT_NOT_FOUND`. Deleting a profile caches the account as deleted, so it applies at
-  once, even for a request that was mid-check; a ban made in MongoDB applies within 30
-  seconds. A stored `accountStatus: null` counts as inactive, as in Login. If Redis can't
-  answer the logout list, the request gets `503` `AUTH_UNAVAILABLE` instead of going
-  through; a cache failure reads MongoDB instead. Tokens without a `jti` are refused.
-  `401` replies no longer include the parser's error text. The `else if` chain that
-  skipped the ban check is gone. CI now runs Redis for the cache tests. What the Android
-  app must change is in
-  [08_SERVER_CHANGES.md](../Android/_docs/08_SERVER_CHANGES.md).
+- **#33 (PR #77):** a token stops working when its account is banned, deactivated or
+  deleted after login ([REST](./rest-api.md), [app changes](../Android/_docs/08_SERVER_CHANGES.md)).
 - **#72 (PR #74):** reactions work on real messages. New messages store `reactions: {}` instead of
   `null`, which MongoDB refused to create reaction fields in. A message that still has
   `null` (every message saved before the fix, or one written by an older server copy
@@ -177,7 +168,7 @@ have no status, so the check must allow for that.
 
 ## Known issues and risks
 
-There are 35 open issues. Where each risk sits in the code: [architecture-overview.md](./architecture-overview.md#riskiest-areas).
+There are 34 open issues. Where each risk sits in the code: [architecture-overview.md](./architecture-overview.md#riskiest-areas).
 
 | Area | The problem, in short | Issues |
 |---|---|---|
@@ -186,7 +177,7 @@ There are 35 open issues. Where each risk sits in the code: [architecture-overvi
 | Groups | Members are never asked to accept, live delivery doesn't match who is in the group, and the size limit isn't enforced | #5, #14, #16, #17, #68 |
 | Invite codes | The invite endpoints lack permission checks, and entries left by forged joins before #9 was fixed are still stored | #30, #69 |
 | Accounts | Deleting an account leaves old references, emails are case-sensitive, and usernames aren't unique | #35, #36 |
-| Contacts and blocking | Blocks aren't enforced in chats, your contacts list includes people you blocked, and blocks written during a deploy can be missed | #27, #39, #62, #63 |
+| Contacts and blocking | Your contacts list includes people you blocked, contact lists aren't cut to `limit`, and blocks written during a deploy can be missed | #39, #62, #63 |
 | Online status and privacy | Online status is unreliable, and privacy settings aren't applied | #31, #32 |
 | Messages and data | Reaction counts drift, history doesn't show who reacted by name, writes can half-finish, and some lists grow without limit | #25, #37, #42, #75 |
 | Limits and errors | WebSocket limits are per connection, not per user, and `set_typing` still writes to MongoDB; no limits on login and signup | #40 |
