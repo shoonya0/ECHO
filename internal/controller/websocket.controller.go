@@ -31,6 +31,19 @@ func getUsernameFromClient(client *models.Client) string {
 	return userInfo.Username
 }
 
+// normalizeChatID returns a valid chat ID in the lowercase hex the server uses
+// for chat channels and hub rooms. ObjectIDFromHex also accepts uppercase, so
+// without this a request saved its change but published its event to a channel
+// named after the uppercase text, which nobody follows (#60). A value that isn't
+// a valid ID is returned unchanged, so the handler still answers INVALID_CHAT_ID.
+func normalizeChatID(chatID string) string {
+	id, err := bson.ObjectIDFromHex(chatID)
+	if err != nil {
+		return chatID
+	}
+	return id.Hex()
+}
+
 // WebSocket upgrader with CORS support
 var upgrader = websocket.Upgrader{
 	ReadBufferSize:  1024,
@@ -249,6 +262,8 @@ func handleClientRead(ctx context.Context, client *models.Client) {
 
 // handleClientRequest processes different types of client requests
 func handleClientRequest(ctx context.Context, client *models.Client, request models.MessageRequest) {
+	request.ChatID = normalizeChatID(request.ChatID)
+
 	switch request.Type {
 	case models.WSRequestTypeSendMessage:
 		handleSendMessage(ctx, client, request)
