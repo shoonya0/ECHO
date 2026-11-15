@@ -129,6 +129,15 @@ Details: [websocket-requests.md](../../_docs/websocket-requests.md).
 
 Details: [websocket-requests.md](../../_docs/websocket-requests.md#add_reaction-and-remove_reaction).
 
+## `send_message` replies have a top-level `requestId` (#47)
+
+- The `response` to `send_message` now has `requestId` at the top level, like every other
+  `response` and `error`. Before, it was only in `data.requestId`, so the plan's
+  `frame.requestId ?: return` dropped every `send_message` reply and the send timed out.
+- Match replies on the top-level `requestId`. `data.requestId` is still there.
+
+Details: [websocket-events.md](../../_docs/websocket-events.md).
+
 ## WebSocket limits (#40)
 
 | Server behaviour | What the app should do |

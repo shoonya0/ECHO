@@ -20,7 +20,7 @@ The `response` comes in three shapes, so read them carefully.
 }
 ```
 
-**Reply to `send_message`.** Here `requestId` is only inside `data` (#47):
+**Reply to `send_message`:**
 
 ```json
 {
@@ -35,11 +35,12 @@ The `response` comes in three shapes, so read them carefully.
       "messageType": "text"
     },
     "requestId": "r1"
-  }
+  },
+  "requestId": "r1"
 }
 ```
 
-**Reply to reactions, `invite_user` and `remove_user`.** Here `requestId` is in both places:
+**Reply to reactions, `invite_user` and `remove_user`:**
 
 ```json
 {
@@ -53,8 +54,9 @@ The `response` comes in three shapes, so read them carefully.
 }
 ```
 
-**To match a reply to its request, always read `data.requestId`.** It works for all of
-them. The details of the reply are in `data.data`.
+**To match a reply to its request, read the top-level `requestId`.** Every `response` and
+`error` has it; a `response` also has it in `data.requestId` (#47). The details of the
+reply are in `data.data`.
 
 ## `error`: your request failed
 
