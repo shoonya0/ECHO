@@ -64,10 +64,12 @@ func TestChatActionsRequireMembership(t *testing.T) {
 			return MarkMessagesAsRead(chat, userID, []bson.ObjectID{messageID})
 		}},
 		{"add reaction", func(userID, chat bson.ObjectID) error {
-			return AddMessageReaction(chat, messageID, userID, "👍")
+			_, err := AddMessageReaction(chat, messageID, userID, "👍")
+			return err
 		}},
 		{"remove reaction", func(userID, chat bson.ObjectID) error {
-			return RemoveMessageReaction(chat, messageID, userID, "👍")
+			_, err := RemoveMessageReaction(chat, messageID, userID, "👍")
+			return err
 		}},
 	}
 
