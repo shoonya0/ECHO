@@ -107,8 +107,11 @@ reconnects. See
 **When someone disconnects,** the hub takes the connection out of every room it is in and
 unsubscribes each chat channel whose room is left empty on this server. When a user's last
 connection closes, it also drops the `user:<id>` channel and tells others the user went
-offline; the offline part doesn't work properly yet (#31). A room emptied by `leave_chat`
-or `remove_user` keeps its channel until a disconnect empties it again (#55).
+offline; the offline part doesn't work properly yet (#31). `leave_chat` and `remove_user`
+release a chat's channel the same way when they empty its room. A join always enters the
+room before it subscribes, and a release re-subscribes if someone joined while it was
+closing the channel, so a join is never left without a subscription (#55). Messages
+published in that short gap are missed (#43).
 
 **When a connection is too slow,** its queue of 10 outgoing messages fills up and the server
 disconnects it.
@@ -139,7 +142,7 @@ its connections live, though it is still in the chat history (#43).
 |---|---|
 | A message is saved but doesn't arrive live | Does the person's connection follow the chat? They may need to reconnect. Also check #14 and #17. |
 | Nobody gets live messages | Is Redis up? Look for publish errors in the server log. |
-| Memory or Redis connections keep growing | Known problems: #21, #55 |
+| Memory or Redis connections keep growing | Known problem: #21 |
 | Online status is wrong | Known problem: #31 |
 
 `GET /echo/v1/chats/hub/stats` shows the counts for one server, to operators who send the
@@ -153,7 +156,6 @@ stats token. See
 | #21 | Each Redis channel uses its own connection, so connections grow with users and chats |
 | #22 | Slow MongoDB or Redis calls hold up all connects and disconnects |
 | #54 | A client that disconnects before it is registered stays registered until cleanup |
-| #55 | `JoinChat` can lose its Redis subscription to a disconnect at the same time; rooms emptied by `leave_chat` keep their channel |
 | #17 | Pending group members don't get live messages |
 | #31 | Online status is unreliable |
 | #40 | No size limit or rate limit on incoming messages |

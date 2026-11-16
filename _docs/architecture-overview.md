@@ -116,7 +116,6 @@ Take extra care when changing these places.
 
 | Area | Why it is risky | Where | Issue |
 |---|---|---|---|
-| Channel subscriptions | A join and a disconnect at the same moment can lose a chat's subscription | `internal/realtime/hub.go` `JoinChat`, `handleClientUnregistration` | #55 |
 | One Redis connection per channel | Connections grow with users and chats | `internal/realtime/pubsub.go:165` | #21 |
 | Block model | Blocks aren't enforced in chats; the startup block migration runs only once | `internal/services/chat.service.go`, `internal/services/migrations.go` | #27, #63 |
 | Account deletion | Deleting an account leaves its ID behind in chats and contact lists | `internal/services/user.service.go:108` | #35 |
