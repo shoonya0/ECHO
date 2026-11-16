@@ -245,15 +245,13 @@ func (eh *Hub) handleClientUnregistration(client *models.Client) {
 			lastConnection = true
 			delete(eh.UserClients, userID)
 
-			// Remove from active chats
-			if activeChats, exists := eh.UserActiveChats[userID]; exists {
-				for _, chatID := range activeChats {
-					removeClientFromRoom(eh.Hub, client, chatID)
-				}
-			}
-
-			// Copy what is left for the Redis calls below
+			// Loop over a copy: removeClientFromRoom shifts the stored slice in
+			// place, so ranging over it skips entries (#116). The copy is also
+			// the list of chats to unsubscribe below.
 			chatsToUnsubscribe = slices.Clone(eh.UserActiveChats[userID])
+			for _, chatID := range chatsToUnsubscribe {
+				removeClientFromRoom(eh.Hub, client, chatID)
+			}
 		}
 	}
 

@@ -309,3 +309,35 @@ func TestDisconnectOfLastConnectionRemovesUser(t *testing.T) {
 		t.Fatal("empty chat is still in ChatClients")
 	}
 }
+
+// Closing a user's last connection must take every chat out of the hub and
+// unsubscribe every chat channel. The loop used to edit the list it was
+// reading, so with [A, B, C] it kept B and unsubscribed only B (#116).
+func TestDisconnectOfLastConnectionLeavesEveryChat(t *testing.T) {
+	hub := newTestHub(t)
+	client := newTestClient("c1", bson.NewObjectID())
+	chats := []string{"chatA", "chatB", "chatC"}
+	addClient(hub, client, chats...)
+
+	// Stand-in subscriptions: a PubSub with no channels never dials Redis.
+	pm := hub.pubSubManager
+	pm.mu.Lock()
+	for _, chatID := range chats {
+		pm.subscriptions[pm.getChatChannel(chatID)] = hub.redisClient.Subscribe(context.Background())
+	}
+	pm.mu.Unlock()
+
+	hub.handleClientUnregistration(client)
+
+	if left, ok := hub.UserActiveChats[client.UserID.Hex()]; ok {
+		t.Fatalf("user still has active chats %v", left)
+	}
+	for _, chatID := range chats {
+		if _, ok := hub.ChatClients[chatID]; ok {
+			t.Errorf("%s is still in ChatClients", chatID)
+		}
+		if pm.IsSubscribed(pm.getChatChannel(chatID)) {
+			t.Errorf("%s is still subscribed", chatID)
+		}
+	}
+}

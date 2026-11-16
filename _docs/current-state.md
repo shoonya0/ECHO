@@ -1,6 +1,6 @@
 # ECHO: current state
 
-A one-page snapshot of where the project stands. Last checked on 2026-11-16 at `1f3043a`
+A one-page snapshot of where the project stands. Last checked on 2026-11-16 at `75b8b1d`
 on `main`. To learn what the product does, read
 [product-overview.md](./product-overview.md). For the code, read
 [architecture-overview.md](./architecture-overview.md).
@@ -11,15 +11,14 @@ on `main`. To learn what the product does, read
 and with a link to exactly one feature state.md. Updated by /close-increment and
 /feature-docs update. -->
 
-- **Feature:** none yet · #14 on `fix/14-cut-removed-members-live`: removed members' open
-  connections leave the group's room on every server. Reviewed, verified at `5bae453`
+- **Feature:** none · **#116** on `fix/116-disconnect-cleanup`: a last disconnect leaves and
+  unsubscribes every chat. Verified (`verify.mjs --full`) at `4d64937`, not pushed
 - **#72 on Render (paused 2026-11-15):** `/health` answers `200`, but no chat with a message
   saved before PR #74 (`reactions: null`) is left to react to. Continue later, for example
   by setting `reactions: null` on a test message in Atlas first
-- **Next step:** merge the #14 PR once the user agrees and CI is green. From its review: #116, #117.
-  `rest-api.md` and `websocket-requests.md` are at their 200-line budget: split them
-  (`/feature-docs split`) before the next change that adds to them
-- **Updated:** 2026-11-16 on `fix/14-cut-removed-members-live`
+- **Next step:** push, open the PR for #116, ask before merging; then the next issue from
+  [Known issues](#known-issues-and-risks). Split `rest-api.md`, `websocket-requests.md` first
+- **Updated:** 2026-11-16 on `fix/116-disconnect-cleanup`
 
 ## Where things stand
 
@@ -34,6 +33,11 @@ declining a group invite. The full list is in
 
 ## Recently finished
 
+- **#14 (PR #118):** a member removed with `remove_user` gets the `chat_updated` and then
+  no more live events from the group, on every server: a hub-internal message on the
+  chat's Redis channel takes their connections out of the room
+  ([events](./websocket-events.md), [app changes](../Android/_docs/08_SERVER_CHANGES/groups-and-invites.md)).
+  The Android log is split into topic pages. Security review: nothing found; code review: #116, #117.
 - **#106 (PR #115):** `send_message` and `invite_user` read the chat once, in the same
   query that checks membership (`services.GetChatForMember`); replies are unchanged.
   `remove_user` still reads it twice.
@@ -92,16 +96,12 @@ declining a group invite. The full list is in
   and the role is re-checked in the write ([requests](./websocket-requests.md#remove_user),
   [app changes](../Android/_docs/08_SERVER_CHANGES/README.md)). The code review's other points
   (a race reported as `PERMISSION_DENIED`, the second write not checked, #37) were left.
-- **#91 (PR #92):** sending a deleted invite code returns `400` instead of giving the
-  target user a pending invitation for it.
 - **#15 (PR #90):** invite codes are 16 random bytes (32 hex characters) with nothing
   inside; the AES key that was in the repo is gone. The invite routes find the group by
   the stored code (indexed), so old codes work until they expire, and a code that isn't
   stored gets `400` on every route ([REST](./rest-api.md#groups),
   [app changes](../Android/_docs/08_SERVER_CHANGES/README.md)). Security review: nothing found.
   The code review found #91 (a deleted code can still be sent).
-- **#65, #84, #88 (PRs #82, #86, #89):** signup, the auth middleware and the WebSocket
-  connect log name the user by ID only; no log line writes an email, username or hash.
 - **#83 (PR #87):** `invite_user` answers a failed chat lookup (timeout, MongoDB down) with
   the retryable `INVITE_FAILED`; only a chat that doesn't exist is `INVALID_CHAT_ID`.
   `GetChat` now returns `ErrChatNotFound` for a missing chat.
@@ -179,12 +179,12 @@ blocks are stored, and who counts as a member.
 
 ## Known issues and risks
 
-There are 27 open issues. Where each risk sits in the code: [architecture-overview.md](./architecture-overview.md#riskiest-areas).
+There are 26 open issues. Where each risk sits in the code: [architecture-overview.md](./architecture-overview.md#riskiest-areas).
 
 | Area | The problem, in short | Issues |
 |---|---|---|
 | Live connections | The server can leak resources or stall under load, missed live messages can't be detected, and open connections miss new chats, and a restart of a running hub doubles its loops | #20, #21, #22, #43, #49, #54, #55, #79, #116, #117 |
-| Groups | Members are never asked to accept, live delivery doesn't match who is in the group, and the participant count is maintained by hand | #5, #14, #17, #110 |
+| Groups | Members are never asked to accept, pending members get no live messages, and the participant count is maintained by hand | #5, #17, #110 |
 | Invite codes | Entries left by forged joins before #9 was fixed are still stored | #69 |
 | Accounts | Deleting an account leaves old references, emails are case-sensitive, and usernames aren't unique | #35, #36 |
 | Contacts and blocking | Contact lists aren't cut to `limit`, and blocks written during a deploy can be missed | #39, #63 |
