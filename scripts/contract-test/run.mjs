@@ -160,10 +160,14 @@ const groupId = group.data?.chatId ?? group.data?._id ?? group.data?.id;
 
 // Groups / invites
 await call("add group members", "POST", `/groups/${groupId}/add-members`, { token: tA, body: { userIDs: [idB] } });
-await call("create invite", "POST", `/groups/${groupId}/invites`, { token: tA, expect: 200 });
+const created = await call("create invite", "POST", `/groups/${groupId}/invites`, { token: tA, expect: 200 });
 await call("create invite as member", "POST", `/groups/${groupId}/invites`, { token: tB, expect: 403 }); // owners and admins only (#30)
 const invites = await call("group invites", "GET", `/groups/${groupId}/invites`, { token: tA, expect: 200 });
-const inviteCode = invites.data?.[0]?.inviteCode;
+// Creating a code returns it (#104), so use that one, not a guess from the list.
+const inviteCode = created.data?.inviteCode;
+const listed = Array.isArray(invites.data) && invites.data.some((inv) => inv.inviteCode === inviteCode);
+if (!inviteCode || !listed) failures++;
+console.log(`${inviteCode && listed ? "PASS" : "FAIL"}       create invite returns a listed code`);
 await call("all invites of user", "GET", "/groups/invites", { token: tB, expect: 200 });
 await call("send invite to user", "POST", `/groups/invites/${inviteCode}/${idB}/send`, { token: tA });
 await call("join group by invite", "POST", `/groups/join/${inviteCode}`, { token: tB });
