@@ -69,6 +69,12 @@ func main() {
 		} else if n > 0 {
 			log.WithField("users", n).Info("Migrated legacy blocks")
 		}
+		// #16: participant counts that drifted before the fix; idempotent.
+		if n, err := services.BackfillParticipantCounts(indexCtx); err != nil {
+			log.WithError(err).Error("Failed to backfill participant counts")
+		} else if n > 0 {
+			log.WithField("groups", n).Info("Backfilled participant counts")
+		}
 	}()
 	// Redis backs token revocation and WebSocket pub/sub, so it is required.
 	if err := database.ConnectRedis(ctx); err != nil {
