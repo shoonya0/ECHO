@@ -38,30 +38,49 @@ func TestChatHandlersReadTheChatOnce(t *testing.T) {
 		t.Fatalf("insert chats: %v", err)
 	}
 
-	cases := []struct {
-		name string
-		run  func(client *models.Client)
-	}{
-		{"send_message in a group", func(c *models.Client) {
-			handleSendMessage(ctx, c, models.MessageRequest{ChatID: groupID.Hex(), Content: "hi", RequestID: "r1"})
-		}},
-		{"send_message in a direct chat", func(c *models.Client) {
-			handleSendMessage(ctx, c, models.MessageRequest{ChatID: directID.Hex(), Content: "hi", RequestID: "r1"})
-		}},
-		{"invite_user", func(c *models.Client) {
-			handleInviteUser(ctx, c, models.MessageRequest{ChatID: groupID.Hex(), RequestID: "r1",
+	send := func(chatID bson.ObjectID) func(*models.Client) {
+		return func(c *models.Client) {
+			handleSendMessage(ctx, c, models.MessageRequest{ChatID: chatID.Hex(), Content: "hi", RequestID: "r1"})
+		}
+	}
+	invite := func(chatID bson.ObjectID) func(*models.Client) {
+		return func(c *models.Client) {
+			handleInviteUser(ctx, c, models.MessageRequest{ChatID: chatID.Hex(), RequestID: "r1",
 				Metadata: map[string]any{"userIds": []any{newcomer.Hex()}}})
-		}},
+		}
+	}
+	outsider := bson.NewObjectID()
+
+	// wantCode "" is a success reply. The error cases keep the codes they had
+	// before #106; a non-member gets PERMISSION_DENIED whether or not the chat
+	// exists (#59).
+	cases := []struct {
+		name     string
+		caller   bson.ObjectID
+		run      func(client *models.Client)
+		wantCode string
+	}{
+		{"send_message in a group", owner, send(groupID), ""},
+		{"send_message in a direct chat", owner, send(directID), ""},
+		{"send_message by a non-member", outsider, send(groupID), "PERMISSION_DENIED"},
+		{"send_message to a missing chat", owner, send(bson.NewObjectID()), "PERMISSION_DENIED"},
+		{"invite_user", owner, invite(groupID), ""},
+		{"invite_user by a plain member", member, invite(groupID), "PERMISSION_DENIED"},
+		{"invite_user to a direct chat", owner, invite(directID), "INVALID_REQUEST"},
+		{"invite_user by a non-member", outsider, invite(groupID), "PERMISSION_DENIED"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			client := &models.Client{ID: "c1", UserID: owner, Send: make(chan models.WebSocketMessage, 4)}
+			client := &models.Client{ID: "c1", UserID: tc.caller, Send: make(chan models.WebSocketMessage, 4)}
 			reads.Reset()
 			tc.run(client)
 
-			reply := <-client.Send
-			if reply.Type != models.WSMessageTypeResponse {
-				t.Fatalf("reply = %+v, want a success response", reply.Data)
+			if tc.wantCode == "" {
+				if reply := <-client.Send; reply.Type != models.WSMessageTypeResponse {
+					t.Fatalf("reply = %+v, want a success response", reply.Data)
+				}
+			} else if data := errorData(t, client); data.Code != tc.wantCode {
+				t.Fatalf("code = %q (%q), want %q", data.Code, data.Message, tc.wantCode)
 			}
 			if n := reads.Reads(string(constants.ChatColl)); n != 1 {
 				t.Fatalf("chat reads = %d, want 1", n)

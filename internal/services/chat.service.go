@@ -141,7 +141,9 @@ func RequireChatMember(ctx context.Context, chatID, userID bson.ObjectID) error 
 // GetChatForMember returns the chat's type, participants and size limit, read
 // in the same query that checks userID is a participant, so a handler that
 // checks membership first doesn't read the chat twice (#106). Like
-// RequireChatMember, an unknown chat gives ErrNotParticipant.
+// RequireChatMember, an unknown chat gives ErrNotParticipant. Only ChatID,
+// ChatType, Participants and Settings.MaxParticipants are filled; every other
+// field is zero, so add to the projection before reading another one.
 func GetChatForMember(ctx context.Context, chatID, userID bson.ObjectID) (models.Chat, error) {
 	return findChatForMember(ctx, chatID, userID, bson.M{
 		"chatType":                 1,
@@ -167,14 +169,9 @@ func findChatForMember(ctx context.Context, chatID, userID bson.ObjectID, projec
 // typing, read receipts and reactions. In a direct chat, a block either way
 // returns ErrBlocked (#27). Reading history needs membership only.
 func RequireChatAccess(ctx context.Context, chatID, userID bson.ObjectID) error {
-	var chat models.Chat
-	opts := options.FindOne().SetProjection(bson.M{"chatType": 1, "participants": 1})
-	err := database.DB.Collection(string(constants.ChatColl)).FindOne(ctx, chatMemberFilter(chatID, userID), opts).Decode(&chat)
-	if errors.Is(err, mongo.ErrNoDocuments) {
-		return fmt.Errorf("%w", ErrNotParticipant)
-	}
+	chat, err := findChatForMember(ctx, chatID, userID, bson.M{"chatType": 1, "participants": 1})
 	if err != nil {
-		return fmt.Errorf("failed to check chat membership: %w", err)
+		return err
 	}
 	return CheckDirectChatBlock(ctx, &chat, userID)
 }
@@ -939,6 +936,9 @@ func AddGroupMember(ctx context.Context, userID bson.ObjectID, chatID bson.Objec
 // chat with GetChatForMember, so the chat isn't read again (#106). The update
 // still re-checks the role, the chat type and the size limit.
 func AddGroupMemberToChat(ctx context.Context, userID bson.ObjectID, chat models.Chat, participantIDs []bson.ObjectID) error {
+	if chat.ChatID.IsZero() {
+		return fmt.Errorf("add group members: chat has no ID")
+	}
 	if chat.ChatType != string(constants.ChatTypeGroup) {
 		return fmt.Errorf("%w", ErrChatNotFound)
 	}

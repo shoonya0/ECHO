@@ -759,13 +759,10 @@ func handleInviteUser(ctx context.Context, client *models.Client, request models
 		return
 	}
 
-	actingParticipant, isParticipant := chat.Participants[client.UserID]
-	if !isParticipant {
-		sendErrorResponse(client, request.RequestID, "PERMISSION_DENIED", "You are not a participant of this chat")
-		return
-	}
-
-	// Only owners and admins can invite
+	// Only owners and admins can invite. GetChatForMember found the caller in
+	// participants. This check gives the specific text; the service's own
+	// role check catches a demotion during the add (see sendInviteError).
+	actingParticipant := chat.Participants[client.UserID]
 	if actingParticipant.Role != string(constants.ChatRoleOwner) && actingParticipant.Role != string(constants.ChatRoleAdmin) {
 		sendErrorResponse(client, request.RequestID, "PERMISSION_DENIED", "Only owners and admins can invite users")
 		return
@@ -1044,7 +1041,7 @@ func sendChatError(client *models.Client, requestID string, err error, code, mes
 	sendErrorResponse(client, requestID, code, message)
 }
 
-// sendInviteError answers a failed AddGroupMember with a fixed text (#41). The
+// sendInviteError answers a failed AddGroupMemberToChat with a fixed text (#41). The
 // handler has already checked the caller's role, so ErrPermissionDenied here
 // means the chat changed during the add: it keeps INVITE_FAILED, which the
 // client may retry.
