@@ -396,11 +396,21 @@ func CreateGroupChat(ctx context.Context, chatName, description string, particip
 		return nil, fmt.Errorf("failed to create group chat: %w", err)
 	}
 
-	// Add chat ref to creator
-	_, _ = database.DB.Collection(string(constants.UserColl)).UpdateOne(ctx,
+	// Add chat ref to creator. The hub delivers live messages from this entry,
+	// so a group whose creator entry isn't written is removed again (#112).
+	res, err := database.DB.Collection(string(constants.UserColl)).UpdateOne(ctx,
 		bson.M{"_id": creator.ID},
 		bson.M{"$set": bson.M{"chats." + chat.ChatID.Hex(): 0}},
 	)
+	if err == nil && res.MatchedCount == 0 {
+		err = ErrUserNotFound
+	}
+	if err != nil {
+		if _, delErr := database.DB.Collection(string(constants.ChatColl)).DeleteOne(ctx, bson.M{"_id": chat.ChatID}); delErr != nil {
+			return nil, fmt.Errorf("failed to add group chat to creator: %w (and removing the group failed: %v)", err, delErr)
+		}
+		return nil, fmt.Errorf("failed to add group chat to creator: %w", err)
+	}
 
 	// Give each invitee an invitation for the new code. The group is already
 	// saved, so an invitee whose account was deleted since the lookup is skipped
