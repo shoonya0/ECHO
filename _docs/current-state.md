@@ -1,6 +1,6 @@
 # ECHO: current state
 
-A one-page snapshot of where the project stands. Last checked on 2026-11-15 at `c914ce2`
+A one-page snapshot of where the project stands. Last checked on 2026-11-16 at `c48d3e0`
 on `main`. To learn what the product does, read
 [product-overview.md](./product-overview.md). For the code, read
 [architecture-overview.md](./architecture-overview.md).
@@ -11,14 +11,14 @@ on `main`. To learn what the product does, read
 and with a link to exactly one feature state.md. Updated by /close-increment and
 /feature-docs update. -->
 
-- **Feature:** none yet · #104 on `fix/104-return-invite-code`: `POST groups/:groupID/invites`
-  returns the new code in `data`, shaped like a list entry. Verified: `verify.mjs --full`
-  (DB required) and the contract test live
+- **Feature:** none yet · #62 on `fix/62-contacts-exclude-blocked`: `GET users/contacts`
+  leaves out people you blocked (`GET /blocked` lists them). Reproduced with a DB test
+  first; fixed in `contact.service.go`
 - **#72 on Render (paused 2026-11-15):** `/health` answers `200`, but no chat with a message
   saved before PR #74 (`reactions: null`) is left to react to. Continue later, for example
   by setting `reactions: null` on a test message in Atlas first
 - **Next step:** push, PR, and ask before merging
-- **Updated:** 2026-11-16 on `fix/104-return-invite-code`
+- **Updated:** 2026-11-16 on `fix/62-contacts-exclude-blocked`
 
 ## Where things stand
 
@@ -33,6 +33,9 @@ declining a group invite. The full list is in
 
 ## Recently finished
 
+- **#104 (PR #107):** creating an invite code returns it in `data`, shaped like an entry
+  of the group's list ([REST](./rest-api.md#groups),
+  [app changes](../Android/_docs/08_SERVER_CHANGES.md)).
 - **#59 (PR #105):** a non-member gets the same answer whether or not a chat exists:
   `PERMISSION_DENIED` from `send_message`, `invite_user` and `remove_user`, `404` from
   REST `add-members` ([protocol](./WEBSOCKET_PROTOCOL.md#error-codes),
@@ -166,7 +169,7 @@ There are 29 open issues. Where each risk sits in the code: [architecture-overvi
 | Groups | Members are never asked to accept, live delivery doesn't match who is in the group, and the size limit isn't enforced | #5, #14, #16, #17, #68 |
 | Invite codes | Pending members can't join by code, and entries left by forged joins before #9 was fixed are still stored | #69, #103 |
 | Accounts | Deleting an account leaves old references, emails are case-sensitive, and usernames aren't unique | #35, #36 |
-| Contacts and blocking | Your contacts list includes people you blocked, contact lists aren't cut to `limit`, and blocks written during a deploy can be missed | #39, #62, #63 |
+| Contacts and blocking | Contact lists aren't cut to `limit`, and blocks written during a deploy can be missed | #39, #63 |
 | Online status and privacy | Online status is unreliable, and privacy settings aren't applied | #31, #32 |
 | Request cost | Membership checks read the same chat two or three times per request | #106 |
 | Messages and data | Writes can half-finish, and some lists grow without limit | #37, #42 |

@@ -269,3 +269,37 @@ func TestMigrateLegacyBlocks(t *testing.T) {
 		t.Fatalf("second run = %d, %v; want 0, nil", n, err)
 	}
 }
+
+// #62: someone you blocked is listed by GET /blocked only, not mixed into your contacts.
+func TestContactsListLeavesOutBlockedUsers(t *testing.T) {
+	ctx := useTestDB(t)
+	a, b, c := bson.NewObjectID(), bson.NewObjectID(), bson.NewObjectID()
+	insertTestUsers(t, ctx, a, b, c)
+
+	if err := SendContactRequest(ctx, a, c); err != nil {
+		t.Fatalf("A requests C: %v", err)
+	}
+	if err := BlockUnblockUser(ctx, a, b, string(constants.StatusBlocked)); err != nil {
+		t.Fatalf("A blocks B: %v", err)
+	}
+
+	list, err := GetContacts(ctx, a, constants.StatusContact, 10)
+	if err != nil {
+		t.Fatalf("GetContacts(A, contact): %v", err)
+	}
+	ids := make([]bson.ObjectID, 0, len(list))
+	for _, u := range list {
+		ids = append(ids, u.ID)
+	}
+	if !slices.Equal(ids, []bson.ObjectID{c}) {
+		t.Fatalf("A's contacts = %v, want only C (%v); B (%v) is blocked", ids, c, b)
+	}
+
+	blocked, err := GetContacts(ctx, a, constants.StatusBlocked, 10)
+	if err != nil {
+		t.Fatalf("GetContacts(A, blocked): %v", err)
+	}
+	if len(blocked) != 1 || blocked[0].ID != b {
+		t.Fatalf("A's blocked list = %v, want [B]", blocked)
+	}
+}

@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"slices"
 	"time"
 
 	"github.com/shoonya0/ECHO/internal/constants"
@@ -51,15 +52,10 @@ var contactFieldsByStatus = map[constants.ContactStatus]struct {
 			"contactInfo.favorites":  1,
 			"contactInfo.pendingIn":  1,
 			"contactInfo.pendingOut": 1,
-			"contactInfo.blocked":    1,
 		},
+		// People you blocked are left out: GET /blocked lists them (#62).
 		ids: func(c models.ContactInfoEmbed) []bson.ObjectID {
-			return append(append(append(append(
-				c.Blocked,
-				c.PendingOut...),
-				c.PendingIn...),
-				c.Favorites...),
-				c.Contacts...)
+			return slices.Concat(c.PendingOut, c.PendingIn, c.Favorites, c.Contacts)
 		},
 	},
 }
