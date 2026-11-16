@@ -69,7 +69,7 @@ func TestMembersRemovedMessage(t *testing.T) {
 			t.Fatal("the removed user also left their other chats")
 		}
 		hub.Mutex.RLock()
-		active := hub.UserActiveChats[b1.UserID.Hex()]
+		active := userActiveChats(hub.Hub, b1.UserID.Hex())
 		hub.Mutex.RUnlock()
 		if len(active) != 1 || active[0] != "other" {
 			t.Fatalf("removed user's active chats = %v, want [other]", active)

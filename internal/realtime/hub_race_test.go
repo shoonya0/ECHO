@@ -39,14 +39,14 @@ func newTestHub(t *testing.T) *Hub {
 	t.Cleanup(func() { _ = redisClient.Close() })
 
 	base := &models.Hub{
-		Clients:         make(map[string]*models.Client),
-		ChatClients:     make(map[string]map[string]*models.Client),
-		UserClients:     make(map[string]map[string]*models.Client),
-		UserInfoCache:   make(map[string]*models.UserDisplayInfo),
-		CacheExpiry:     make(map[string]time.Time),
-		UserActiveChats: make(map[string][]string),
-		Register:        make(chan *models.Client, 8),
-		Unregister:      make(chan *models.Client, 8),
+		Clients:       make(map[string]*models.Client),
+		ChatClients:   make(map[string]map[string]*models.Client),
+		UserClients:   make(map[string]map[string]*models.Client),
+		UserInfoCache: make(map[string]*models.UserDisplayInfo),
+		CacheExpiry:   make(map[string]time.Time),
+		ClientChats:   make(map[string]map[string]struct{}),
+		Register:      make(chan *models.Client, 8),
+		Unregister:    make(chan *models.Client, 8),
 	}
 	base.Ctx, base.Cancel = context.WithCancel(context.Background())
 	t.Cleanup(base.Cancel)
@@ -77,13 +77,7 @@ func addClient(hub *Hub, client *models.Client, chatIDs ...string) {
 	}
 	hub.UserClients[userID][client.ID] = client
 	for _, chatID := range chatIDs {
-		if hub.ChatClients[chatID] == nil {
-			hub.ChatClients[chatID] = make(map[string]*models.Client)
-		}
-		hub.ChatClients[chatID][client.ID] = client
-	}
-	if len(chatIDs) > 0 {
-		hub.UserActiveChats[userID] = append([]string(nil), chatIDs...)
+		addClientToRoom(hub.Hub, client, chatID)
 	}
 }
 
@@ -136,7 +130,7 @@ func TestUserBroadcastDuringDisconnect(t *testing.T) {
 	)
 }
 
-// A disconnect used to change ChatClients and UserActiveChats with no lock held,
+// A disconnect used to change ChatClients and the user's chat list with no lock held,
 // while JoinChat and LeaveChat changed them under the lock. Each client here is
 // its user's last connection, so the whole disconnect path runs.
 func TestDisconnectDuringJoinAndLeave(t *testing.T) {
@@ -302,8 +296,8 @@ func TestDisconnectOfLastConnectionRemovesUser(t *testing.T) {
 	if _, ok := hub.UserClients[client.UserID.Hex()]; ok {
 		t.Fatal("user is still in UserClients")
 	}
-	if _, ok := hub.UserActiveChats[client.UserID.Hex()]; ok {
-		t.Fatal("user is still in UserActiveChats")
+	if _, ok := hub.ClientChats[client.ID]; ok {
+		t.Fatal("closed connection is still in ClientChats")
 	}
 	if _, ok := hub.ChatClients["chat1"]; ok {
 		t.Fatal("empty chat is still in ChatClients")
@@ -329,8 +323,8 @@ func TestDisconnectOfLastConnectionLeavesEveryChat(t *testing.T) {
 
 	hub.handleClientUnregistration(client)
 
-	if left, ok := hub.UserActiveChats[client.UserID.Hex()]; ok {
-		t.Fatalf("user still has active chats %v", left)
+	if left, ok := hub.ClientChats[client.ID]; ok {
+		t.Fatalf("closed connection is still in chats %v", left)
 	}
 	for _, chatID := range chats {
 		if _, ok := hub.ChatClients[chatID]; ok {
@@ -339,5 +333,110 @@ func TestDisconnectOfLastConnectionLeavesEveryChat(t *testing.T) {
 		if pm.IsSubscribed(pm.getChatChannel(chatID)) {
 			t.Errorf("%s is still subscribed", chatID)
 		}
+	}
+}
+
+// stubSubscriptions marks channels as subscribed without Redis: a PubSub with
+// no channels never dials.
+func stubSubscriptions(hub *Hub, channels ...string) {
+	pm := hub.pubSubManager
+	pm.mu.Lock()
+	defer pm.mu.Unlock()
+	for _, channel := range channels {
+		pm.subscriptions[channel] = hub.redisClient.Subscribe(context.Background())
+	}
+}
+
+func inRoomUnlocked(hub *Hub, chatID, clientID string) bool {
+	hub.Mutex.RLock()
+	defer hub.Mutex.RUnlock()
+	_, ok := hub.ChatClients[chatID][clientID]
+	return ok
+}
+
+// A user's last connection closing releases their user channel even when they
+// follow no chat (#20).
+func TestDisconnectWithNoChatsReleasesUserChannel(t *testing.T) {
+	hub := newTestHub(t)
+	pm := hub.pubSubManager
+	client := newTestClient("c1", bson.NewObjectID())
+	addClient(hub, client)
+	stubSubscriptions(hub, pm.getUserChannel(client.UserID.Hex()))
+
+	hub.handleClientUnregistration(client)
+
+	if pm.IsSubscribed(pm.getUserChannel(client.UserID.Hex())) {
+		t.Fatal("user channel is still subscribed")
+	}
+}
+
+// A second device registering used to overwrite the user's chat list, so the
+// first device's join_chat room was forgotten and it stayed in it after
+// closing (#20).
+func TestDisconnectLeavesChatJoinedBeforeAnotherDeviceConnected(t *testing.T) {
+	hub := newTestHub(t)
+	pm := hub.pubSubManager
+	userID := bson.NewObjectID()
+	first := newTestClient("first", userID)
+	second := newTestClient("second", userID)
+	stubSubscriptions(hub, pm.getChatChannel("chatA"), pm.getChatChannel("chatB"))
+
+	addClient(hub, first, "chatA")
+	_ = hub.JoinChat(context.Background(), first, "chatB") // publish fails without Redis
+	addClient(hub, second, "chatA")
+
+	hub.handleClientUnregistration(first)
+
+	if inRoomUnlocked(hub, "chatB", first.ID) {
+		t.Fatal("closed connection is still in the chat it joined")
+	}
+	if pm.IsSubscribed(pm.getChatChannel("chatB")) {
+		t.Fatal("chat nobody on this instance follows is still subscribed")
+	}
+	if !inRoomUnlocked(hub, "chatA", second.ID) || !pm.IsSubscribed(pm.getChatChannel("chatA")) {
+		t.Fatal("the other device lost a chat it still follows")
+	}
+}
+
+// Leaving a chat on one device used to take it off the list for every device,
+// so the other device stayed in the room after closing (#20).
+func TestDisconnectAfterOtherDeviceLeftChat(t *testing.T) {
+	hub := newTestHub(t)
+	pm := hub.pubSubManager
+	userID := bson.NewObjectID()
+	leaving := newTestClient("leaving", userID)
+	closing := newTestClient("closing", userID)
+	addClient(hub, leaving, "chatA")
+	addClient(hub, closing, "chatA")
+	stubSubscriptions(hub, pm.getChatChannel("chatA"))
+
+	_ = hub.LeaveChat(leaving, "chatA") // publish fails without Redis
+	hub.handleClientUnregistration(closing)
+
+	if inRoomUnlocked(hub, "chatA", closing.ID) {
+		t.Fatal("closed connection is still in the room")
+	}
+	if pm.IsSubscribed(pm.getChatChannel("chatA")) {
+		t.Fatal("empty room's channel is still subscribed")
+	}
+}
+
+// A chat another user still follows here stays subscribed.
+func TestDisconnectKeepsChatOtherUserFollows(t *testing.T) {
+	hub := newTestHub(t)
+	pm := hub.pubSubManager
+	closing := newTestClient("x", bson.NewObjectID())
+	staying := newTestClient("y", bson.NewObjectID())
+	addClient(hub, closing, "chatA")
+	addClient(hub, staying, "chatA")
+	stubSubscriptions(hub, pm.getChatChannel("chatA"), pm.getUserChannel(closing.UserID.Hex()))
+
+	hub.handleClientUnregistration(closing)
+
+	if !pm.IsSubscribed(pm.getChatChannel("chatA")) {
+		t.Fatal("chat another user follows was unsubscribed")
+	}
+	if pm.IsSubscribed(pm.getUserChannel(closing.UserID.Hex())) {
+		t.Fatal("closed user's channel is still subscribed")
 	}
 }

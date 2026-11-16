@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"slices"
 	"sync"
 	"time"
 
@@ -44,14 +43,14 @@ func GetHubInstance() *Hub {
 		instanceID := fmt.Sprintf("instance-%s-%d", uuid.New().String()[:8], time.Now().Unix())
 
 		baseHub := &models.Hub{
-			Clients:         make(map[string]*models.Client),
-			ChatClients:     make(map[string]map[string]*models.Client),
-			UserClients:     make(map[string]map[string]*models.Client),
-			UserInfoCache:   make(map[string]*models.UserDisplayInfo),
-			CacheExpiry:     make(map[string]time.Time),
-			Register:        make(chan *models.Client, 1000),
-			Unregister:      make(chan *models.Client, 1000),
-			UserActiveChats: make(map[string][]string),
+			Clients:       make(map[string]*models.Client),
+			ChatClients:   make(map[string]map[string]*models.Client),
+			UserClients:   make(map[string]map[string]*models.Client),
+			UserInfoCache: make(map[string]*models.UserDisplayInfo),
+			CacheExpiry:   make(map[string]time.Time),
+			Register:      make(chan *models.Client, 1000),
+			Unregister:    make(chan *models.Client, 1000),
+			ClientChats:   make(map[string]map[string]struct{}),
 		}
 		baseHub.Ctx, baseHub.Cancel = context.WithCancel(context.Background())
 
@@ -162,18 +161,11 @@ func (eh *Hub) handleClientRegistration(client *models.Client) {
 	}
 	eh.UserClients[userID][client.ID] = client
 
-	// Add client to all their chat rooms
+	// Add client to all their chat rooms. Rooms are kept per connection, so
+	// this never changes the rooms of the user's other connections (#20).
 	for _, chatID := range userChats {
-		if eh.ChatClients[chatID] == nil {
-			eh.ChatClients[chatID] = make(map[string]*models.Client)
-		}
-		eh.ChatClients[chatID][client.ID] = client
+		addClientToRoom(eh.Hub, client, chatID)
 		eh.logger.WithFields(logrus.Fields{"clientID": client.ID, "chatID": chatID}).Debug("Added client to chat")
-	}
-
-	// Update user's active chats
-	if len(userChats) > 0 {
-		eh.UserActiveChats[userID] = userChats
 	}
 
 	presence, ok := GetPresenceInstance().Get(client.UserID)
@@ -221,49 +213,36 @@ func (eh *Hub) handleClientUnregistration(client *models.Client) {
 	clientID := client.ID
 	userID := client.UserID.Hex()
 
-	for _, chatID := range eh.UserActiveChats[userID] {
-		if _, ok := eh.ChatClients[chatID][clientID]; ok {
-			delete(eh.ChatClients[chatID], clientID)
-
-			// If their is no other client of same user in the chat, delete the chat
-			if len(eh.ChatClients[chatID]) == 0 {
-				delete(eh.ChatClients, chatID)
-			}
+	// Leave every room this connection is in. Rooms left empty are no longer
+	// needed on this instance, so their channels are released below (#20).
+	// Deleting from a map while ranging over it is safe in Go (unlike the
+	// slice this replaced, #116).
+	var emptyRooms []string
+	for chatID := range eh.ClientChats[clientID] {
+		removeClientFromRoom(eh.Hub, client, chatID)
+		if _, stillUsed := eh.ChatClients[chatID]; !stillUsed {
+			emptyRooms = append(emptyRooms, chatID)
 		}
 	}
 
 	delete(eh.Clients, clientID)
 
-	// Remove from user mapping
 	lastConnection := false
-	var chatsToUnsubscribe []string
 	if userClients, exists := eh.UserClients[userID]; exists {
 		delete(userClients, clientID)
-
-		// If no more clients for this user
 		if len(userClients) == 0 {
 			lastConnection = true
 			delete(eh.UserClients, userID)
-
-			// Loop over a copy: removeClientFromRoom shifts the stored slice in
-			// place, so ranging over it skips entries (#116). The copy is also
-			// the list of chats to unsubscribe below.
-			chatsToUnsubscribe = slices.Clone(eh.UserActiveChats[userID])
-			for _, chatID := range chatsToUnsubscribe {
-				removeClientFromRoom(eh.Hub, client, chatID)
-			}
 		}
 	}
 
 	eh.Mutex.Unlock()
 
-	// Redis calls run after unlocking, and UnsubscribeUserFromChannels takes the lock itself
+	// Redis calls run after unlocking; the unsubscribe calls take the lock themselves
+	eh.pubSubManager.UnsubscribeEmptyChats(emptyRooms)
+
 	if lastConnection {
-		if chatsToUnsubscribe != nil {
-			if err := eh.pubSubManager.UnsubscribeUserFromChannels(client.UserID, chatsToUnsubscribe); err != nil {
-				eh.logger.WithError(err).Error("Failed to unsubscribe from channels")
-			}
-		}
+		eh.pubSubManager.UnsubscribeUser(client.UserID)
 
 		// delete from presence
 		GetPresenceInstance().Delete(client.UserID)
@@ -304,30 +283,7 @@ func (eh *Hub) JoinChat(ctx context.Context, client *models.Client, chatID strin
 	eh.Mutex.Lock()
 	defer eh.Mutex.Unlock()
 
-	// Add to chat clients
-	if eh.ChatClients[chatID] == nil {
-		eh.ChatClients[chatID] = make(map[string]*models.Client)
-	}
-	eh.ChatClients[chatID][client.ID] = client
-
-	// Add to user's active chats (centralized in hub)
-	userID := client.UserID.Hex()
-	alreadyInChat := false
-
-	if activeChats, exists := eh.UserActiveChats[userID]; exists {
-		for _, activeChat := range activeChats {
-			if activeChat == chatID {
-				alreadyInChat = true
-				break
-			}
-		}
-		if !alreadyInChat {
-			eh.UserActiveChats[userID] = append(activeChats, chatID)
-		}
-	} else {
-		// First time this user has active chats
-		eh.UserActiveChats[userID] = []string{chatID}
-	}
+	addClientToRoom(eh.Hub, client, chatID)
 
 	// Publish join event to chat
 	joinMsg := &models.WebSocketMessage{
@@ -381,35 +337,52 @@ func (eh *Hub) LeaveChat(client *models.Client, chatID string) error {
 // ErrNotInChat means the connection isn't following the chat it tried to leave.
 var ErrNotInChat = errors.New("client is not in this chat")
 
-// removeClientFromRoom removes a client from a chat's room and the chat from
-// the user's active chats. The caller holds h.Mutex.
+// addClientToRoom puts a connection in a chat's room. Doing it twice changes
+// nothing. The caller holds h.Mutex.
+func addClientToRoom(h *models.Hub, client *models.Client, chatID string) {
+	if h.ChatClients[chatID] == nil {
+		h.ChatClients[chatID] = make(map[string]*models.Client)
+	}
+	h.ChatClients[chatID][client.ID] = client
+
+	if h.ClientChats[client.ID] == nil {
+		h.ClientChats[client.ID] = make(map[string]struct{})
+	}
+	h.ClientChats[client.ID][chatID] = struct{}{}
+}
+
+// removeClientFromRoom takes a connection out of a chat's room. The user's
+// other connections keep their rooms. The caller holds h.Mutex.
 func removeClientFromRoom(h *models.Hub, client *models.Client, chatID string) {
 	if chatClients, exists := h.ChatClients[chatID]; exists {
 		delete(chatClients, client.ID)
-
-		// Remove empty chat map
 		if len(chatClients) == 0 {
 			delete(h.ChatClients, chatID)
-
-			// Chat channel unsubscription is now handled safely in UnsubscribeUserFromChannels
-			// with proper reference counting to avoid breaking other users in the chat
 		}
 	}
 
-	// Remove from user's active chats (centralized in hub)
-	userID := client.UserID.Hex()
-	if activeChats, exists := h.UserActiveChats[userID]; exists {
-		for i, activeChat := range activeChats {
-			if activeChat == chatID {
-				h.UserActiveChats[userID] = append(activeChats[:i], activeChats[i+1:]...)
-				break
+	if chats, exists := h.ClientChats[client.ID]; exists {
+		delete(chats, chatID)
+		if len(chats) == 0 {
+			delete(h.ClientChats, client.ID)
+		}
+	}
+}
+
+// userActiveChats lists the chats any of the user's connections on this
+// instance is in. The caller holds h.Mutex (read or write).
+func userActiveChats(h *models.Hub, userID string) []string {
+	seen := make(map[string]struct{})
+	var chats []string
+	for clientID := range h.UserClients[userID] {
+		for chatID := range h.ClientChats[clientID] {
+			if _, dup := seen[chatID]; !dup {
+				seen[chatID] = struct{}{}
+				chats = append(chats, chatID)
 			}
 		}
-		// If no more active chats for this user, clean up
-		if len(h.UserActiveChats[userID]) == 0 {
-			delete(h.UserActiveChats, userID)
-		}
 	}
+	return chats
 }
 
 // getUserChats retrieves all chat IDs for a user from the database
