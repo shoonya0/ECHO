@@ -31,6 +31,7 @@ func TestInviteErrorsNeverCarryInternalText(t *testing.T) {
 		{"not a member", fmt.Errorf("%w", services.ErrNotParticipant), "PERMISSION_DENIED", "You are not a participant of this chat"},
 		{"already member", fmt.Errorf("%w", services.ErrAlreadyParticipant), "INVALID_REQUEST", "Users are already in the chat"},
 		{"user not found", fmt.Errorf("%w", services.ErrUserNotFound), "INVALID_USER_ID", "User not found"},
+		{"group full", fmt.Errorf("%w: filled while adding members", services.ErrGroupFull), "GROUP_FULL", "Group is full"},
 		// The handler checked the role first, so this is the chat changing during
 		// the add: retryable, not a permission problem.
 		{"concurrent change", fmt.Errorf("%w: chat changed while adding members", services.ErrPermissionDenied), "INVITE_FAILED", "Failed to invite users"},
@@ -48,6 +49,15 @@ func TestInviteErrorsNeverCarryInternalText(t *testing.T) {
 				t.Fatalf("message leaks internal text: %q", data.Message)
 			}
 		})
+	}
+}
+
+// #68: a full group is a conflict on every REST route that adds people (create,
+// add-members, join by code), with a fixed text.
+func TestGroupFullMapsToConflict(t *testing.T) {
+	status, msg := MapServiceErrorToHTTP(fmt.Errorf("%w: 101 participants", services.ErrGroupFull))
+	if status != http.StatusConflict || msg != "Group is full" {
+		t.Fatalf("got %d %q, want 409 %q", status, msg, "Group is full")
 	}
 }
 

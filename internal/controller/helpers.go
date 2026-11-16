@@ -152,6 +152,8 @@ func MapServiceErrorToHTTP(err error) (int, string) {
 		return http.StatusForbidden, "Permission denied"
 	case errors.Is(err, services.ErrAlreadyParticipant):
 		return http.StatusConflict, "Users are already in the chat"
+	case errors.Is(err, services.ErrGroupFull):
+		return http.StatusConflict, "Group is full"
 	default:
 		return http.StatusInternalServerError, "Internal server error"
 	}

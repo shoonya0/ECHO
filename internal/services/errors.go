@@ -26,6 +26,7 @@ var (
 	ErrNotParticipant         = errors.New("you are not a participant of this chat")
 	ErrPermissionDenied       = errors.New("permission denied")
 	ErrAlreadyParticipant     = errors.New("users are already in the chat")
+	ErrGroupFull              = errors.New("group is full")
 	ErrInvalidEmoji           = errors.New("invalid emoji")
 	ErrAccountBanned          = errors.New("account is banned")
 	ErrAccountInactive        = errors.New("account is not active")
