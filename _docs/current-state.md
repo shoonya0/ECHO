@@ -11,15 +11,16 @@ on `main`. To learn what the product does, read
 and with a link to exactly one feature state.md. Updated by /close-increment and
 /feature-docs update. -->
 
-- **Feature:** none yet · no issue in progress. #103 was merged on 2026-11-16 (PR #113)
+- **Feature:** none yet · #112 on `fix/112-create-group-creator-ref`: `CreateGroupChat`
+  checks the creator's `chats.<id>` write (error and `MatchedCount`) and removes the new
+  group if it fails. Fixed and verified at `074e06a`; PR in review
 - **#72 on Render (paused 2026-11-15):** `/health` answers `200`, but no chat with a message
   saved before PR #74 (`reactions: null`) is left to react to. Continue later, for example
   by setting `reactions: null` on a test message in Atlas first
-- **Next step:** pick the next issue from [Known issues and risks](#known-issues-and-risks)
-  and commit this state update as the first commit on its branch. `rest-api.md`,
+- **Next step:** merge the #112 PR once the user agrees and CI is green. `rest-api.md`,
   `websocket-requests.md` and `Android/_docs/08_SERVER_CHANGES.md` are at their 200-line
   budget: split them (`/feature-docs split`) before the next change that adds to them
-- **Updated:** 2026-11-16 on `main` (uncommitted)
+- **Updated:** 2026-11-16 on `fix/112-create-group-creator-ref`
 
 ## Where things stand
 
