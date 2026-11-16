@@ -63,8 +63,23 @@ func TestPendingMemberAcceptsByJoiningWithCode(t *testing.T) {
 		t.Fatalf("invitations before joining = %v, want [%s]", got, code)
 	}
 
-	if err := JoinGroupByInvite(ctx, invitee, code); err != nil {
-		t.Fatalf("pending member joins with the code: %v", err)
+	// From the review: a pending member can be sent a newer code (the first one
+	// expires after a day), and accepting clears every invitation for the group.
+	second, err := CreateInvite(ctx, owner, chat.ChatID)
+	if err != nil {
+		t.Fatalf("create a second code: %v", err)
+	}
+	if err := SendInviteToUser(ctx, owner, second.InviteCode, invitee); err != nil {
+		t.Fatalf("send the second code to the pending member: %v", err)
+	}
+	// An unread count stored before accepting must survive it.
+	if _, err := database.DB.Collection(string(constants.UserColl)).UpdateOne(ctx,
+		bson.M{"_id": invitee}, bson.M{"$set": bson.M{"chats." + chat.ChatID.Hex(): 3}}); err != nil {
+		t.Fatalf("seed unread count: %v", err)
+	}
+
+	if err := JoinGroupByInvite(ctx, invitee, second.InviteCode); err != nil {
+		t.Fatalf("pending member joins with the second code: %v", err)
 	}
 
 	p := participantsOf(t, chat.ChatID)
@@ -80,13 +95,47 @@ func TestPendingMemberAcceptsByJoiningWithCode(t *testing.T) {
 	if got := pendingInvitations(t, invitee); len(got) != 0 {
 		t.Fatalf("invitations after joining = %v, want none", got)
 	}
-	if !hasChatRef(t, invitee, chat.ChatID) {
-		t.Fatal("invitee has no chats entry for the group after joining")
+	if got := unreadCount(t, invitee, chat.ChatID); got != 3 {
+		t.Fatalf("unread count after accepting = %d, want 3 kept", got)
 	}
 
 	if err := JoinGroupByInvite(ctx, invitee, code); !errors.Is(err, ErrAlreadyParticipant) {
 		t.Fatalf("joining again: err = %v, want ErrAlreadyParticipant", err)
 	}
+	if err := SendInviteToUser(ctx, owner, code, invitee); !errors.Is(err, ErrAlreadyParticipant) {
+		t.Fatalf("sending a code to an accepted member: err = %v, want ErrAlreadyParticipant", err)
+	}
+}
+
+// #103: a new member who joins by code gets a chats entry, which the hub needs.
+func TestNewMemberJoinAddsChatRef(t *testing.T) {
+	ctx := useTestDB(t)
+	owner, joiner := bson.NewObjectID(), bson.NewObjectID()
+	insertTestUsers(t, ctx, owner, joiner)
+	live := mintInvite(t, time.Now().Add(time.Hour))
+	chatID := insertSizedGroup(t, ctx, owner, 0, 10, live)
+
+	if err := JoinGroupByInvite(ctx, joiner, live.InviteCode); err != nil {
+		t.Fatalf("join: %v", err)
+	}
+	if !hasChatRef(t, joiner, chatID) {
+		t.Fatal("joiner has no chats entry for the group")
+	}
+}
+
+// unreadCount reads userID's chats entry for chatID, failing if there is none.
+func unreadCount(t *testing.T, userID, chatID bson.ObjectID) int {
+	t.Helper()
+	if !hasChatRef(t, userID, chatID) {
+		t.Fatalf("user %s has no chats entry for %s", userID.Hex(), chatID.Hex())
+	}
+	var u struct {
+		Chats map[string]int `bson:"chats"`
+	}
+	if err := database.DB.Collection(string(constants.UserColl)).FindOne(t.Context(), bson.M{"_id": userID}).Decode(&u); err != nil {
+		t.Fatalf("load user: %v", err)
+	}
+	return u.Chats[chatID.Hex()]
 }
 
 // #103: a pending member already counts toward the size limit, so a full group doesn't

@@ -216,20 +216,20 @@ func TestAddNotAppliedExplainsTheMiss(t *testing.T) {
 
 // From the #68 code review: a join that missed with a usable code is "full" only when
 // the group has no room.
-func TestJoinNotAppliedChecksRoom(t *testing.T) {
+func TestMissedJoinChecksRoom(t *testing.T) {
 	ctx := useTestDB(t)
 	owner, joiner := bson.NewObjectID(), bson.NewObjectID()
 	live := mintInvite(t, time.Now().Add(time.Hour))
 	now := time.Now()
 
 	roomy := insertSizedGroup(t, ctx, owner, 1, 4, live)
-	err := joinNotApplied(ctx, roomy, joiner, live.InviteCode, now)
+	err := resolveMissedJoin(ctx, roomy, joiner, live.InviteCode, now)
 	if err == nil || errors.Is(err, ErrGroupFull) || errors.Is(err, ErrInvalidInvite) {
 		t.Fatalf("missed join into a group with room: err = %v, want a retryable error", err)
 	}
 
 	full := insertSizedGroup(t, ctx, owner, 1, 2, live)
-	if err := joinNotApplied(ctx, full, joiner, live.InviteCode, now); !errors.Is(err, ErrGroupFull) {
+	if err := resolveMissedJoin(ctx, full, joiner, live.InviteCode, now); !errors.Is(err, ErrGroupFull) {
 		t.Fatalf("missed join into a full group: err = %v, want ErrGroupFull", err)
 	}
 }
