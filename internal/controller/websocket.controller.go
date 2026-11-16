@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"fmt"
 	"net/http"
 	"time"
 
@@ -321,8 +320,9 @@ func handleSendMessage(ctx context.Context, client *models.Client, request model
 	}
 
 	// Membership first, so an unknown chat gets the same answer as one the
-	// caller isn't in (#59).
-	if err := services.RequireChatMember(ctx, chatID, client.UserID); err != nil {
+	// caller isn't in (#59). The same read returns the chat (#106).
+	chat, err := services.GetChatForMember(ctx, chatID, client.UserID)
+	if err != nil {
 		if !errors.Is(err, services.ErrNotParticipant) {
 			wsLog().Printf("Failed to check chat membership: %v", err)
 		}
@@ -330,7 +330,7 @@ func handleSendMessage(ctx context.Context, client *models.Client, request model
 		return
 	}
 
-	canSend, err := validateMessagePermissions(ctx, client.UserID, chatID) // Check if user has permission to send messages in this chat
+	canSend, err := validateMessagePermissions(ctx, &chat, client.UserID) // Check if user has permission to send messages in this chat
 	if errors.Is(err, services.ErrBlocked) {
 		sendErrorResponse(client, request.RequestID, "PERMISSION_DENIED", "User is blocked")
 		return
@@ -743,19 +743,14 @@ func handleInviteUser(ctx context.Context, client *models.Client, request models
 	}
 
 	// Membership before anything that can fail differently, so a non-member
-	// can't tell whether the chat exists or what type it is (#59).
-	if err := services.RequireChatMember(ctx, chatID, client.UserID); err != nil {
+	// can't tell whether the chat exists or what type it is (#59). The same
+	// read returns the chat (#106).
+	chat, err := services.GetChatForMember(ctx, chatID, client.UserID)
+	if err != nil {
 		if !errors.Is(err, services.ErrNotParticipant) {
 			wsLog().Printf("Failed to check chat membership for invite: %v", err)
 		}
 		sendChatError(client, request.RequestID, err, "INVITE_FAILED", "Failed to invite users")
-		return
-	}
-
-	chat, err := services.GetChat(ctx, models.ChatInfo{ChatID: chatID})
-	if err != nil {
-		wsLog().Printf("Failed to get chat for invite: %v", err)
-		sendInviteError(client, request.RequestID, err)
 		return
 	}
 
@@ -777,7 +772,7 @@ func handleInviteUser(ctx context.Context, client *models.Client, request models
 	}
 
 	// Add members through service layer
-	err = services.AddGroupMember(ctx, client.UserID, chatID, userIDs)
+	err = services.AddGroupMemberToChat(ctx, client.UserID, chat, userIDs)
 	if err != nil {
 		wsLog().Printf("Failed to add group members: %v", err)
 		sendInviteError(client, request.RequestID, err)
@@ -931,13 +926,9 @@ func handleUpdateChat(client *models.Client, request models.MessageRequest) {
 
 // ============ UTILITY FUNCTIONS ============
 
-// validateMessagePermissions checks if a user can send messages in a chat
-func validateMessagePermissions(ctx context.Context, userID bson.ObjectID, chatID bson.ObjectID) (bool, error) {
-	chat, err := services.GetChat(ctx, models.ChatInfo{ChatID: chatID})
-	if err != nil {
-		return false, fmt.Errorf("failed to get chat: %w", err)
-	}
-
+// validateMessagePermissions checks if a user can send messages in chat, which
+// the caller has already read (services.GetChatForMember).
+func validateMessagePermissions(ctx context.Context, chat *models.Chat, userID bson.ObjectID) (bool, error) {
 	participant, isParticipant := chat.Participants[userID]
 	if !isParticipant {
 		return false, nil
@@ -951,7 +942,7 @@ func validateMessagePermissions(ctx context.Context, userID bson.ObjectID, chatI
 	switch chat.ChatType {
 	case string(constants.ChatTypeDirect):
 		// participant.IsBlocked is never set; the users' block lists decide (#27).
-		if err := services.CheckDirectChatBlock(ctx, &chat, userID); err != nil {
+		if err := services.CheckDirectChatBlock(ctx, chat, userID); err != nil {
 			return false, err
 		}
 		return true, nil
