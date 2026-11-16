@@ -150,7 +150,8 @@ Only participants can read a chat. Everyone else gets `404 Chat not found`.
 | `POST groups/join/:inviteCode` | Joins a group with a code |
 
 `:inviteID` and `:inviteCode` are both the invite code itself. Creating, listing, deleting
-and sending codes, and `joined`, are for owners and admins only (#30): others get `403`.
+and sending codes, and `joined`, are for owners and admins only (#30): other members get
+`403`, and anyone not in the group gets `404`, as if it didn't exist.
 
 **How group membership works today**
 
@@ -170,10 +171,11 @@ and sending codes, and `joined`, are for owners and admins only (#30): others ge
   `pending`. If an earlier join failed halfway, retrying it finishes the join and returns
   `409`.
 - Every invite route returns `400 Invalid invite` for a code that isn't stored on any
-  group, and `404` for a group that doesn't exist. The list includes deleted and expired
+  group, and `404` for a group that doesn't exist or that you aren't in. The list includes deleted and expired
   codes (see `deleted`, `expiredDate`). Sending returns `400` for a deleted or expired code
   (#91), `404` for an unknown user and `409` for someone already in the group; sending it
-  again adds nothing. Joining removes your invitation for that code.
+  again adds nothing. Joining removes your invitation for that code. People added when the
+group was created are pending members, so they can't join by code and keep that invitation.
 
 ## Hub statistics
 
