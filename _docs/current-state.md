@@ -12,11 +12,12 @@ and with a link to exactly one feature state.md. Updated by /close-increment and
 /feature-docs update. -->
 
 - **Feature:** none yet · #104 on `fix/104-return-invite-code`: `POST groups/:groupID/invites`
-  returns the new code in `data`, in the same shape as an entry of the group's list
+  returns the new code in `data`, shaped like a list entry. Verified: `verify.mjs --full`
+  (DB required) and the contract test live
 - **#72 on Render (paused 2026-11-15):** `/health` answers `200`, but no chat with a message
   saved before PR #74 (`reactions: null`) is left to react to. Continue later, for example
   by setting `reactions: null` on a test message in Atlas first
-- **Next step:** verify, update the REST docs and the app changes page, then PR
+- **Next step:** push, PR, and ask before merging
 - **Updated:** 2026-11-16 on `fix/104-return-invite-code`
 
 ## Where things stand
@@ -157,13 +158,13 @@ blocks are stored, and who counts as a member.
 
 ## Known issues and risks
 
-There are 30 open issues. Where each risk sits in the code: [architecture-overview.md](./architecture-overview.md#riskiest-areas).
+There are 29 open issues. Where each risk sits in the code: [architecture-overview.md](./architecture-overview.md#riskiest-areas).
 
 | Area | The problem, in short | Issues |
 |---|---|---|
 | Live connections | The server can leak resources or stall under load, missed live messages can't be detected, and open connections miss new chats, and a restart of a running hub doubles its loops | #20, #21, #22, #43, #49, #54, #55, #79 |
 | Groups | Members are never asked to accept, live delivery doesn't match who is in the group, and the size limit isn't enforced | #5, #14, #16, #17, #68 |
-| Invite codes | Pending members can't join by code, creating a code doesn't return it, and entries left by forged joins before #9 was fixed are still stored | #69, #103, #104 |
+| Invite codes | Pending members can't join by code, and entries left by forged joins before #9 was fixed are still stored | #69, #103 |
 | Accounts | Deleting an account leaves old references, emails are case-sensitive, and usernames aren't unique | #35, #36 |
 | Contacts and blocking | Your contacts list includes people you blocked, contact lists aren't cut to `limit`, and blocks written during a deploy can be missed | #39, #62, #63 |
 | Online status and privacy | Online status is unreliable, and privacy settings aren't applied | #31, #32 |
