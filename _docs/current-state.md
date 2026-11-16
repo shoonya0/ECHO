@@ -11,16 +11,15 @@ on `main`. To learn what the product does, read
 and with a link to exactly one feature state.md. Updated by /close-increment and
 /feature-docs update. -->
 
-- **Feature:** none yet · #112 on `fix/112-create-group-creator-ref`: `CreateGroupChat`
-  checks the creator's `chats.<id>` write (error and `MatchedCount`) and removes the new
-  group if it fails. Fixed and verified at `074e06a`; PR in review
+- **Feature:** none yet · #106 on `fix/106-one-chat-read`: `send_message` and
+  `invite_user` read the chat once, together with the membership check
 - **#72 on Render (paused 2026-11-15):** `/health` answers `200`, but no chat with a message
   saved before PR #74 (`reactions: null`) is left to react to. Continue later, for example
   by setting `reactions: null` on a test message in Atlas first
-- **Next step:** merge the #112 PR once the user agrees and CI is green. `rest-api.md`,
+- **Next step:** tests first, then the change, verify, PR, and ask before merging. `rest-api.md`,
   `websocket-requests.md` and `Android/_docs/08_SERVER_CHANGES.md` are at their 200-line
   budget: split them (`/feature-docs split`) before the next change that adds to them
-- **Updated:** 2026-11-16 on `fix/112-create-group-creator-ref`
+- **Updated:** 2026-11-16 on `fix/106-one-chat-read`
 
 ## Where things stand
 
@@ -35,6 +34,9 @@ declining a group invite. The full list is in
 
 ## Recently finished
 
+- **#112 (PR #114):** creating a group checks the write that adds it to the creator's chat
+  list; if that write fails or finds no user, the new group is removed and the request
+  fails (`404` or `500`) before any invitation goes out.
 - **#103 (PR #113):** a `pending` group member accepts by joining with any usable code of
   the group; `send` works for pending members, and joining clears every invitation to the
   group. Live messages start at the next connection ([REST](./rest-api.md#groups),
@@ -87,8 +89,6 @@ declining a group invite. The full list is in
   and the role is re-checked in the write ([requests](./websocket-requests.md#remove_user),
   [app changes](../Android/_docs/08_SERVER_CHANGES.md)). The code review's other points
   (a race reported as `PERMISSION_DENIED`, the second write not checked, #37) were left.
-- **#29 (PR #93):** the joined-users route returns the list of the code that was asked
-  for, not the group's first code.
 - **#91 (PR #92):** sending a deleted invite code returns `400` instead of giving the
   target user a pending invitation for it.
 - **#15 (PR #90):** invite codes are 16 random bytes (32 hex characters) with nothing
@@ -132,8 +132,6 @@ declining a group invite. The full list is in
   read loop finishes the close handshake within 5 seconds instead of at its 60-second
   deadline. The middleware and the re-check share one check (`services.CheckSession`). The
   code review found #79; the security review found nothing.
-- **#33 (PR #77):** a token stops working when its account is banned, deactivated or
-  deleted after login ([REST](./rest-api.md), [app changes](../Android/_docs/08_SERVER_CHANGES.md)).
 - **#72 (PR #74):** reactions work on real messages. New messages store `reactions: {}` instead of
   `null`, which MongoDB refused to create reaction fields in. A message that still has
   `null` (every message saved before the fix, or one written by an older server copy
@@ -178,7 +176,7 @@ blocks are stored, and who counts as a member.
 
 ## Known issues and risks
 
-There are 27 open issues. Where each risk sits in the code: [architecture-overview.md](./architecture-overview.md#riskiest-areas).
+There are 26 open issues. Where each risk sits in the code: [architecture-overview.md](./architecture-overview.md#riskiest-areas).
 
 | Area | The problem, in short | Issues |
 |---|---|---|
@@ -189,7 +187,7 @@ There are 27 open issues. Where each risk sits in the code: [architecture-overvi
 | Contacts and blocking | Contact lists aren't cut to `limit`, and blocks written during a deploy can be missed | #39, #63 |
 | Online status and privacy | Online status is unreliable, and privacy settings aren't applied | #31, #32 |
 | Request cost | Membership checks read the same chat two or three times per request | #106 |
-| Messages and data | Writes can half-finish (creating a group ignores the creator's write), and some lists grow without limit | #37, #42, #112 |
+| Messages and data | Writes can half-finish, and some lists grow without limit | #37, #42 |
 | Limits and errors | WebSocket limits are per connection, not per user, and `set_typing` still writes to MongoDB; no limits on login and signup | #40 |
 | WebSocket replies and events | Replies and events are inconsistent or leave out details, which affects the Android plan | #48, #50, #51 |
 
