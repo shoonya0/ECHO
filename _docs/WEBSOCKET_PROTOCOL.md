@@ -147,7 +147,7 @@ Old messages are loaded [over REST](./rest-api.md#messages), not over the WebSoc
 | Type | Who is in it | Who can send |
 |---|---|---|
 | `direct` | Two people | Both |
-| `group` | The creator plus at least one other person. A limit of 100 is stored but not checked (#42). | Everyone in `participants`, including pending members (#5). If a member has a `permissions` list, it must include `write`, `send_message`, `admin` or `owner`. |
+| `group` | The creator plus at least one other person. At most 100 people; an add past that gets `GROUP_FULL` (#68). | Everyone in `participants`, including pending members (#5). If a member has a `permissions` list, it must include `write`, `send_message`, `admin` or `owner`. |
 | `channel` | Planned. Nothing can create one yet. | The code would allow only `admin` and `owner`. |
 
 - Groups get a name and description when created. They can't be changed afterwards,
@@ -176,6 +176,7 @@ An `error` event has a `code` and a readable `message`.
 | `TYPING_FAILED` | Typing status couldn't be updated |
 | `CHAT_CREATION_FAILED` | The chat couldn't be created |
 | `INVITE_FAILED` | People couldn't be added to the group |
+| `GROUP_FULL` | The group is at its size limit, so nobody was added (#68) |
 | `REMOVE_FAILED` | People couldn't be removed from the group |
 | `NOT_IMPLEMENTED` | This feature isn't built yet |
 | `UNKNOWN_REQUEST` | The server doesn't know this request type |

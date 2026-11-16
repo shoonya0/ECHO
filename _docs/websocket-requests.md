@@ -156,8 +156,8 @@ step (#5). You must be the group's `owner` or an `admin`.
 ```
 
 - IDs that aren't valid are skipped, but at least one must be valid.
-- People already in the group are skipped, so they keep their role.
-- If everyone is already in the group, you get `INVITE_FAILED`.
+- People already in the group are skipped and keep their role. If all are: `INVITE_FAILED`.
+- If the group would go over its limit of 100, nobody is added: `GROUP_FULL` (#68).
 
 **You get:** a `response` with `action: "users_invited"`, `chatId` and `invitedUsers`. That
 list holds every valid ID you sent, including people who were skipped. A `chat_updated`

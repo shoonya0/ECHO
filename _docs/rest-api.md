@@ -140,7 +140,7 @@ Only participants can read a chat. Everyone else gets `404 Chat not found`.
 
 | Route | What it does |
 |---|---|
-| `POST groups/:groupID/add-members` | Adds people. Send `{ "userIDs": ["..."] }`. Owners and admins only. |
+| `POST groups/:groupID/add-members` | Adds people. Send `{ "userIDs": ["..."] }`. Owners and admins only. A group holds at most 100 people: going over (here, on create or on join) is `409` `Group is full` and adds nobody (#68). |
 | `POST groups/:groupID/invites` | Creates an invite code and returns it in `data`, shaped like a list entry (`inviteCode`, `expiredDate`) (#104) |
 | `GET groups/:groupID/invites` | Lists a group's invite codes |
 | `GET groups/invites` | Lists invites sent to you |
