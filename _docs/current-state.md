@@ -13,12 +13,13 @@ and with a link to exactly one feature state.md. Updated by /close-increment and
 
 - **Feature:** none · **#20** on `fix/20-hub-subscription-leak`: rooms are tracked per
   connection (`ClientChats`), and a disconnect releases every channel it no longer needs.
-  Verified (`verify.mjs --full`) at `81c7087`; live server check and `/code-review` next
+  Verified (`verify.mjs --full`, live: no `user:`/`chat:` channel left after the last socket
+  closes; `main` left 3) at `81c7087`
 - **#72 on Render (paused 2026-11-15):** `/health` answers `200`, but no chat with a message
   saved before PR #74 (`reactions: null`) is left to react to. Continue later, for example
   by setting `reactions: null` on a test message in Atlas first
-- **Next step:** live check (two sockets, then `redis-cli PUBSUB CHANNELS`), `/code-review`,
-  PR. Split `rest-api.md`, `websocket-requests.md` before adding to them
+- **Next step:** `/code-review`, then PR. Split `rest-api.md`, `websocket-requests.md`
+  before adding to them
 - **Updated:** 2026-11-16 on `fix/20-hub-subscription-leak`
 
 ## Where things stand
