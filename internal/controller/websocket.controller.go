@@ -906,6 +906,14 @@ func handleRemoveUser(ctx context.Context, client *models.Client, request models
 		wsLog().Printf("Failed to broadcast remove event: %v", err)
 	}
 
+	// After the event, so the removed members still get it and nothing after
+	// it (#14). The removal is saved either way, so a failure is only logged.
+	if len(removedIDStrings) > 0 {
+		if err := services.RemoveMembersFromLiveChat(request.ChatID, removedIDStrings); err != nil {
+			wsLog().Printf("Failed to remove members from the live chat: %v", err)
+		}
+	}
+
 	sendSuccessResponse(client, request.RequestID, map[string]interface{}{
 		"action":       "users_removed",
 		"chatId":       request.ChatID,

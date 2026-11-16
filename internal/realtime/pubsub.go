@@ -293,6 +293,12 @@ func (pm *PubSubManager) routeMessage(channel string, message *models.WebSocketM
 
 // handleChatMessage handles messages for chat channels
 func (pm *PubSubManager) handleChatMessage(chatID string, message *models.WebSocketMessage) {
+	// Hub-internal, never forwarded to clients (#14).
+	if message.Type == membersRemovedType {
+		pm.handleMembersRemoved(chatID, message)
+		return
+	}
+
 	// Broadcast to all clients in this chat on this instance
 	pm.hub.Mutex.RLock()
 	clients := slices.Collect(maps.Values(pm.hub.ChatClients[chatID]))
@@ -338,7 +344,7 @@ func (pm *PubSubManager) dropSlowClient(client *models.Client) {
 func (pm *PubSubManager) handlePresenceMessage(message *models.WebSocketMessage) {
 	userID := message.UserID
 
-	// Copy under the lock: removeClientFromChat shifts this slice in place.
+	// Copy under the lock: removeClientFromRoom shifts this slice in place.
 	pm.hub.Mutex.RLock()
 	activeChats := slices.Clone(pm.hub.UserActiveChats[userID])
 	pm.hub.Mutex.RUnlock()

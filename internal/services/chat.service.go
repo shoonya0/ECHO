@@ -632,6 +632,23 @@ func BroadcastToChat(chatID string, message models.WebSocketMessage) error {
 	return broadcaster.PublishToChat(chatID, &message)
 }
 
+// LiveMemberRemover takes users' open connections out of a chat's room on every
+// instance. The realtime hub implements it next to Broadcaster.
+type LiveMemberRemover interface {
+	RemoveMembersFromChat(chatID string, userIDs []string) error
+}
+
+// RemoveMembersFromLiveChat stops the chat's live events reaching the users'
+// open connections, after they were removed from participants (#14). Call it
+// after broadcasting the event that announces the removal, which they still get.
+func RemoveMembersFromLiveChat(chatID string, userIDs []string) error {
+	remover, ok := broadcaster.(LiveMemberRemover)
+	if !ok {
+		return fmt.Errorf("websocket hub not initialized")
+	}
+	return remover.RemoveMembersFromChat(chatID, userIDs)
+}
+
 // ============ HELPER FUNCTIONS ============
 
 // updateChatLastMessage updates the last message reference in chat

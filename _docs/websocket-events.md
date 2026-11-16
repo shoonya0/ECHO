@@ -188,7 +188,8 @@ empty. Only the caller's `response` lists the IDs.
 ```
 
 These are the two forms of `data`: the first after `invite_user`, the second after
-`remove_user`.
+`remove_user`. The removed members still get this event, and nothing from the chat after
+it: their open connections leave the chat on every server (#14).
 
 ## Reserved, not sent yet
 

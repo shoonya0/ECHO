@@ -248,7 +248,7 @@ func (eh *Hub) handleClientUnregistration(client *models.Client) {
 			// Remove from active chats
 			if activeChats, exists := eh.UserActiveChats[userID]; exists {
 				for _, chatID := range activeChats {
-					eh.removeClientFromChat(client, chatID)
+					removeClientFromRoom(eh.Hub, client, chatID)
 				}
 			}
 
@@ -355,14 +355,14 @@ func (eh *Hub) LeaveChat(client *models.Client, chatID string) error {
 	defer eh.Mutex.Unlock()
 
 	// Only a client in the room may announce a leave, so nobody can spoof one.
-	// The room is checked instead of the participant list because a member
-	// removed from a group stays in the room and must still be able to leave.
+	// A member removed from a group has already left the room (#14), so their
+	// leave gets ErrNotInChat.
 	if _, inRoom := eh.ChatClients[chatID][client.ID]; !inRoom {
 		return ErrNotInChat
 	}
 
 	// Remove from chat
-	eh.removeClientFromChat(client, chatID)
+	removeClientFromRoom(eh.Hub, client, chatID)
 
 	// Publish leave event
 	leaveMsg := &models.WebSocketMessage{
@@ -383,14 +383,15 @@ func (eh *Hub) LeaveChat(client *models.Client, chatID string) error {
 // ErrNotInChat means the connection isn't following the chat it tried to leave.
 var ErrNotInChat = errors.New("client is not in this chat")
 
-// removeClientFromChat removes a client from a chat (internal helper)
-func (eh *Hub) removeClientFromChat(client *models.Client, chatID string) {
-	if chatClients, exists := eh.ChatClients[chatID]; exists {
+// removeClientFromRoom removes a client from a chat's room and the chat from
+// the user's active chats. The caller holds h.Mutex.
+func removeClientFromRoom(h *models.Hub, client *models.Client, chatID string) {
+	if chatClients, exists := h.ChatClients[chatID]; exists {
 		delete(chatClients, client.ID)
 
 		// Remove empty chat map
 		if len(chatClients) == 0 {
-			delete(eh.ChatClients, chatID)
+			delete(h.ChatClients, chatID)
 
 			// Chat channel unsubscription is now handled safely in UnsubscribeUserFromChannels
 			// with proper reference counting to avoid breaking other users in the chat
@@ -399,16 +400,16 @@ func (eh *Hub) removeClientFromChat(client *models.Client, chatID string) {
 
 	// Remove from user's active chats (centralized in hub)
 	userID := client.UserID.Hex()
-	if activeChats, exists := eh.UserActiveChats[userID]; exists {
+	if activeChats, exists := h.UserActiveChats[userID]; exists {
 		for i, activeChat := range activeChats {
 			if activeChat == chatID {
-				eh.UserActiveChats[userID] = append(activeChats[:i], activeChats[i+1:]...)
+				h.UserActiveChats[userID] = append(activeChats[:i], activeChats[i+1:]...)
 				break
 			}
 		}
 		// If no more active chats for this user, clean up
-		if len(eh.UserActiveChats[userID]) == 0 {
-			delete(eh.UserActiveChats, userID)
+		if len(h.UserActiveChats[userID]) == 0 {
+			delete(h.UserActiveChats, userID)
 		}
 	}
 }
