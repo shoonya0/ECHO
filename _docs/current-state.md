@@ -1,6 +1,6 @@
 # ECHO: current state
 
-A one-page snapshot of where the project stands. Last checked on 2026-11-16 at `252a771`
+A one-page snapshot of where the project stands. Last checked on 2026-11-16 at `dca815e`
 on `main`. To learn what the product does, read
 [product-overview.md](./product-overview.md). For the code, read
 [architecture-overview.md](./architecture-overview.md).
@@ -11,14 +11,14 @@ on `main`. To learn what the product does, read
 and with a link to exactly one feature state.md. Updated by /close-increment and
 /feature-docs update. -->
 
-- **Feature:** none yet · #16 on `fix/16-participant-count`: `stats.participantCount`
-  follows adds and joins (`$inc` in the same update), and a startup backfill resets
-  drifted groups. Reproduced with DB tests first
+- **Feature:** none yet · #68 on `fix/68-enforce-group-size`: create, add and join refuse
+  to take a group past `settings.maxParticipants` (default 100), checked in the update
+  filter. REST `409`, WebSocket `GROUP_FULL`. Reproduced with DB tests first
 - **#72 on Render (paused 2026-11-15):** `/health` answers `200`, but no chat with a message
   saved before PR #74 (`reactions: null`) is left to react to. Continue later, for example
   by setting `reactions: null` on a test message in Atlas first
-- **Next step:** push, PR, and ask before merging
-- **Updated:** 2026-11-16 on `fix/62-contacts-exclude-blocked`
+- **Next step:** code review, push, PR, and ask before merging
+- **Updated:** 2026-11-16 on `fix/68-enforce-group-size`
 
 ## Where things stand
 
@@ -33,6 +33,10 @@ declining a group invite. The full list is in
 
 ## Recently finished
 
+- **#16 (PR #109):** a group's `stats.participantCount` follows every add, join and
+  removal, and a startup backfill resets drifted groups (skipping malformed ones). It
+  counts pending members and deleted accounts ([app changes](../Android/_docs/08_SERVER_CHANGES.md)).
+  From the code review: #110 (derive the count instead of maintaining it).
 - **#62 (PR #108):** `GET users/contacts` leaves out people you blocked; `GET /blocked`
   lists them ([REST](./rest-api.md#contacts), [app changes](../Android/_docs/08_SERVER_CHANGES.md)).
 - **#104 (PR #107):** creating an invite code returns it in `data`, shaped like an entry
@@ -168,7 +172,7 @@ There are 28 open issues. Where each risk sits in the code: [architecture-overvi
 | Area | The problem, in short | Issues |
 |---|---|---|
 | Live connections | The server can leak resources or stall under load, missed live messages can't be detected, and open connections miss new chats, and a restart of a running hub doubles its loops | #20, #21, #22, #43, #49, #54, #55, #79 |
-| Groups | Members are never asked to accept, live delivery doesn't match who is in the group, and the size limit isn't enforced | #5, #14, #17, #68 |
+| Groups | Members are never asked to accept, live delivery doesn't match who is in the group, and the participant count is maintained by hand | #5, #14, #17, #110 |
 | Invite codes | Pending members can't join by code, and entries left by forged joins before #9 was fixed are still stored | #69, #103 |
 | Accounts | Deleting an account leaves old references, emails are case-sensitive, and usernames aren't unique | #35, #36 |
 | Contacts and blocking | Contact lists aren't cut to `limit`, and blocks written during a deploy can be missed | #39, #63 |
