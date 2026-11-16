@@ -46,7 +46,7 @@ func GetHubInstance() *EnhancedHub {
             CacheExpiry:     make(map[string]time.Time),
             Register:        make(chan *models.Client, 1000),
             Unregister:      make(chan *models.Client, 1000),
-            UserActiveChats: make(map[string][]string),
+            ClientChats:     make(map[string]map[string]struct{}),
         }
 
         ctx, cancel := context.WithCancel(context.Background())
@@ -97,7 +97,7 @@ go func() {
 Clients         map[clientID] -> *Client              // all connections
 UserClients     map[userHex] -> map[clientID]*Client  // user → connections
 ChatClients     map[chatHex] -> map[clientID]*Client  // chat → connections
-UserActiveChats map[userHex] -> []chatID              // user → active chats
+ClientChats     map[clientID] -> set of chatID       // connection → rooms (inverse of ChatClients)
 UserInfoCache   map[userHex] -> *UserDisplayInfo      // 5-min TTL cache
 ```
 
@@ -179,7 +179,7 @@ The hub maintains a `UserInfoCache` (5-minute TTL) to avoid database lookups for
 
 ### 10. Thread safety
 
-- `hub.Mutex` (RWMutex) protects all client maps (`Clients`, `ChatClients`, `UserClients`, `UserActiveChats`, `UserInfoCache`).
+- `hub.Mutex` (RWMutex) protects all client maps (`Clients`, `ChatClients`, `UserClients`, `ClientChats`, `UserInfoCache`).
 - **Critical rule:** External calls (DB queries, Redis operations, presence lookups) must happen **before** acquiring the mutex to avoid deadlocks.
 - The `Register` and `Unregister` channels serialize hub mutations — only `runHub()` processes them.
 - Client `Send` channel (buffered, capacity 10) is used with `select`/`default` to avoid blocking the hub on slow clients.

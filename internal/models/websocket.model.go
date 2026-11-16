@@ -252,18 +252,18 @@ type UserDisplayInfo struct {
 
 // Hub represents the WebSocket hub managing all connections (simplified)
 type Hub struct {
-	Clients         map[string]*Client            `json:"-"` // Master registry of all clients{ClientID -> Client}
-	ChatClients     map[string]map[string]*Client `json:"-"` // Maps chat rooms to their connected clients{ChatID -> ClientID -> Client}
-	UserClients     map[string]map[string]*Client `json:"-"` // Maps users to their active connections{UserID -> ClientID -> Client}
-	PubSub          *redis.PubSub
-	Register        chan *Client
-	Unregister      chan *Client
-	Ctx             context.Context
-	Cancel          context.CancelFunc
-	UserInfoCache   map[string]*UserDisplayInfo `json:"-"` // User display info cache (TTL: 5 minutes){UserID -> UserDisplayInfo}
-	CacheExpiry     map[string]time.Time        `json:"-"` // Cache expiry time{UserID -> time.Time}
-	UserActiveChats map[string][]string         `json:"-"` // Centralized active chats per user (moved from Client to avoid replication)
-	Mutex           sync.RWMutex                `json:"-"` // Mutex for thread safety
+	Clients       map[string]*Client            `json:"-"` // Master registry of all clients{ClientID -> Client}
+	ChatClients   map[string]map[string]*Client `json:"-"` // Maps chat rooms to their connected clients{ChatID -> ClientID -> Client}
+	UserClients   map[string]map[string]*Client `json:"-"` // Maps users to their active connections{UserID -> ClientID -> Client}
+	PubSub        *redis.PubSub
+	Register      chan *Client
+	Unregister    chan *Client
+	Ctx           context.Context
+	Cancel        context.CancelFunc
+	UserInfoCache map[string]*UserDisplayInfo    `json:"-"` // User display info cache (TTL: 5 minutes){UserID -> UserDisplayInfo}
+	CacheExpiry   map[string]time.Time           `json:"-"` // Cache expiry time{UserID -> time.Time}
+	ClientChats   map[string]map[string]struct{} `json:"-"` // Rooms each connection is in, the inverse of ChatClients{ClientID -> ChatID}
+	Mutex         sync.RWMutex                   `json:"-"` // Mutex for thread safety
 }
 
 // HubMessage represents a message to be broadcasted

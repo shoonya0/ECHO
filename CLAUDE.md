@@ -66,7 +66,7 @@ Platform: Linux server, Docker image auto-deployed to Render from `main`.
 - IMPORTANT: Secrets only from env (`internal/config`). Never in code, logs, fixtures or
   prompts. `.env` is gitignored and hook-protected.
 - New dependency: say why, and check that it exists and is maintained, before `go get`.
-- Hub maps (`ChatClients`, `UserClients`, `UserActiveChats`) are touched only under
+- Hub maps (`ChatClients`, `UserClients`, `ClientChats`) are touched only under
   `hub.Mutex`; never range over an inner map after unlocking (#19).
 - Every WebSocket handler that takes a `chatId` checks membership (#23).
 - Multi-document writes: check `MatchedCount`, don't discard errors (`_, _ =`), prefer

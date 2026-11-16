@@ -104,47 +104,52 @@ func (pm *PubSubManager) SubscribeUserToChannels(userID bson.ObjectID, chatIDs [
 	return nil
 }
 
-// UnsubscribeUserFromChannels unsubscribes a user from their channels
-func (pm *PubSubManager) UnsubscribeUserFromChannels(userID bson.ObjectID, chatIDs []string) error {
-	// Unsubscribe from user's personal channel (always safe to unsubscribe personal channels)
-	userChannel := pm.getUserChannel(userID.Hex())
-	if err := pm.unsubscribeFromChannel(userChannel); err != nil {
+// UnsubscribeUser releases a user's personal channel. The hub calls it when
+// the user's last connection on this instance closes, whether or not they
+// followed any chat (#20).
+func (pm *PubSubManager) UnsubscribeUser(userID bson.ObjectID) {
+	if err := pm.unsubscribeFromChannel(pm.getUserChannel(userID.Hex())); err != nil {
 		pm.logger.WithFields(logrus.Fields{"userID": userID.Hex()}).WithError(err).Error("Failed to unsubscribe from user channel")
 	}
+}
 
-	// Unsubscribe from chat channels - but only if no other clients are in the chat
+// testHookAfterEmptyCheck, when set by a test, runs between a release's
+// "room is empty" check and its unsubscribe. Always nil in production.
+var testHookAfterEmptyCheck func(chatID string)
+
+// releaseEmptyChats unsubscribes the channels of chats no connection on this
+// instance is in. JoinChat adds a client to the room before it subscribes, so
+// a join racing this release is either seen by the first check (the channel
+// is kept) or subscribes again after the close; the second check re-subscribes
+// for a join that slipped in between (#55). Messages published during that
+// gap are missed (#43). No lock is held across a Redis call.
+func (pm *PubSubManager) releaseEmptyChats(chatIDs []string) {
 	for _, chatID := range chatIDs {
-		chatChannel := pm.getChatChannel(chatID)
-
-		// Check if there are other clients still in this chat on this instance
-		pm.hub.Mutex.RLock()
-		shouldUnsubscribe := true
-		if chatClients, exists := pm.hub.ChatClients[chatID]; exists {
-			// Count clients that are NOT from the disconnecting user
-			otherClientsCount := 0
-			for _, client := range chatClients {
-				if client.UserID != userID {
-					otherClientsCount++
-				}
-			}
-			// Only unsubscribe if no other clients from different users are in this chat
-			shouldUnsubscribe = (otherClientsCount == 0)
+		if pm.roomInUse(chatID) {
+			continue
 		}
-		pm.hub.Mutex.RUnlock()
+		if testHookAfterEmptyCheck != nil {
+			testHookAfterEmptyCheck(chatID)
+		}
 
-		// Only unsubscribe if safe to do so
-		if shouldUnsubscribe {
-			if err := pm.unsubscribeFromChannel(chatChannel); err != nil {
-				pm.logger.WithFields(logrus.Fields{"chatID": chatID}).WithError(err).Error("Failed to unsubscribe from chat channel")
-			} else {
-				pm.logger.WithFields(logrus.Fields{"chatID": chatID, "userID": userID.Hex()}).Debug("Unsubscribed from chat channel (no other clients)")
+		channel := pm.getChatChannel(chatID)
+		if err := pm.unsubscribeFromChannel(channel); err != nil {
+			pm.logger.WithFields(logrus.Fields{"chatID": chatID}).WithError(err).Error("Failed to unsubscribe from chat channel")
+		}
+
+		if pm.roomInUse(chatID) {
+			if err := pm.subscribeToChannel(channel); err != nil {
+				pm.logger.WithFields(logrus.Fields{"chatID": chatID}).WithError(err).Error("Failed to subscribe again to chat channel")
 			}
-		} else {
-			pm.logger.WithFields(logrus.Fields{"chatID": chatID, "userID": userID.Hex()}).Debug("Keeping chat channel subscription (other clients exist)")
 		}
 	}
+}
 
-	return nil
+func (pm *PubSubManager) roomInUse(chatID string) bool {
+	pm.hub.Mutex.RLock()
+	defer pm.hub.Mutex.RUnlock()
+	_, inUse := pm.hub.ChatClients[chatID]
+	return inUse
 }
 
 // PublishToChat publishes a message to a chat channel
@@ -344,9 +349,8 @@ func (pm *PubSubManager) dropSlowClient(client *models.Client) {
 func (pm *PubSubManager) handlePresenceMessage(message *models.WebSocketMessage) {
 	userID := message.UserID
 
-	// Copy under the lock: removeClientFromRoom shifts this slice in place.
 	pm.hub.Mutex.RLock()
-	activeChats := slices.Clone(pm.hub.UserActiveChats[userID])
+	activeChats := userActiveChats(pm.hub, userID)
 	pm.hub.Mutex.RUnlock()
 
 	for _, chatID := range activeChats {

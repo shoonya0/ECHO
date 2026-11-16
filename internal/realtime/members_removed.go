@@ -31,7 +31,9 @@ func membersRemovedMessage(chatID string, userIDs []string) models.WebSocketMess
 func (eh *Hub) RemoveMembersFromChat(chatID string, userIDs []string) error {
 	msg := membersRemovedMessage(chatID, userIDs)
 	if err := eh.pubSubManager.PublishToChat(chatID, &msg); err != nil {
-		removeUsersFromRoom(eh.Hub, chatID, userIDs)
+		if removeUsersFromRoom(eh.Hub, chatID, userIDs) {
+			eh.pubSubManager.releaseEmptyChats([]string{chatID})
+		}
 		return err
 	}
 	return nil
@@ -51,20 +53,24 @@ func (pm *PubSubManager) handleMembersRemoved(chatID string, message *models.Web
 			userIDs = append(userIDs, id)
 		}
 	}
-	removeUsersFromRoom(pm.hub, chatID, userIDs)
+	if removeUsersFromRoom(pm.hub, chatID, userIDs) {
+		// Not on this goroutine: it is the reader of the channel being released.
+		go pm.releaseEmptyChats([]string{chatID})
+	}
 }
 
 // removeUsersFromRoom removes every connection of the users from the chat's
-// room. Their sockets stay open for their other chats. All map access is under
-// the hub's lock (#19).
-func removeUsersFromRoom(h *models.Hub, chatID string, userIDs []string) {
+// room. Their sockets stay open for their other chats. It reports whether the
+// room is now empty. All map access is under the hub's lock (#19).
+func removeUsersFromRoom(h *models.Hub, chatID string, userIDs []string) (emptied bool) {
 	h.Mutex.Lock()
 	defer h.Mutex.Unlock()
 	for _, userID := range userIDs {
 		for _, client := range h.UserClients[userID] {
-			if _, inRoom := h.ChatClients[chatID][client.ID]; inRoom {
-				removeClientFromRoom(h, client, chatID)
+			if _, inRoom := h.ChatClients[chatID][client.ID]; inRoom && removeClientFromRoom(h, client, chatID) {
+				emptied = true
 			}
 		}
 	}
+	return emptied
 }
