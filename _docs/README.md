@@ -11,6 +11,7 @@ you need, read that page, and stop when you have your answer.
 | Run it on my computer | [getting-started.md](./getting-started.md) |
 | See where the project stands, active work, test baseline | [current-state.md](./current-state.md) |
 | See what has been decided, and which issues each choice unblocks | [decisions.md](./decisions.md) |
+| Read older finished work (up to PR #90) | [finished-work.md](./finished-work.md) |
 | Look up a word I don't know | [glossary.md](./glossary.md) |
 
 ## Build a client app

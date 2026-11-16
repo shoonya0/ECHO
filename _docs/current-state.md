@@ -11,14 +11,15 @@ on `main`. To learn what the product does, read
 and with a link to exactly one feature state.md. Updated by /close-increment and
 /feature-docs update. -->
 
-- **Feature:** none · **#116** on `fix/116-disconnect-cleanup`: a last disconnect leaves and
-  unsubscribes every chat. Verified (`verify.mjs --full`) at `4d64937`, not pushed
+- **Feature:** none · **#20** on `fix/20-hub-subscription-leak`: rooms are tracked per
+  connection (`ClientChats`), and a disconnect releases every channel it no longer needs.
+  Verified (`verify.mjs --full`) at `81c7087`; live server check and `/code-review` next
 - **#72 on Render (paused 2026-11-15):** `/health` answers `200`, but no chat with a message
   saved before PR #74 (`reactions: null`) is left to react to. Continue later, for example
   by setting `reactions: null` on a test message in Atlas first
-- **Next step:** push, open the PR for #116, ask before merging; then the next issue from
-  [Known issues](#known-issues-and-risks). Split `rest-api.md`, `websocket-requests.md` first
-- **Updated:** 2026-11-16 on `fix/116-disconnect-cleanup`
+- **Next step:** live check (two sockets, then `redis-cli PUBSUB CHANNELS`), `/code-review`,
+  PR. Split `rest-api.md`, `websocket-requests.md` before adding to them
+- **Updated:** 2026-11-16 on `fix/20-hub-subscription-leak`
 
 ## Where things stand
 
@@ -33,6 +34,8 @@ declining a group invite. The full list is in
 
 ## Recently finished
 
+- **#116 (PR #119):** a user's last connection closing leaves every chat and unsubscribes
+  each of their chat channels (the loop used to skip some).
 - **#14 (PR #118):** a member removed with `remove_user` gets the `chat_updated` and then
   no more live events from the group, on every server: a hub-internal message on the
   chat's Redis channel takes their connections out of the room
@@ -96,51 +99,7 @@ declining a group invite. The full list is in
   and the role is re-checked in the write ([requests](./websocket-requests.md#remove_user),
   [app changes](../Android/_docs/08_SERVER_CHANGES/README.md)). The code review's other points
   (a race reported as `PERMISSION_DENIED`, the second write not checked, #37) were left.
-- **#15 (PR #90):** invite codes are 16 random bytes (32 hex characters) with nothing
-  inside; the AES key that was in the repo is gone. The invite routes find the group by
-  the stored code (indexed), so old codes work until they expire, and a code that isn't
-  stored gets `400` on every route ([REST](./rest-api.md#groups),
-  [app changes](../Android/_docs/08_SERVER_CHANGES/README.md)). Security review: nothing found.
-  The code review found #91 (a deleted code can still be sent).
-- **#83 (PR #87):** `invite_user` answers a failed chat lookup (timeout, MongoDB down) with
-  the retryable `INVITE_FAILED`; only a chat that doesn't exist is `INVALID_CHAT_ID`.
-  `GetChat` now returns `ErrChatNotFound` for a missing chat.
-- **#39 part 1 (PR #85):** `limit=0` no longer crashes the contact lists with a `500`;
-  `limit` is kept in 1..100 ([REST](./rest-api.md#contacts)). Still open on #39: the lists
-  aren't cut to `limit`, which needs a cursor first.
-- **#41 (PR #81):** no REST or WebSocket reply carries internal error text. A `400`'s
-  `error` names each field by its JSON path and rule (`password: min=8`), and
-  `invite_user` answers with specific codes ([REST](./rest-api.md#the-basics),
-  [app changes](../Android/_docs/08_SERVER_CHANGES/README.md)). Security review: nothing found.
-- **#40 part 1 (PR #80):** a WebSocket frame over 64 KiB closes with `1009`, and each
-  connection gets 20 requests a second (bursts of 40, pings included). A request over that
-  isn't handled and gets `RATE_LIMITED` ([protocol](./WEBSOCKET_PROTOCOL.md#stay-connected),
-  [app changes](../Android/_docs/08_SERVER_CHANGES/README.md)). Security review: nothing found.
-  Still open on #40: a per-user limit (one account can open many sockets), `set_typing`'s
-  MongoDB write, mention lookups, `CheckOrigin`, and login/signup limits.
-- **Render (2026-11-12):** `STATS_TOKEN` is set (the Blueprint generated it), and
-  `GET chats/hub/stats` with `X-Stats-Token` returns `200`. The MongoDB password,
-  `JWT_SECRET` and `STATS_TOKEN` were rotated after being exposed, so every login before
-  that was signed out.
-- **#76 (PR #78):** open WebSockets now
-  close when their session ends. Logout closes the connections opened with that token
-  (other devices stay connected); deleting the profile closes all of the user's. Both act
-  at once on every server, through the Redis channel `control:sessions`. Every open
-  connection is also re-checked every 30 seconds, so a ban made in MongoDB closes it within
-  about a minute (52 to 58 s in the live checks), and a connection closes when its token
-  expires. If a check can't be made, the pass stops and the connections stay open until
-  the next one. The close frame says why: `4401` `TOKEN_REVOKED`,
-  `TOKEN_EXPIRED` or `ACCOUNT_NOT_FOUND`, `4403` `ACCOUNT_BANNED` or `ACCOUNT_INACTIVE`
-  ([WEBSOCKET_PROTOCOL.md](./WEBSOCKET_PROTOCOL.md#stay-connected)). A closed connection's
-  read loop finishes the close handshake within 5 seconds instead of at its 60-second
-  deadline. The middleware and the re-check share one check (`services.CheckSession`). The
-  code review found #79; the security review found nothing.
-- **#72 (PR #74):** reactions work on real messages. New messages store `reactions: {}` instead of
-  `null`, which MongoDB refused to create reaction fields in. A message that still has
-  `null` (every message saved before the fix, or one written by an older server copy
-  during a deploy) is repaired when someone first reacts to it, so there is no startup
-  migration. Old messages nobody has reacted to still show `reactions: null` in history
-  ([rest-api.md](./rest-api.md#messages)). The live check found #75.
+Older work, from #15 (PR #90) back: [finished-work.md](./finished-work.md).
 
 ## How to build, run, test
 
@@ -183,7 +142,7 @@ There are 26 open issues. Where each risk sits in the code: [architecture-overvi
 
 | Area | The problem, in short | Issues |
 |---|---|---|
-| Live connections | The server can leak resources or stall under load, missed live messages can't be detected, and open connections miss new chats, and a restart of a running hub doubles its loops | #20, #21, #22, #43, #49, #54, #55, #79, #116, #117 |
+| Live connections | The server can leak resources or stall under load, missed live messages can't be detected, and open connections miss new chats, and a restart of a running hub doubles its loops | #20, #21, #22, #43, #49, #54, #55, #79, #117 |
 | Groups | Members are never asked to accept, pending members get no live messages, and the participant count is maintained by hand | #5, #17, #110 |
 | Invite codes | Entries left by forged joins before #9 was fixed are still stored | #69 |
 | Accounts | Deleting an account leaves old references, emails are case-sensitive, and usernames aren't unique | #35, #36 |
