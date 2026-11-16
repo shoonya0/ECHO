@@ -1,6 +1,6 @@
 # ECHO: current state
 
-A one-page snapshot of where the project stands. Last checked on 2026-11-16 at `c48d3e0`
+A one-page snapshot of where the project stands. Last checked on 2026-11-16 at `252a771`
 on `main`. To learn what the product does, read
 [product-overview.md](./product-overview.md). For the code, read
 [architecture-overview.md](./architecture-overview.md).
@@ -11,9 +11,9 @@ on `main`. To learn what the product does, read
 and with a link to exactly one feature state.md. Updated by /close-increment and
 /feature-docs update. -->
 
-- **Feature:** none yet · #62 on `fix/62-contacts-exclude-blocked`: `GET users/contacts`
-  leaves out people you blocked (`GET /blocked` lists them). Reproduced with a DB test
-  first; fixed in `contact.service.go`
+- **Feature:** none yet · #16 on `fix/16-participant-count`: `stats.participantCount`
+  follows adds and joins (`$inc` in the same update), and a startup backfill resets
+  drifted groups. Reproduced with DB tests first
 - **#72 on Render (paused 2026-11-15):** `/health` answers `200`, but no chat with a message
   saved before PR #74 (`reactions: null`) is left to react to. Continue later, for example
   by setting `reactions: null` on a test message in Atlas first
@@ -33,6 +33,8 @@ declining a group invite. The full list is in
 
 ## Recently finished
 
+- **#62 (PR #108):** `GET users/contacts` leaves out people you blocked; `GET /blocked`
+  lists them ([REST](./rest-api.md#contacts), [app changes](../Android/_docs/08_SERVER_CHANGES.md)).
 - **#104 (PR #107):** creating an invite code returns it in `data`, shaped like an entry
   of the group's list ([REST](./rest-api.md#groups),
   [app changes](../Android/_docs/08_SERVER_CHANGES.md)).
@@ -161,12 +163,12 @@ blocks are stored, and who counts as a member.
 
 ## Known issues and risks
 
-There are 29 open issues. Where each risk sits in the code: [architecture-overview.md](./architecture-overview.md#riskiest-areas).
+There are 28 open issues. Where each risk sits in the code: [architecture-overview.md](./architecture-overview.md#riskiest-areas).
 
 | Area | The problem, in short | Issues |
 |---|---|---|
 | Live connections | The server can leak resources or stall under load, missed live messages can't be detected, and open connections miss new chats, and a restart of a running hub doubles its loops | #20, #21, #22, #43, #49, #54, #55, #79 |
-| Groups | Members are never asked to accept, live delivery doesn't match who is in the group, and the size limit isn't enforced | #5, #14, #16, #17, #68 |
+| Groups | Members are never asked to accept, live delivery doesn't match who is in the group, and the size limit isn't enforced | #5, #14, #17, #68 |
 | Invite codes | Pending members can't join by code, and entries left by forged joins before #9 was fixed are still stored | #69, #103 |
 | Accounts | Deleting an account leaves old references, emails are case-sensitive, and usernames aren't unique | #35, #36 |
 | Contacts and blocking | Contact lists aren't cut to `limit`, and blocks written during a deploy can be missed | #39, #63 |
