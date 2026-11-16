@@ -179,3 +179,57 @@ func TestCreateGroupChatRespectsSizeLimit(t *testing.T) {
 		t.Fatalf("participants = %d, want %d", n, constants.DefaultMaxGroupParticipants)
 	}
 }
+
+// addMember puts id into the group's participants directly, as a concurrent write would.
+func addMember(t *testing.T, chatID, id bson.ObjectID) {
+	t.Helper()
+	_, err := database.DB.Collection(string(constants.ChatColl)).UpdateOne(t.Context(),
+		bson.M{"_id": chatID}, bson.M{"$set": bson.M{participantField(id): bson.M{"role": string(constants.ChatRoleMember)}}})
+	if err != nil {
+		t.Fatalf("add member: %v", err)
+	}
+}
+
+// From the #68 code review: an add whose update matched nothing is "full" only when
+// the group really has no room for the people being added.
+func TestAddNotAppliedExplainsTheMiss(t *testing.T) {
+	ctx := useTestDB(t)
+	owner, u1, u2 := bson.NewObjectID(), bson.NewObjectID(), bson.NewObjectID()
+
+	if err := addNotApplied(ctx, bson.NewObjectID(), []bson.ObjectID{u1}); !errors.Is(err, ErrChatNotFound) {
+		t.Fatalf("chat deleted meanwhile: err = %v, want ErrChatNotFound", err)
+	}
+
+	// Another admin added u1 first, which filled the group: that isn't "full" for u1.
+	raced := insertSizedGroup(t, ctx, owner, 1, 3)
+	addMember(t, raced, u1)
+	err := addNotApplied(ctx, raced, []bson.ObjectID{u1})
+	if errors.Is(err, ErrGroupFull) || !errors.Is(err, ErrPermissionDenied) {
+		t.Fatalf("target added meanwhile: err = %v, want ErrPermissionDenied (retryable), not ErrGroupFull", err)
+	}
+
+	full := insertSizedGroup(t, ctx, owner, 2, 3)
+	if err := addNotApplied(ctx, full, []bson.ObjectID{u2}); !errors.Is(err, ErrGroupFull) {
+		t.Fatalf("group filled meanwhile: err = %v, want ErrGroupFull", err)
+	}
+}
+
+// From the #68 code review: a join that missed with a usable code is "full" only when
+// the group has no room.
+func TestJoinNotAppliedChecksRoom(t *testing.T) {
+	ctx := useTestDB(t)
+	owner, joiner := bson.NewObjectID(), bson.NewObjectID()
+	live := mintInvite(t, time.Now().Add(time.Hour))
+	now := time.Now()
+
+	roomy := insertSizedGroup(t, ctx, owner, 1, 4, live)
+	err := joinNotApplied(ctx, roomy, joiner, live.InviteCode, now)
+	if err == nil || errors.Is(err, ErrGroupFull) || errors.Is(err, ErrInvalidInvite) {
+		t.Fatalf("missed join into a group with room: err = %v, want a retryable error", err)
+	}
+
+	full := insertSizedGroup(t, ctx, owner, 1, 2, live)
+	if err := joinNotApplied(ctx, full, joiner, live.InviteCode, now); !errors.Is(err, ErrGroupFull) {
+		t.Fatalf("missed join into a full group: err = %v, want ErrGroupFull", err)
+	}
+}

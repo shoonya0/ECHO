@@ -974,17 +974,34 @@ func AddGroupMember(ctx context.Context, userID bson.ObjectID, chatID bson.Objec
 		return fmt.Errorf("failed to update chat: %w", err)
 	}
 	if res.MatchedCount == 0 {
-		full, err := groupLacksRoom(ctx, chatID, len(users))
-		if err != nil {
-			return err
+		addedIDs := make([]bson.ObjectID, 0, len(users))
+		for _, u := range users {
+			addedIDs = append(addedIDs, u.ID)
 		}
-		if full {
-			return fmt.Errorf("%w: filled while adding members", ErrGroupFull)
-		}
-		return fmt.Errorf("%w: chat changed while adding members", ErrPermissionDenied)
+		return addNotApplied(ctx, chatID, addedIDs)
 	}
 
 	return nil
+}
+
+// addNotApplied picks the error for an add whose update matched nothing, from the
+// group as it is now: ErrChatNotFound if it is gone, ErrPermissionDenied (the chat
+// changed; a retry may work) if one of addedIDs was added meanwhile or the actor's
+// role changed, and ErrGroupFull only if addedIDs no longer fit (#68).
+func addNotApplied(ctx context.Context, chatID bson.ObjectID, addedIDs []bson.ObjectID) error {
+	participants, limit, err := loadGroupSize(ctx, chatID)
+	if err != nil {
+		return err
+	}
+	for _, id := range addedIDs {
+		if _, ok := participants[id]; ok {
+			return fmt.Errorf("%w: members added meanwhile", ErrPermissionDenied)
+		}
+	}
+	if len(participants)+len(addedIDs) > limit {
+		return fmt.Errorf("%w: filled while adding members", ErrGroupFull)
+	}
+	return fmt.Errorf("%w: chat changed while adding members", ErrPermissionDenied)
 }
 
 // groupSizeLimit is a group's size limit: the stored settings.maxParticipants, or
@@ -1006,16 +1023,21 @@ func roomForParticipants(n int) bson.M {
 	return bson.M{"$lte": bson.A{bson.M{"$add": bson.A{size, n}}, limit}}
 }
 
-// groupLacksRoom reports whether the group chatID has no room for n more
-// participants. It explains an add or join whose update matched nothing.
-func groupLacksRoom(ctx context.Context, chatID bson.ObjectID, n int) (bool, error) {
-	count, err := database.DB.Collection(string(constants.ChatColl)).CountDocuments(ctx,
-		bson.M{"_id": chatID, "$expr": roomForParticipants(n)},
-	)
-	if err != nil {
-		return false, fmt.Errorf("failed to check group size: %w", err)
+// loadGroupSize reads the group chatID's participants and its size limit. It
+// returns ErrChatNotFound if there is no such group.
+func loadGroupSize(ctx context.Context, chatID bson.ObjectID) (map[bson.ObjectID]models.ParticipantEmbed, int, error) {
+	var chat models.Chat
+	err := database.DB.Collection(string(constants.ChatColl)).FindOne(ctx,
+		bson.M{"_id": chatID, "chatType": string(constants.ChatTypeGroup)},
+		options.FindOne().SetProjection(bson.M{"participants": 1, "settings.maxParticipants": 1}),
+	).Decode(&chat)
+	if errors.Is(err, mongo.ErrNoDocuments) {
+		return nil, 0, fmt.Errorf("%w", ErrChatNotFound)
 	}
-	return count == 0, nil
+	if err != nil {
+		return nil, 0, fmt.Errorf("failed to check group size: %w", err)
+	}
+	return chat.Participants, groupSizeLimit(chat.Settings.MaxParticipants), nil
 }
 
 // RemoveGroupMember removes one or more participants from a group chat.
@@ -1392,7 +1414,8 @@ func JoinGroupByInvite(ctx context.Context, userID bson.ObjectID, inviteID strin
 		"$inc": bson.M{"stats.participantCount": 1},
 	}
 
-	joinFilter := usableInviteFilter(chatObjectID, inviteID)
+	now := time.Now()
+	joinFilter := usableInviteFilter(chatObjectID, inviteID, now)
 	joinFilter[participantField(userID)] = bson.M{"$exists": false}
 	joinFilter["$expr"] = roomForParticipants(1)
 	res, err := database.DB.Collection(string(constants.ChatColl)).UpdateOne(ctx, joinFilter, updateInviteCodeUserIDs)
@@ -1400,7 +1423,7 @@ func JoinGroupByInvite(ctx context.Context, userID bson.ObjectID, inviteID strin
 		return fmt.Errorf("failed to update invite code user IDs: %w", err)
 	}
 	if res.MatchedCount == 0 {
-		return joinNotApplied(ctx, chatObjectID, userID, inviteID)
+		return joinNotApplied(ctx, chatObjectID, userID, inviteID, now)
 	}
 
 	// Add chat ref to user, and drop their invitation for this code, which is
@@ -1424,40 +1447,49 @@ func JoinGroupByInvite(ctx context.Context, userID bson.ObjectID, inviteID strin
 
 // usableInviteFilter matches the group chatID while it stores inviteID as a code
 // that is neither deleted nor expired.
-func usableInviteFilter(chatID bson.ObjectID, inviteID string) bson.M {
+func usableInviteFilter(chatID bson.ObjectID, inviteID string, now time.Time) bson.M {
 	return bson.M{
 		"_id":      chatID,
 		"chatType": string(constants.ChatTypeGroup),
 		"inviteCode": bson.M{"$elemMatch": bson.M{
 			"inviteCode":  inviteID,
 			"deleted":     bson.M{"$ne": true},
-			"expiredDate": bson.M{"$gt": time.Now()},
+			"expiredDate": bson.M{"$gt": now},
 		}},
 	}
 }
 
 // joinNotApplied picks the error for a join whose update matched nothing:
-// ErrAlreadyParticipant if userID is already in the chat, ErrGroupFull if the code
-// is usable but the group has no room (#68), else ErrInvalidInvite.
+// ErrAlreadyParticipant if userID is already in the chat, ErrInvalidInvite if the
+// code isn't usable at now (the time the join's filter used), ErrGroupFull if the
+// group has no room (#68), and otherwise a plain error: membership changed during
+// the join, and a retry may work.
 // A member can get here because an earlier join stopped after adding them to
 // participants but before adding the chat to their chats list, which the hub
 // needs to deliver live messages. A retry would never get past this point, so
 // the missing entry is added here. An existing entry keeps its unread count.
-func joinNotApplied(ctx context.Context, chatID, userID bson.ObjectID, inviteID string) error {
+func joinNotApplied(ctx context.Context, chatID, userID bson.ObjectID, inviteID string, now time.Time) error {
 	chats := database.DB.Collection(string(constants.ChatColl))
 	count, err := chats.CountDocuments(ctx, chatMemberFilter(chatID, userID))
 	if err != nil {
 		return fmt.Errorf("failed to check if user is in the chat: %w", err)
 	}
 	if count == 0 {
-		usable, err := chats.CountDocuments(ctx, usableInviteFilter(chatID, inviteID))
+		usable, err := chats.CountDocuments(ctx, usableInviteFilter(chatID, inviteID, now))
 		if err != nil {
 			return fmt.Errorf("failed to check invite: %w", err)
 		}
-		if usable > 0 {
+		if usable == 0 {
+			return fmt.Errorf("%w", ErrInvalidInvite)
+		}
+		participants, limit, err := loadGroupSize(ctx, chatID)
+		if err != nil {
+			return err
+		}
+		if len(participants)+1 > limit {
 			return fmt.Errorf("%w", ErrGroupFull)
 		}
-		return fmt.Errorf("%w", ErrInvalidInvite)
+		return fmt.Errorf("join did not apply: membership changed meanwhile")
 	}
 
 	chatRef := "chats." + chatID.Hex()
