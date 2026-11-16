@@ -80,7 +80,7 @@ Checked against the code at `17ec08b`. Issue numbers were last updated on 2026-1
 - **Hub statistics** are for operators. They need the server's `STATS_TOKEN` as well as a
   login, and they show counts only.
 
-Open security bugs: #59.
+No open security bugs are known.
 
 ## Performance
 
