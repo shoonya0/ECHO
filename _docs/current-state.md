@@ -1,6 +1,6 @@
 # ECHO: current state
 
-A one-page snapshot of where the project stands. Last checked on 2026-11-16 at `dca815e`
+A one-page snapshot of where the project stands. Last checked on 2026-11-16 at `d46c2f8`
 on `main`. To learn what the product does, read
 [product-overview.md](./product-overview.md). For the code, read
 [architecture-overview.md](./architecture-overview.md).
@@ -11,14 +11,13 @@ on `main`. To learn what the product does, read
 and with a link to exactly one feature state.md. Updated by /close-increment and
 /feature-docs update. -->
 
-- **Feature:** none yet · #68 on `fix/68-enforce-group-size`: create, add and join refuse
-  to take a group past `settings.maxParticipants` (default 100), checked in the update
-  filter. REST `409`, WebSocket `GROUP_FULL`. Reproduced with DB tests first
+- **Feature:** none yet · #103 on `fix/103-pending-join-by-code`: a `pending` group
+  member who joins with a usable code becomes `accepted`, and their invitation is cleared
 - **#72 on Render (paused 2026-11-15):** `/health` answers `200`, but no chat with a message
   saved before PR #74 (`reactions: null`) is left to react to. Continue later, for example
   by setting `reactions: null` on a test message in Atlas first
-- **Next step:** code review, push, PR, and ask before merging
-- **Updated:** 2026-11-16 on `fix/68-enforce-group-size`
+- **Next step:** tests first, then fix, verify, PR, and ask before merging
+- **Updated:** 2026-11-16 on `fix/103-pending-join-by-code`
 
 ## Where things stand
 
@@ -33,6 +32,10 @@ declining a group invite. The full list is in
 
 ## Recently finished
 
+- **#68 (PR #111):** a group holds at most `settings.maxParticipants` (default 100). Create,
+  add and join past it add nobody: REST `409`, WebSocket `GROUP_FULL`, checked in the
+  update filter ([REST](./rest-api.md#groups), [app changes](../Android/_docs/08_SERVER_CHANGES.md)).
+  From the code review: #112.
 - **#16 (PR #109):** a group's `stats.participantCount` follows every add, join and
   removal, and a startup backfill resets drifted groups (skipping malformed ones). It
   counts pending members and deleted accounts ([app changes](../Android/_docs/08_SERVER_CHANGES.md)).
@@ -173,12 +176,12 @@ There are 28 open issues. Where each risk sits in the code: [architecture-overvi
 |---|---|---|
 | Live connections | The server can leak resources or stall under load, missed live messages can't be detected, and open connections miss new chats, and a restart of a running hub doubles its loops | #20, #21, #22, #43, #49, #54, #55, #79 |
 | Groups | Members are never asked to accept, live delivery doesn't match who is in the group, and the participant count is maintained by hand | #5, #14, #17, #110 |
-| Invite codes | Pending members can't join by code, and entries left by forged joins before #9 was fixed are still stored | #69, #103 |
+| Invite codes | Entries left by forged joins before #9 was fixed are still stored | #69 |
 | Accounts | Deleting an account leaves old references, emails are case-sensitive, and usernames aren't unique | #35, #36 |
 | Contacts and blocking | Contact lists aren't cut to `limit`, and blocks written during a deploy can be missed | #39, #63 |
 | Online status and privacy | Online status is unreliable, and privacy settings aren't applied | #31, #32 |
 | Request cost | Membership checks read the same chat two or three times per request | #106 |
-| Messages and data | Writes can half-finish, and some lists grow without limit | #37, #42 |
+| Messages and data | Writes can half-finish (creating a group ignores the creator's write), and some lists grow without limit | #37, #42, #112 |
 | Limits and errors | WebSocket limits are per connection, not per user, and `set_typing` still writes to MongoDB; no limits on login and signup | #40 |
 | WebSocket replies and events | Replies and events are inconsistent or leave out details, which affects the Android plan | #48, #50, #51 |
 
