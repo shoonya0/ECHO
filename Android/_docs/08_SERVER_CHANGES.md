@@ -4,6 +4,19 @@ The server changed after the plans in this folder were written. Read this page b
 working on the app's networking or login code. Each entry says what the server does now,
 what the app should do, and where the details are.
 
+## Unknown chats look like chats you aren't in (#59)
+
+- `send_message`, `invite_user` and `remove_user` now answer `PERMISSION_DENIED` for a chat
+  you aren't in, whether or not it exists. Before, an unknown chat got `INVALID_CHAT_ID` or
+  `PERMISSION_CHECK_FAILED`, and `invite_user` to a direct chat got `INVALID_REQUEST`.
+- `INVALID_CHAT_ID` now only means a badly formed chat ID. `remove_user` on a direct chat
+  gets `INVALID_REQUEST`, as `invite_user` does.
+- Don't drop a chat from the UI on `PERMISSION_DENIED`: members get it too, for a missing
+  role, muting or a block. Refresh the chat list instead; a chat you left won't be in it.
+- REST `add-members` returns `404` (was `403`) if you aren't in the group.
+
+Details: [WEBSOCKET_PROTOCOL.md](../../_docs/WEBSOCKET_PROTOCOL.md#error-codes).
+
 ## Auth replies (#33, PR #77, live on Render since 2026-11-11)
 
 Every request now checks the account itself, not only the token. A token stops working

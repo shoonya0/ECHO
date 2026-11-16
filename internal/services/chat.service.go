@@ -898,9 +898,11 @@ func AddGroupMember(ctx context.Context, userID bson.ObjectID, chatID bson.Objec
 		return fmt.Errorf("failed to get chat: %w", err)
 	}
 
+	// An outsider gets the same error as for a missing group, so group IDs
+	// can't be probed (#59).
 	actingParticipant, ok := chat.Participants[userID]
 	if !ok {
-		return fmt.Errorf("%w", ErrNotParticipant)
+		return fmt.Errorf("%w", ErrChatNotFound)
 	}
 	if actingParticipant.Role != string(constants.ChatRoleOwner) && actingParticipant.Role != string(constants.ChatRoleAdmin) {
 		return fmt.Errorf("%w: only owners and admins can add members", ErrPermissionDenied)
@@ -989,10 +991,11 @@ func RemoveGroupMember(ctx context.Context, actingUserID bson.ObjectID, chatID b
 		return nil, fmt.Errorf("failed to get chat: %w", err)
 	}
 
-	// Verify acting user is a participant
+	// An outsider gets the same error as for a missing group, so group IDs
+	// can't be probed (#59).
 	actingParticipant, ok := chat.Participants[actingUserID]
 	if !ok {
-		return nil, fmt.Errorf("%w", ErrNotParticipant)
+		return nil, fmt.Errorf("%w", ErrChatNotFound)
 	}
 
 	// Must be owner or admin

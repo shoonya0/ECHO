@@ -45,10 +45,12 @@ func TestAddGroupMemberAuthorization(t *testing.T) {
 		return chat.Participants
 	}
 
+	// An outsider gets the same error as for a group that doesn't exist, so
+	// group IDs can't be probed (#59).
 	t.Run("outsider cannot add themselves", func(t *testing.T) {
 		err := AddGroupMember(ctx, outsider, chatID, []bson.ObjectID{outsider})
-		if !errors.Is(err, ErrNotParticipant) {
-			t.Fatalf("err = %v, want ErrNotParticipant", err)
+		if !errors.Is(err, ErrChatNotFound) {
+			t.Fatalf("err = %v, want ErrChatNotFound", err)
 		}
 		if _, ok := participants(t)[outsider]; ok {
 			t.Fatal("outsider was added to the group")

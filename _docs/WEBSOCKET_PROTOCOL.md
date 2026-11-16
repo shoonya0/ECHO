@@ -162,12 +162,12 @@ An `error` event has a `code` and a readable `message`.
 | Code | Meaning |
 |---|---|
 | `INVALID_REQUEST` | A required field is missing or wrong |
-| `INVALID_CHAT_ID` | The chat ID has the wrong format, or the chat wasn't found |
+| `INVALID_CHAT_ID` | The chat ID has the wrong format. A chat that doesn't exist gets `PERMISSION_DENIED`, the same as one you aren't in (#59) |
 | `INVALID_MESSAGE_ID` | The message ID has the wrong format |
 | `INVALID_USER_ID` | The user ID has the wrong format |
 | `MESSAGE_NOT_FOUND` | The message doesn't exist |
 | `PERMISSION_DENIED` | You aren't allowed to do this |
-| `PERMISSION_CHECK_FAILED` | The server couldn't check your permission, for example because the chat doesn't exist |
+| `PERMISSION_CHECK_FAILED` | The server couldn't check your permission; retry |
 | `INVALID_CONTENT` | The message broke a content rule, such as being too long |
 | `MESSAGE_FAILED` | The message couldn't be sent |
 | `REACTION_FAILED` | The reaction couldn't be added or removed |
@@ -186,7 +186,7 @@ An `error` event has a `code` and a readable `message`.
 
 Error messages are fixed texts and never contain internal errors (#41). They may still
 change, so build your app on `code`, not on `message`. `invite_user` answers with the
-specific code when it can: `INVALID_CHAT_ID`, `PERMISSION_DENIED`, `INVALID_USER_ID`, or
-`INVALID_REQUEST` when the users are already in the chat. `INVALID_CHAT_ID` means the chat
-doesn't exist. `INVITE_FAILED` means the chat changed at the same time or the server
+specific code when it can: `PERMISSION_DENIED` (also for a chat that doesn't exist),
+`INVALID_USER_ID`, or `INVALID_REQUEST` when the users are already in the chat or the chat
+isn't a group. `INVITE_FAILED` means the chat changed at the same time or the server
 couldn't read it (#83), so retry it once.

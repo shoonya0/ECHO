@@ -108,6 +108,21 @@ func TestRemoveGroupMemberRules(t *testing.T) {
 		}
 	})
 
+	// An outsider and an unknown group get the same error, so group IDs can't
+	// be probed (#59).
+	t.Run("outsider gets the same error as an unknown group", func(t *testing.T) {
+		outsider := bson.NewObjectID()
+		if _, err := RemoveGroupMember(ctx, outsider, chatID, []bson.ObjectID{member2}); !errors.Is(err, ErrChatNotFound) {
+			t.Fatalf("outsider: err = %v, want ErrChatNotFound", err)
+		}
+		if _, err := RemoveGroupMember(ctx, owner, bson.NewObjectID(), []bson.ObjectID{member2}); !errors.Is(err, ErrChatNotFound) {
+			t.Fatalf("unknown group: err = %v, want ErrChatNotFound", err)
+		}
+		if !inGroup(t, member2) {
+			t.Fatal("an outsider removed a member")
+		}
+	})
+
 	t.Run("member cannot remove anyone", func(t *testing.T) {
 		_, err := RemoveGroupMember(ctx, member2, chatID, []bson.ObjectID{admin})
 		if !errors.Is(err, ErrPermissionDenied) {
