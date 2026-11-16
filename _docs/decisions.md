@@ -11,6 +11,13 @@ send one to a user, delete one, or list them. The list shows every code, with de
 expired ones marked. Everyone else in the group, pending members included, is refused.
 `settings.allowInvites` doesn't widen this.
 
+## How a pending member accepts (#103, #5)
+
+Decided on 2026-11-16. For now a `pending` member accepts by joining with any usable code
+of the group (`POST groups/join/:inviteCode`), and owners and admins may `send` them one.
+A dedicated accept and decline action, tied to the person's own invitation, is built with
+#5 rather than added to the join route.
+
 ## Where chat membership is stored
 
 Decided on 2026-11-15. A chat's `participants` is the only record of who is in it.
