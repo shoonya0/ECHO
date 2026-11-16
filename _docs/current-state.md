@@ -11,14 +11,14 @@ on `main`. To learn what the product does, read
 and with a link to exactly one feature state.md. Updated by /close-increment and
 /feature-docs update. -->
 
-- **Feature:** none yet · no issue in progress. #14 was merged on 2026-11-16 (PR #118)
+- **Feature:** none · **#116** on `fix/116-disconnect-cleanup`: a last disconnect leaves and
+  unsubscribes every chat. Verified (`verify.mjs --full`) at `4d64937`, not pushed
 - **#72 on Render (paused 2026-11-15):** `/health` answers `200`, but no chat with a message
   saved before PR #74 (`reactions: null`) is left to react to. Continue later, for example
   by setting `reactions: null` on a test message in Atlas first
-- **Next step:** pick the next issue from [Known issues and risks](#known-issues-and-risks)
-  and commit this state update as the first commit on its branch. `rest-api.md` and
-  `websocket-requests.md` are full: `/feature-docs split` them before adding to them
-- **Updated:** 2026-11-16 on `main` (uncommitted)
+- **Next step:** push, open the PR for #116, ask before merging; then the next issue from
+  [Known issues](#known-issues-and-risks). Split `rest-api.md`, `websocket-requests.md` first
+- **Updated:** 2026-11-16 on `fix/116-disconnect-cleanup`
 
 ## Where things stand
 
