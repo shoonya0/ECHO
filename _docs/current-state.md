@@ -12,11 +12,12 @@ and with a link to exactly one feature state.md. Updated by /close-increment and
 /feature-docs update. -->
 
 - **Feature:** none yet · #106 on `fix/106-one-chat-read`: `send_message` and
-  `invite_user` read the chat once, together with the membership check
+  `invite_user` read the chat once, together with the membership check. Done and verified
+  at `4d8b07e` (`verify --full`), code review applied; PR in review
 - **#72 on Render (paused 2026-11-15):** `/health` answers `200`, but no chat with a message
   saved before PR #74 (`reactions: null`) is left to react to. Continue later, for example
   by setting `reactions: null` on a test message in Atlas first
-- **Next step:** tests first, then the change, verify, PR, and ask before merging. `rest-api.md`,
+- **Next step:** merge the #106 PR once the user agrees and CI is green. `rest-api.md`,
   `websocket-requests.md` and `Android/_docs/08_SERVER_CHANGES.md` are at their 200-line
   budget: split them (`/feature-docs split`) before the next change that adds to them
 - **Updated:** 2026-11-16 on `fix/106-one-chat-read`
