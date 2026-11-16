@@ -11,14 +11,14 @@ on `main`. To learn what the product does, read
 and with a link to exactly one feature state.md. Updated by /close-increment and
 /feature-docs update. -->
 
-- **Feature:** none yet · #14 on `fix/14-cut-removed-members-live`: after `remove_user`,
-  the removed members' open connections leave the group's room on every server
+- **Feature:** none yet · #14 on `fix/14-cut-removed-members-live`: removed members' open
+  connections leave the group's room on every server. Reviewed, verified at `5bae453`
 - **#72 on Render (paused 2026-11-15):** `/health` answers `200`, but no chat with a message
   saved before PR #74 (`reactions: null`) is left to react to. Continue later, for example
   by setting `reactions: null` on a test message in Atlas first
-- **Next step:** tests first, then the hub change, docs, review, PR. `rest-api.md`,
-  `websocket-requests.md` and `Android/_docs/08_SERVER_CHANGES/README.md` are at their 200-line
-  budget: split them (`/feature-docs split`) before the next change that adds to them
+- **Next step:** merge the #14 PR once the user agrees and CI is green. From its review: #116, #117.
+  `rest-api.md` and `websocket-requests.md` are at their 200-line budget: split them
+  (`/feature-docs split`) before the next change that adds to them
 - **Updated:** 2026-11-16 on `fix/14-cut-removed-members-live`
 
 ## Where things stand
@@ -179,11 +179,11 @@ blocks are stored, and who counts as a member.
 
 ## Known issues and risks
 
-There are 25 open issues. Where each risk sits in the code: [architecture-overview.md](./architecture-overview.md#riskiest-areas).
+There are 27 open issues. Where each risk sits in the code: [architecture-overview.md](./architecture-overview.md#riskiest-areas).
 
 | Area | The problem, in short | Issues |
 |---|---|---|
-| Live connections | The server can leak resources or stall under load, missed live messages can't be detected, and open connections miss new chats, and a restart of a running hub doubles its loops | #20, #21, #22, #43, #49, #54, #55, #79 |
+| Live connections | The server can leak resources or stall under load, missed live messages can't be detected, and open connections miss new chats, and a restart of a running hub doubles its loops | #20, #21, #22, #43, #49, #54, #55, #79, #116, #117 |
 | Groups | Members are never asked to accept, live delivery doesn't match who is in the group, and the participant count is maintained by hand | #5, #14, #17, #110 |
 | Invite codes | Entries left by forged joins before #9 was fixed are still stored | #69 |
 | Accounts | Deleting an account leaves old references, emails are case-sensitive, and usernames aren't unique | #35, #36 |
