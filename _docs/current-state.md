@@ -17,7 +17,7 @@ and with a link to exactly one feature state.md. Updated by /close-increment and
   saved before PR #74 (`reactions: null`) is left to react to. Continue later, for example
   by setting `reactions: null` on a test message in Atlas first
 - **Next step:** tests first, then the hub change, docs, review, PR. `rest-api.md`,
-  `websocket-requests.md` and `Android/_docs/08_SERVER_CHANGES.md` are at their 200-line
+  `websocket-requests.md` and `Android/_docs/08_SERVER_CHANGES/README.md` are at their 200-line
   budget: split them (`/feature-docs split`) before the next change that adds to them
 - **Updated:** 2026-11-16 on `fix/14-cut-removed-members-live`
 
@@ -43,29 +43,29 @@ declining a group invite. The full list is in
 - **#103 (PR #113):** a `pending` group member accepts by joining with any usable code of
   the group; `send` works for pending members, and joining clears every invitation to the
   group. Live messages start at the next connection ([REST](./rest-api.md#groups),
-  [app changes](../Android/_docs/08_SERVER_CHANGES.md)). A dedicated accept and decline
+  [app changes](../Android/_docs/08_SERVER_CHANGES/README.md)). A dedicated accept and decline
   action is left to #5 ([decisions](./decisions.md#how-a-pending-member-accepts-103-5)).
 - **#68 (PR #111):** a group holds at most `settings.maxParticipants` (default 100). Create,
   add and join past it add nobody: REST `409`, WebSocket `GROUP_FULL`, checked in the
-  update filter ([REST](./rest-api.md#groups), [app changes](../Android/_docs/08_SERVER_CHANGES.md)).
+  update filter ([REST](./rest-api.md#groups), [app changes](../Android/_docs/08_SERVER_CHANGES/README.md)).
   From the code review: #112.
 - **#16 (PR #109):** a group's `stats.participantCount` follows every add, join and
   removal, and a startup backfill resets drifted groups (skipping malformed ones). It
-  counts pending members and deleted accounts ([app changes](../Android/_docs/08_SERVER_CHANGES.md)).
+  counts pending members and deleted accounts ([app changes](../Android/_docs/08_SERVER_CHANGES/README.md)).
   From the code review: #110 (derive the count instead of maintaining it).
 - **#62 (PR #108):** `GET users/contacts` leaves out people you blocked; `GET /blocked`
-  lists them ([REST](./rest-api.md#contacts), [app changes](../Android/_docs/08_SERVER_CHANGES.md)).
+  lists them ([REST](./rest-api.md#contacts), [app changes](../Android/_docs/08_SERVER_CHANGES/README.md)).
 - **#104 (PR #107):** creating an invite code returns it in `data`, shaped like an entry
   of the group's list ([REST](./rest-api.md#groups),
-  [app changes](../Android/_docs/08_SERVER_CHANGES.md)).
+  [app changes](../Android/_docs/08_SERVER_CHANGES/README.md)).
 - **#59 (PR #105):** a non-member gets the same answer whether or not a chat exists:
   `PERMISSION_DENIED` from `send_message`, `invite_user` and `remove_user`, `404` from
   REST `add-members` ([protocol](./WEBSOCKET_PROTOCOL.md#error-codes),
-  [app changes](../Android/_docs/08_SERVER_CHANGES.md)). Security review: nothing found.
+  [app changes](../Android/_docs/08_SERVER_CHANGES/README.md)). Security review: nothing found.
   From the code review: #106.
 - **#30 (PR #102):** only owners and admins create, list, delete or send invite codes or
   see who joined: other members get `403`, anyone not in the group `404`
-  ([REST](./rest-api.md#groups), [app changes](../Android/_docs/08_SERVER_CHANGES.md)).
+  ([REST](./rest-api.md#groups), [app changes](../Android/_docs/08_SERVER_CHANGES/README.md)).
   Security review: nothing found. From the code review: #103, #104.
 - **#67 (PR #101):** the contract test pages history with `?before=<nextCursor>` and checks
   that `offset` gets `400`; every step passes against a local server.
@@ -73,7 +73,7 @@ declining a group invite. The full list is in
   in, so its events reach the chat ([requests](./websocket-requests.md)).
 - **#47 (PR #99):** `send_message` replies have a top-level `requestId` ([events](./websocket-events.md)).
 - **#75 (PR #98):** reaction `details` hold usernames; older entries keep `""`
-  ([REST](./rest-api.md#messages), [app changes](../Android/_docs/08_SERVER_CHANGES.md)).
+  ([REST](./rest-api.md#messages), [app changes](../Android/_docs/08_SERVER_CHANGES/README.md)).
 - **#25 (PR #97):** each user counts once per emoji; a no-op add or remove replies
   `changed: false` with no event, and `count` is set from `users`, healing drift
   ([requests](./websocket-requests.md#add_reaction-and-remove_reaction)). Not done from
@@ -81,16 +81,16 @@ declining a group invite. The full list is in
 - **#27 (PR #96):** a block either way closes the direct chat to both people. Opening it
   gets `403` / `PERMISSION_DENIED` `User is blocked`, and so do `send_message`,
   `set_typing`, `mark_read` and reactions; history still reads. Groups aren't affected
-  ([requests](./websocket-requests.md), [app changes](../Android/_docs/08_SERVER_CHANGES.md)).
+  ([requests](./websocket-requests.md), [app changes](../Android/_docs/08_SERVER_CHANGES/README.md)).
   Not done from the code review: contact requests still miss a half-written block.
 - **#38 (PR #95):** a contact request or direct chat with yourself gets `400`
   (`INVALID_USER_ID` from `join_chat`) instead of storing broken data
-  ([app changes](../Android/_docs/08_SERVER_CHANGES.md)).
+  ([app changes](../Android/_docs/08_SERVER_CHANGES/README.md)).
 - **#28 (PR #94):** only the owner can remove the owner (also when the owner is only
   stored as `ownerId`); a request naming the owner removes nobody. Listing yourself no
   longer drops the group from your chat list, `removedUsers` lists only the people removed,
   and the role is re-checked in the write ([requests](./websocket-requests.md#remove_user),
-  [app changes](../Android/_docs/08_SERVER_CHANGES.md)). The code review's other points
+  [app changes](../Android/_docs/08_SERVER_CHANGES/README.md)). The code review's other points
   (a race reported as `PERMISSION_DENIED`, the second write not checked, #37) were left.
 - **#91 (PR #92):** sending a deleted invite code returns `400` instead of giving the
   target user a pending invitation for it.
@@ -98,7 +98,7 @@ declining a group invite. The full list is in
   inside; the AES key that was in the repo is gone. The invite routes find the group by
   the stored code (indexed), so old codes work until they expire, and a code that isn't
   stored gets `400` on every route ([REST](./rest-api.md#groups),
-  [app changes](../Android/_docs/08_SERVER_CHANGES.md)). Security review: nothing found.
+  [app changes](../Android/_docs/08_SERVER_CHANGES/README.md)). Security review: nothing found.
   The code review found #91 (a deleted code can still be sent).
 - **#65, #84, #88 (PRs #82, #86, #89):** signup, the auth middleware and the WebSocket
   connect log name the user by ID only; no log line writes an email, username or hash.
@@ -111,11 +111,11 @@ declining a group invite. The full list is in
 - **#41 (PR #81):** no REST or WebSocket reply carries internal error text. A `400`'s
   `error` names each field by its JSON path and rule (`password: min=8`), and
   `invite_user` answers with specific codes ([REST](./rest-api.md#the-basics),
-  [app changes](../Android/_docs/08_SERVER_CHANGES.md)). Security review: nothing found.
+  [app changes](../Android/_docs/08_SERVER_CHANGES/README.md)). Security review: nothing found.
 - **#40 part 1 (PR #80):** a WebSocket frame over 64 KiB closes with `1009`, and each
   connection gets 20 requests a second (bursts of 40, pings included). A request over that
   isn't handled and gets `RATE_LIMITED` ([protocol](./WEBSOCKET_PROTOCOL.md#stay-connected),
-  [app changes](../Android/_docs/08_SERVER_CHANGES.md)). Security review: nothing found.
+  [app changes](../Android/_docs/08_SERVER_CHANGES/README.md)). Security review: nothing found.
   Still open on #40: a per-user limit (one account can open many sockets), `set_typing`'s
   MongoDB write, mention lookups, `CheckOrigin`, and login/signup limits.
 - **Render (2026-11-12):** `STATS_TOKEN` is set (the Blueprint generated it), and
