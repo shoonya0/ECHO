@@ -10,9 +10,10 @@ import (
 	"go.mongodb.org/mongo-driver/v2/bson"
 )
 
-// TestInviteChatLookupErrors covers #83. Only a chat that doesn't exist is
-// INVALID_CHAT_ID; a failed lookup, such as a timeout or a canceled request,
-// is the retryable INVITE_FAILED, not "Chat not found".
+// TestInviteChatLookupErrors covers #83 and #59. A chat that doesn't exist is
+// PERMISSION_DENIED, the same as one the caller isn't in, so chat IDs can't be
+// probed; a failed lookup, such as a timeout or a canceled request, is the
+// retryable INVITE_FAILED.
 func TestInviteChatLookupErrors(t *testing.T) {
 	ctx := testutil.UseTestDB(t)
 
@@ -24,7 +25,7 @@ func TestInviteChatLookupErrors(t *testing.T) {
 		ctx      context.Context
 		wantCode string
 	}{
-		{"missing chat", ctx, "INVALID_CHAT_ID"},
+		{"missing chat", ctx, "PERMISSION_DENIED"},
 		{"lookup fails", canceled, "INVITE_FAILED"},
 	}
 	for _, tc := range cases {

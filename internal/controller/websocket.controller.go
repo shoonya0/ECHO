@@ -320,6 +320,14 @@ func handleSendMessage(ctx context.Context, client *models.Client, request model
 		return
 	}
 
+	// Membership first, so an unknown chat gets the same answer as one the
+	// caller isn't in (#59).
+	if err := services.RequireChatMember(ctx, chatID, client.UserID); err != nil {
+		wsLog().Printf("Failed to check chat membership: %v", err)
+		sendChatError(client, request.RequestID, err, "PERMISSION_CHECK_FAILED", "Failed to validate permissions")
+		return
+	}
+
 	canSend, err := validateMessagePermissions(ctx, client.UserID, chatID) // Check if user has permission to send messages in this chat
 	if errors.Is(err, services.ErrBlocked) {
 		sendErrorResponse(client, request.RequestID, "PERMISSION_DENIED", "User is blocked")
@@ -732,7 +740,14 @@ func handleInviteUser(ctx context.Context, client *models.Client, request models
 		return
 	}
 
-	// Verify chat exists and is a group where the user is a participant
+	// Membership before anything that can fail differently, so a non-member
+	// can't tell whether the chat exists or what type it is (#59).
+	if err := services.RequireChatMember(ctx, chatID, client.UserID); err != nil {
+		wsLog().Printf("Failed to check chat membership for invite: %v", err)
+		sendChatError(client, request.RequestID, err, "INVITE_FAILED", "Failed to invite users")
+		return
+	}
+
 	chat, err := services.GetChat(ctx, models.ChatInfo{ChatID: chatID})
 	if err != nil {
 		wsLog().Printf("Failed to get chat for invite: %v", err)
@@ -831,6 +846,13 @@ func handleRemoveUser(ctx context.Context, client *models.Client, request models
 
 	if len(userIDs) == 0 {
 		sendErrorResponse(client, request.RequestID, "INVALID_REQUEST", "At least one valid userId is required")
+		return
+	}
+
+	// Membership first, so a non-member can't tell whether the chat exists (#59).
+	if err := services.RequireChatMember(ctx, chatID, client.UserID); err != nil {
+		wsLog().Printf("Failed to check chat membership for remove: %v", err)
+		sendChatError(client, request.RequestID, err, "REMOVE_FAILED", "Failed to remove users")
 		return
 	}
 

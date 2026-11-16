@@ -67,34 +67,54 @@ func TestChatRequestsFromNonMemberAreDenied(t *testing.T) {
 		{Type: models.WSRequestTypeRemoveUser, Metadata: users},
 	}
 
-	for _, request := range requests {
-		t.Run(request.Type, func(t *testing.T) {
-			broadcaster.published = 0
-			request.ChatID = chatID.Hex()
-			request.RequestID = "req-1"
+	// A direct chat between two other people. An unknown chat must get the same
+	// answer as a chat the caller isn't in, so chat IDs can't be probed (#59).
+	directID := bson.NewObjectID()
+	if _, err := database.DB.Collection(string(constants.ChatColl)).InsertOne(ctx, bson.M{
+		"_id":      directID,
+		"chatType": string(constants.ChatTypeDirect),
+		"participants": bson.M{
+			member.Hex():             bson.M{"role": string(constants.ChatRoleMember), "status": "accepted"},
+			bson.NewObjectID().Hex(): bson.M{"role": string(constants.ChatRoleMember), "status": "accepted"},
+		},
+	}); err != nil {
+		t.Fatalf("insert direct chat: %v", err)
+	}
+	chats := []struct {
+		name string
+		id   bson.ObjectID
+	}{{"group", chatID}, {"direct chat", directID}, {"unknown chat", bson.NewObjectID()}}
 
-			client := &models.Client{ID: "outsider-conn", UserID: outsider, Send: make(chan models.WebSocketMessage, 4)}
-			handleClientRequest(context.Background(), client, request)
+	for _, chat := range chats {
+		for _, request := range requests {
+			t.Run(chat.name+"/"+request.Type, func(t *testing.T) {
+				broadcaster.published = 0
+				request.ChatID = chat.id.Hex()
+				request.RequestID = "req-1"
 
-			if broadcaster.published != 0 {
-				t.Errorf("published %d events for a non-member", broadcaster.published)
-			}
+				client := &models.Client{ID: "outsider-conn", UserID: outsider, Send: make(chan models.WebSocketMessage, 4)}
+				handleClientRequest(context.Background(), client, request)
 
-			select {
-			case reply := <-client.Send:
-				errMsg, ok := reply.Data.(models.ErrorMessage)
-				if !ok {
-					t.Fatalf("reply = %+v, want an error", reply)
+				if broadcaster.published != 0 {
+					t.Errorf("published %d events for a non-member", broadcaster.published)
 				}
-				if errMsg.Code != "PERMISSION_DENIED" {
-					t.Errorf("code = %q, want PERMISSION_DENIED", errMsg.Code)
+
+				select {
+				case reply := <-client.Send:
+					errMsg, ok := reply.Data.(models.ErrorMessage)
+					if !ok {
+						t.Fatalf("reply = %+v, want an error", reply)
+					}
+					if errMsg.Code != "PERMISSION_DENIED" {
+						t.Errorf("code = %q (%s), want PERMISSION_DENIED", errMsg.Code, errMsg.Message)
+					}
+					if reply.RequestID != "req-1" {
+						t.Errorf("requestId = %q, want req-1", reply.RequestID)
+					}
+				default:
+					t.Fatal("no reply sent")
 				}
-				if reply.RequestID != "req-1" {
-					t.Errorf("requestId = %q, want req-1", reply.RequestID)
-				}
-			default:
-				t.Fatal("no reply sent")
-			}
-		})
+			})
+		}
 	}
 }
