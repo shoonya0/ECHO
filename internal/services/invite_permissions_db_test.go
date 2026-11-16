@@ -77,7 +77,7 @@ func TestInviteCodesNeedOwnerOrAdmin(t *testing.T) {
 		{"create", func(u bson.ObjectID) error { _, err := CreateInvite(ctx, u, groupID); return err }},
 		{"list", func(u bson.ObjectID) error { _, err := GetGroupInvites(ctx, u, groupID); return err }},
 		{"joined users", func(u bson.ObjectID) error { _, err := GetJoinedUsersByInvite(ctx, u, code); return err }},
-		{"send", func(u bson.ObjectID) error { return SendInviteToUser(ctx, u, code, target, false) }},
+		{"send", func(u bson.ObjectID) error { return SendInviteToUser(ctx, u, code, target) }},
 	}
 	refused := []struct {
 		name string
@@ -86,7 +86,7 @@ func TestInviteCodesNeedOwnerOrAdmin(t *testing.T) {
 	}{
 		{"member", member, ErrPermissionDenied},
 		{"pending member", pending, ErrPermissionDenied},
-		{"outsider", outsider, ErrNotParticipant},
+		{"outsider", outsider, ErrChatNotFound}, // same as a missing group, so IDs can't be probed
 	}
 	for _, a := range actions {
 		for _, r := range refused {
@@ -142,13 +142,22 @@ func TestInviteCodesNeedOwnerOrAdmin(t *testing.T) {
 	})
 
 	t.Run("sending to a user who doesn't exist is refused", func(t *testing.T) {
-		if err := SendInviteToUser(ctx, owner, code, bson.NewObjectID(), false); !errors.Is(err, ErrUserNotFound) {
+		if err := SendInviteToUser(ctx, owner, code, bson.NewObjectID()); !errors.Is(err, ErrUserNotFound) {
 			t.Fatalf("err = %v, want ErrUserNotFound", err)
 		}
 	})
 
+	// Group creation uses addInvitation after the group is saved, so an invitee
+	// deleted since the lookup must be skipped, not fail the create.
+	t.Run("an invitation for a missing user is skipped, not an error", func(t *testing.T) {
+		found, err := addInvitation(ctx, code, bson.NewObjectID())
+		if err != nil || found {
+			t.Fatalf("addInvitation = (%v, %v), want (false, nil)", found, err)
+		}
+	})
+
 	t.Run("sending to someone already in the group is refused", func(t *testing.T) {
-		if err := SendInviteToUser(ctx, owner, code, inGroup, false); !errors.Is(err, ErrAlreadyParticipant) {
+		if err := SendInviteToUser(ctx, owner, code, inGroup); !errors.Is(err, ErrAlreadyParticipant) {
 			t.Fatalf("err = %v, want ErrAlreadyParticipant", err)
 		}
 	})

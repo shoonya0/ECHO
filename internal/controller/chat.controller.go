@@ -426,9 +426,7 @@ func SendInviteToUser(ctx *gin.Context) {
 		return
 	}
 
-	const creatingGroup bool = false
-
-	err = services.SendInviteToUser(reqCtx, user.ID, inviteID, targetUserID, creatingGroup)
+	err = services.SendInviteToUser(reqCtx, user.ID, inviteID, targetUserID)
 	if err != nil {
 		log.Debug("failed to send invite to user: " + err.Error())
 		statusCode, msg := MapServiceErrorToHTTP(err)
