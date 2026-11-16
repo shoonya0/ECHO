@@ -143,8 +143,8 @@ you didn't add, changes nothing: the `response` has `changed: false` and no even
 
 ## `invite_user`
 
-Adds people to a group. They are added right away as `pending` members, with no accept
-step (#5). You must be the group's `owner` or an `admin`.
+Adds people to a group. They are added right away as `pending` members; they accept by
+joining with a code (#103). You must be the group's `owner` or an `admin`.
 
 ```json
 {

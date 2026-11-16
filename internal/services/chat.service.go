@@ -5,6 +5,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"slices"
 	"strings"
 	"time"
 	"unicode"
@@ -1340,9 +1341,12 @@ func SendInviteToUser(ctx context.Context, actingUserID bson.ObjectID, inviteID 
 		return err
 	}
 
-	inGroup, err := database.DB.Collection(string(constants.ChatColl)).CountDocuments(ctx,
-		bson.M{"_id": chatID, "participants." + targetUserID.Hex(): bson.M{"$exists": true}},
-	)
+	// A pending member can be sent a code: joining with it is how they accept (#103).
+	inGroup, err := database.DB.Collection(string(constants.ChatColl)).CountDocuments(ctx, bson.M{
+		"_id":                          chatID,
+		participantField(targetUserID): bson.M{"$exists": true},
+		participantField(targetUserID) + ".requestStatus": bson.M{"$ne": string(constants.StatusPending)},
+	})
 	if err != nil {
 		return fmt.Errorf("failed to check the target user: %w", err)
 	}
@@ -1423,16 +1427,25 @@ func JoinGroupByInvite(ctx context.Context, userID bson.ObjectID, inviteID strin
 		return fmt.Errorf("failed to update invite code user IDs: %w", err)
 	}
 	if res.MatchedCount == 0 {
-		return joinNotApplied(ctx, chatObjectID, userID, inviteID, now)
+		// Not a new member. A pending member (#5) accepts here (#103); anyone
+		// else gets the reason the join didn't apply.
+		if err := resolveMissedJoin(ctx, chatObjectID, userID, inviteID, now); err != nil {
+			return err
+		}
 	}
 
-	// Add chat ref to user, and drop their invitation for this code, which is
-	// now used (#30)
+	codes, err := groupInviteCodes(ctx, chatObjectID)
+	if err != nil {
+		return err
+	}
+	// Add chat ref to user, and drop their invitations for this group, which
+	// are now used (#30, #103). $max adds a missing entry as 0 and keeps an
+	// unread count that is already there.
 	userRes, err := database.DB.Collection(string(constants.UserColl)).UpdateOne(ctx,
 		bson.M{"_id": userID},
 		bson.M{
-			"$set":  bson.M{"chats." + chatObjectID.Hex(): 0},
-			"$pull": bson.M{"chatInvitations": bson.M{"token": inviteID}},
+			"$max":  bson.M{"chats." + chatObjectID.Hex(): 0},
+			"$pull": bson.M{"chatInvitations": bson.M{"token": bson.M{"$in": codes}}},
 		},
 	)
 	if err != nil {
@@ -1443,6 +1456,28 @@ func JoinGroupByInvite(ctx context.Context, userID bson.ObjectID, inviteID strin
 	}
 
 	return nil
+}
+
+// acceptPendingMember makes userID, a pending member of the group chatID, an
+// accepted one, if inviteID is a usable code of that group at now (#103). The
+// member already counts toward the size limit and participantCount, so neither
+// changes. It reports whether the member was accepted.
+func acceptPendingMember(ctx context.Context, chatID, userID bson.ObjectID, inviteID string, now time.Time) (bool, error) {
+	filter := usableInviteFilter(chatID, inviteID, now)
+	filter[participantField(userID)+".requestStatus"] = string(constants.StatusPending)
+	key := participantField(userID)
+	res, err := database.DB.Collection(string(constants.ChatColl)).UpdateOne(ctx, filter, bson.M{
+		"$set": bson.M{
+			key + ".requestStatus": string(constants.StatusAccepted),
+			key + ".joinedAt":      now,
+			key + ".updatedAt":     now,
+		},
+		"$addToSet": bson.M{"inviteCode.$.userIDs": userID},
+	})
+	if err != nil {
+		return false, fmt.Errorf("failed to accept pending member: %w", err)
+	}
+	return res.MatchedCount == 1, nil
 }
 
 // usableInviteFilter matches the group chatID while it stores inviteID as a code
@@ -1459,49 +1494,86 @@ func usableInviteFilter(chatID bson.ObjectID, inviteID string, now time.Time) bs
 	}
 }
 
-// joinNotApplied picks the error for a join whose update matched nothing:
-// ErrAlreadyParticipant if userID is already in the chat, ErrInvalidInvite if the
-// code isn't usable at now (the time the join's filter used), ErrGroupFull if the
-// group has no room (#68), and otherwise a plain error: membership changed during
-// the join, and a retry may work.
-// A member can get here because an earlier join stopped after adding them to
-// participants but before adding the chat to their chats list, which the hub
-// needs to deliver live messages. A retry would never get past this point, so
-// the missing entry is added here. An existing entry keeps its unread count.
-func joinNotApplied(ctx context.Context, chatID, userID bson.ObjectID, inviteID string, now time.Time) error {
-	chats := database.DB.Collection(string(constants.ChatColl))
-	count, err := chats.CountDocuments(ctx, chatMemberFilter(chatID, userID))
-	if err != nil {
-		return fmt.Errorf("failed to check if user is in the chat: %w", err)
+// resolveMissedJoin handles a join whose update matched nothing, from one read of
+// the group. A pending member with a code usable at now (the time the join's
+// filter used) is accepted, and it returns nil (#103). Otherwise it returns why:
+//   - ErrAlreadyParticipant: userID is already a member. An earlier join can stop
+//     after adding them to participants but before adding the chat to their chats
+//     list, which the hub needs for live messages, and a retry would never get
+//     past this point, so a missing entry is added here (an existing one keeps
+//     its unread count).
+//   - ErrInvalidInvite: there is no such group, or the code isn't usable.
+//   - ErrGroupFull: a new member wouldn't fit (#68).
+//   - a plain error: membership changed during the join; a retry may work.
+func resolveMissedJoin(ctx context.Context, chatID, userID bson.ObjectID, inviteID string, now time.Time) error {
+	var chat models.Chat
+	err := database.DB.Collection(string(constants.ChatColl)).FindOne(ctx,
+		bson.M{"_id": chatID, "chatType": string(constants.ChatTypeGroup)},
+		options.FindOne().SetProjection(bson.M{"participants": 1, "settings.maxParticipants": 1, "inviteCode": 1}),
+	).Decode(&chat)
+	if errors.Is(err, mongo.ErrNoDocuments) {
+		return fmt.Errorf("%w", ErrInvalidInvite)
 	}
-	if count == 0 {
-		usable, err := chats.CountDocuments(ctx, usableInviteFilter(chatID, inviteID, now))
-		if err != nil {
-			return fmt.Errorf("failed to check invite: %w", err)
-		}
-		if usable == 0 {
+	if err != nil {
+		return fmt.Errorf("failed to check the group: %w", err)
+	}
+
+	usable := slices.ContainsFunc(chat.InviteCode, func(c models.InviteCodeEmbed) bool {
+		return c.InviteCode == inviteID && !c.Deleted && c.ExpiredDate.After(now)
+	})
+	participant, member := chat.Participants[userID]
+	switch {
+	case member && participant.RequestStatus == string(constants.StatusPending):
+		if !usable {
 			return fmt.Errorf("%w", ErrInvalidInvite)
 		}
-		participants, limit, err := loadGroupSize(ctx, chatID)
+		accepted, err := acceptPendingMember(ctx, chatID, userID, inviteID, now)
 		if err != nil {
 			return err
 		}
-		if len(participants)+1 > limit {
-			return fmt.Errorf("%w", ErrGroupFull)
+		if !accepted {
+			return fmt.Errorf("accept did not apply: membership changed meanwhile")
 		}
+		return nil
+	case member:
+		chatRef := "chats." + chatID.Hex()
+		_, err := database.DB.Collection(string(constants.UserColl)).UpdateOne(ctx,
+			bson.M{"_id": userID, chatRef: bson.M{"$exists": false}},
+			bson.M{"$set": bson.M{chatRef: 0}},
+		)
+		if err != nil {
+			return fmt.Errorf("failed to restore chat ref of user: %w", err)
+		}
+		return fmt.Errorf("%w", ErrAlreadyParticipant)
+	case !usable:
+		return fmt.Errorf("%w", ErrInvalidInvite)
+	case len(chat.Participants)+1 > groupSizeLimit(chat.Settings.MaxParticipants):
+		return fmt.Errorf("%w", ErrGroupFull)
+	default:
 		return fmt.Errorf("join did not apply: membership changed meanwhile")
 	}
+}
 
-	chatRef := "chats." + chatID.Hex()
-	_, err = database.DB.Collection(string(constants.UserColl)).UpdateOne(ctx,
-		bson.M{"_id": userID, chatRef: bson.M{"$exists": false}},
-		bson.M{"$set": bson.M{chatRef: 0}},
-	)
-	if err != nil {
-		return fmt.Errorf("failed to restore chat ref of user: %w", err)
+// groupInviteCodes returns every invite code the group chatID stores, deleted and
+// expired ones included, so a join can clear all of the user's invitations to it.
+func groupInviteCodes(ctx context.Context, chatID bson.ObjectID) ([]string, error) {
+	var chat struct {
+		InviteCode []struct {
+			InviteCode string `bson:"inviteCode"`
+		} `bson:"inviteCode"`
 	}
-
-	return fmt.Errorf("%w", ErrAlreadyParticipant)
+	err := database.DB.Collection(string(constants.ChatColl)).FindOne(ctx,
+		bson.M{"_id": chatID},
+		options.FindOne().SetProjection(bson.M{"inviteCode.inviteCode": 1}),
+	).Decode(&chat)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read the group's invite codes: %w", err)
+	}
+	codes := make([]string, 0, len(chat.InviteCode))
+	for _, c := range chat.InviteCode {
+		codes = append(codes, c.InviteCode)
+	}
+	return codes, nil
 }
 
 func GetAllInvitesOfUser(ctx context.Context, userID bson.ObjectID) ([]models.ChatInvitationEmbed, error) {

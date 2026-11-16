@@ -41,7 +41,7 @@ Checked against the code at `17ec08b`. Issue numbers were last updated on 2026-1
 | Finding people | Get suggestions of people to add | Works | The "nearby" and "popular" lists are empty placeholders. |
 | Contacts | Send, accept and decline requests; remove; favorites; block and unblock | Partly works | A block stops direct chats in both directions (#27). Also #39, #62, #63. |
 | Direct chats | Start a chat with one person | Works | Someone already online gets no live messages from a new chat until they reconnect (#49). |
-| Group chats | Create a group; add and remove members | Partly works | Added members are never asked to accept (#5) and get no live messages (#17). Removed members keep getting them until they reconnect (#14). |
+| Group chats | Create a group; add and remove members | Partly works | Added members are `pending` with full access (#5) and no live messages (#17) until they accept by joining with a code (#103) and reconnect. Removed members keep getting them until they reconnect (#14). |
 | Invite codes | Create, list, delete and send codes; join with a code | Partly works | Some invite routes lack permission checks (#30). |
 | Live messages | Send and receive instantly | Works | Missed messages can't be detected (#43). |
 | Message history | Load old messages, page by page | Works | |
@@ -53,7 +53,7 @@ Checked against the code at `17ec08b`. Issue numbers were last updated on 2026-1
 
 - Editing or deleting messages, and changing chat settings. The server answers
   `NOT_IMPLEMENTED`.
-- Accepting or declining a group invite (#5).
+- Declining a group invite, and asking members to accept before they get access (#5).
 - A way to list your chats. There is no REST route for it.
 - Broadcast channels. The `channel` chat type exists in the code, but nothing creates one.
 - File upload, message search and push notifications.
