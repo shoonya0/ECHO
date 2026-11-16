@@ -956,7 +956,12 @@ func AddGroupMember(ctx context.Context, userID bson.ObjectID, chatID bson.Objec
 		)
 	}
 
-	res, err := database.DB.Collection(string(constants.ChatColl)).UpdateOne(ctx, updateFilter, bson.M{"$set": setEntries})
+	// The filter requires every user to be absent, so the update adds exactly
+	// len(users) participants or nothing at all (#16).
+	res, err := database.DB.Collection(string(constants.ChatColl)).UpdateOne(ctx, updateFilter, bson.M{
+		"$set": setEntries,
+		"$inc": bson.M{"stats.participantCount": len(users)},
+	})
 	if err != nil {
 		return fmt.Errorf("failed to update chat: %w", err)
 	}
@@ -1337,6 +1342,8 @@ func JoinGroupByInvite(ctx context.Context, userID bson.ObjectID, inviteID strin
 		"$addToSet": bson.M{
 			"inviteCode.$.userIDs": userID,
 		},
+		// The filter requires userID to be absent, so this adds one (#16).
+		"$inc": bson.M{"stats.participantCount": 1},
 	}
 
 	res, err := database.DB.Collection(string(constants.ChatColl)).UpdateOne(ctx,

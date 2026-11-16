@@ -4,6 +4,13 @@ The server changed after the plans in this folder were written. Read this page b
 working on the app's networking or login code. Each entry says what the server does now,
 what the app should do, and where the details are.
 
+## A group's participant count is correct (#16)
+
+- `stats.participantCount` now follows every add, join and removal, and drifted counts
+  (stale or negative) are reset at startup. It counts every entry in `participants`,
+  including pending members (#5) and deleted accounts (#35): don't show it as "members
+  who joined" or use it as a size-limit check.
+
 ## Blocked people aren't in the contacts list (#62)
 
 - `GET users/contacts` no longer lists people you blocked. Show them from
