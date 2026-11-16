@@ -4,6 +4,14 @@ The server changed after the plans in this folder were written. Read this page b
 working on the app's networking or login code. Each entry says what the server does now,
 what the app should do, and where the details are.
 
+## Blocked people aren't in the contacts list (#62)
+
+- `GET users/contacts` no longer lists people you blocked. Show them from
+  `GET users/contacts/blocked`, and after blocking someone remove them from the cached
+  contacts list.
+
+Details: [rest-api.md](../../_docs/rest-api.md#contacts).
+
 ## Creating an invite code returns it (#104)
 
 - `POST groups/:groupID/invites` now returns the new code in `data`, in the same shape as

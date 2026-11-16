@@ -86,7 +86,7 @@ All of these start with `users/contacts`.
 
 | Route | What it does |
 |---|---|
-| `GET /` | Your contacts |
+| `GET /` | Your contacts, favorites and pending requests both ways. People you blocked aren't in it; `GET /blocked` lists them (#62). |
 | `GET /requests` | Requests sent to you |
 | `GET /sent-requests` | Requests you sent |
 | `GET /blocked` | People you blocked |
