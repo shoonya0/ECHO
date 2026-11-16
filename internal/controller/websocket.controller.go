@@ -323,7 +323,9 @@ func handleSendMessage(ctx context.Context, client *models.Client, request model
 	// Membership first, so an unknown chat gets the same answer as one the
 	// caller isn't in (#59).
 	if err := services.RequireChatMember(ctx, chatID, client.UserID); err != nil {
-		wsLog().Printf("Failed to check chat membership: %v", err)
+		if !errors.Is(err, services.ErrNotParticipant) {
+			wsLog().Printf("Failed to check chat membership: %v", err)
+		}
 		sendChatError(client, request.RequestID, err, "PERMISSION_CHECK_FAILED", "Failed to validate permissions")
 		return
 	}
@@ -743,7 +745,9 @@ func handleInviteUser(ctx context.Context, client *models.Client, request models
 	// Membership before anything that can fail differently, so a non-member
 	// can't tell whether the chat exists or what type it is (#59).
 	if err := services.RequireChatMember(ctx, chatID, client.UserID); err != nil {
-		wsLog().Printf("Failed to check chat membership for invite: %v", err)
+		if !errors.Is(err, services.ErrNotParticipant) {
+			wsLog().Printf("Failed to check chat membership for invite: %v", err)
+		}
 		sendChatError(client, request.RequestID, err, "INVITE_FAILED", "Failed to invite users")
 		return
 	}
@@ -851,7 +855,9 @@ func handleRemoveUser(ctx context.Context, client *models.Client, request models
 
 	// Membership first, so a non-member can't tell whether the chat exists (#59).
 	if err := services.RequireChatMember(ctx, chatID, client.UserID); err != nil {
-		wsLog().Printf("Failed to check chat membership for remove: %v", err)
+		if !errors.Is(err, services.ErrNotParticipant) {
+			wsLog().Printf("Failed to check chat membership for remove: %v", err)
+		}
 		sendChatError(client, request.RequestID, err, "REMOVE_FAILED", "Failed to remove users")
 		return
 	}
@@ -864,9 +870,11 @@ func handleRemoveUser(ctx context.Context, client *models.Client, request models
 		errCode := "REMOVE_FAILED"
 		clientMsg := "Failed to remove users"
 
+		// The caller passed the membership check, so a missing group means the
+		// chat isn't a group (or was just deleted), as invite_user reports it.
 		if errors.Is(err, services.ErrChatNotFound) {
-			errCode = "INVALID_CHAT_ID"
-			clientMsg = "Chat not found"
+			errCode = "INVALID_REQUEST"
+			clientMsg = "Can only remove users from group chats"
 		} else if errors.Is(err, services.ErrNotParticipant) || errors.Is(err, services.ErrPermissionDenied) {
 			errCode = "PERMISSION_DENIED"
 			clientMsg = "You do not have permission to remove users"
