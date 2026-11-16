@@ -248,7 +248,7 @@ func (eh *Hub) handleClientUnregistration(client *models.Client) {
 			// Remove from active chats
 			if activeChats, exists := eh.UserActiveChats[userID]; exists {
 				for _, chatID := range activeChats {
-					eh.removeClientFromChat(client, chatID)
+					removeClientFromRoom(eh.Hub, client, chatID)
 				}
 			}
 
@@ -355,14 +355,14 @@ func (eh *Hub) LeaveChat(client *models.Client, chatID string) error {
 	defer eh.Mutex.Unlock()
 
 	// Only a client in the room may announce a leave, so nobody can spoof one.
-	// The room is checked instead of the participant list because a member
-	// removed from a group stays in the room and must still be able to leave.
+	// A member removed from a group has already left the room (#14), so their
+	// leave gets ErrNotInChat.
 	if _, inRoom := eh.ChatClients[chatID][client.ID]; !inRoom {
 		return ErrNotInChat
 	}
 
 	// Remove from chat
-	eh.removeClientFromChat(client, chatID)
+	removeClientFromRoom(eh.Hub, client, chatID)
 
 	// Publish leave event
 	leaveMsg := &models.WebSocketMessage{
@@ -382,12 +382,6 @@ func (eh *Hub) LeaveChat(client *models.Client, chatID string) error {
 
 // ErrNotInChat means the connection isn't following the chat it tried to leave.
 var ErrNotInChat = errors.New("client is not in this chat")
-
-// removeClientFromChat removes a client from a chat (internal helper). The
-// caller holds eh.Mutex.
-func (eh *Hub) removeClientFromChat(client *models.Client, chatID string) {
-	removeClientFromRoom(eh.Hub, client, chatID)
-}
 
 // removeClientFromRoom removes a client from a chat's room and the chat from
 // the user's active chats. The caller holds h.Mutex.

@@ -3,6 +3,7 @@ package controller
 import (
 	"slices"
 	"testing"
+	"time"
 
 	"github.com/shoonya0/ECHO/internal/constants"
 	"github.com/shoonya0/ECHO/internal/database"
@@ -61,8 +62,13 @@ func TestRemoveUserCutsRemovedMembersOffLive(t *testing.T) {
 		Metadata: map[string]any{"userIds": []any{gone.Hex(), owner.Hex()}},
 	})
 
-	if reply := <-client.Send; reply.Type != models.WSMessageTypeResponse {
-		t.Fatalf("reply = %+v, want a success response", reply.Data)
+	select {
+	case reply := <-client.Send:
+		if reply.Type != models.WSMessageTypeResponse {
+			t.Fatalf("reply = %+v, want a success response", reply.Data)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("remove_user sent no reply")
 	}
 	want := []string{"publish " + models.WSMessageTypeChatUpdated, "remove " + chatID.Hex() + " " + gone.Hex()}
 	if !slices.Equal(broadcaster.calls, want) {

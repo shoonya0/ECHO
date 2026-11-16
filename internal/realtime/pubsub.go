@@ -344,7 +344,7 @@ func (pm *PubSubManager) dropSlowClient(client *models.Client) {
 func (pm *PubSubManager) handlePresenceMessage(message *models.WebSocketMessage) {
 	userID := message.UserID
 
-	// Copy under the lock: removeClientFromChat shifts this slice in place.
+	// Copy under the lock: removeClientFromRoom shifts this slice in place.
 	pm.hub.Mutex.RLock()
 	activeChats := slices.Clone(pm.hub.UserActiveChats[userID])
 	pm.hub.Mutex.RUnlock()
