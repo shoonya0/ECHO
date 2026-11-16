@@ -4,6 +4,15 @@ The server changed after the plans in this folder were written. Read this page b
 working on the app's networking or login code. Each entry says what the server does now,
 what the app should do, and where the details are.
 
+## Creating an invite code returns it (#104)
+
+- `POST groups/:groupID/invites` now returns the new code in `data`, in the same shape as
+  an entry of `GET groups/:groupID/invites` (`inviteCode`, `expiredDate`, `deleted`, ...).
+  Share `data.inviteCode` directly; don't take the first entry of the list, which is the
+  code made when the group was created.
+
+Details: [rest-api.md](../../_docs/rest-api.md#groups).
+
 ## Unknown chats look like chats you aren't in (#59)
 
 - `send_message`, `invite_user` and `remove_user` now answer `PERMISSION_DENIED` for a chat

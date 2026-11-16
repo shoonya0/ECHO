@@ -282,7 +282,7 @@ func CreateInvite(ctx *gin.Context) {
 		return
 	}
 
-	_, err = services.CreateInvite(reqCtx, user.ID, chatID)
+	invite, err := services.CreateInvite(reqCtx, user.ID, chatID)
 	if err != nil {
 		log.Debug("failed to create invite: " + err.Error())
 		statusCode, msg := MapServiceErrorToHTTP(err)
@@ -290,7 +290,8 @@ func CreateInvite(ctx *gin.Context) {
 		return
 	}
 
-	utils.SuccessResponse(ctx, "Invite created successfully", nil)
+	// The same shape as an entry of GET groups/:groupID/invites (#104).
+	utils.SuccessResponse(ctx, "Invite created successfully", invite)
 }
 
 func GetGroupInvites(ctx *gin.Context) {

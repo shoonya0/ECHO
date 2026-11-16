@@ -11,15 +11,14 @@ on `main`. To learn what the product does, read
 and with a link to exactly one feature state.md. Updated by /close-increment and
 /feature-docs update. -->
 
-- **Feature:** none yet · #59 on `fix/59-hide-chat-existence`: a non-member gets the same
-  answer whether or not a chat exists: `PERMISSION_DENIED` from `send_message`,
-  `invite_user` and `remove_user`, `404` from REST `add-members`. Reviews done
+- **Feature:** none yet · #104 on `fix/104-return-invite-code`: `POST groups/:groupID/invites`
+  returns the new code in `data`, shaped like a list entry. Verified: `verify.mjs --full`
+  (DB required) and the contract test live
 - **#72 on Render (paused 2026-11-15):** `/health` answers `200`, but no chat with a message
   saved before PR #74 (`reactions: null`) is left to react to. Continue later, for example
   by setting `reactions: null` on a test message in Atlas first
-- **Next step:** push, PR, and ask before merging; propose the issue for the extra chat reads
-  on `send_message` and `invite_user`
-- **Updated:** 2026-11-16 on `fix/59-hide-chat-existence`
+- **Next step:** push, PR, and ask before merging
+- **Updated:** 2026-11-16 on `fix/104-return-invite-code`
 
 ## Where things stand
 
@@ -34,6 +33,11 @@ declining a group invite. The full list is in
 
 ## Recently finished
 
+- **#59 (PR #105):** a non-member gets the same answer whether or not a chat exists:
+  `PERMISSION_DENIED` from `send_message`, `invite_user` and `remove_user`, `404` from
+  REST `add-members` ([protocol](./WEBSOCKET_PROTOCOL.md#error-codes),
+  [app changes](../Android/_docs/08_SERVER_CHANGES.md)). Security review: nothing found.
+  From the code review: #106.
 - **#30 (PR #102):** only owners and admins create, list, delete or send invite codes or
   see who joined: other members get `403`, anyone not in the group `404`
   ([REST](./rest-api.md#groups), [app changes](../Android/_docs/08_SERVER_CHANGES.md)).
@@ -160,10 +164,11 @@ There are 29 open issues. Where each risk sits in the code: [architecture-overvi
 |---|---|---|
 | Live connections | The server can leak resources or stall under load, missed live messages can't be detected, and open connections miss new chats, and a restart of a running hub doubles its loops | #20, #21, #22, #43, #49, #54, #55, #79 |
 | Groups | Members are never asked to accept, live delivery doesn't match who is in the group, and the size limit isn't enforced | #5, #14, #16, #17, #68 |
-| Invite codes | Pending members can't join by code, creating a code doesn't return it, and entries left by forged joins before #9 was fixed are still stored | #69, #103, #104 |
+| Invite codes | Pending members can't join by code, and entries left by forged joins before #9 was fixed are still stored | #69, #103 |
 | Accounts | Deleting an account leaves old references, emails are case-sensitive, and usernames aren't unique | #35, #36 |
 | Contacts and blocking | Your contacts list includes people you blocked, contact lists aren't cut to `limit`, and blocks written during a deploy can be missed | #39, #62, #63 |
 | Online status and privacy | Online status is unreliable, and privacy settings aren't applied | #31, #32 |
+| Request cost | Membership checks read the same chat two or three times per request | #106 |
 | Messages and data | Writes can half-finish, and some lists grow without limit | #37, #42 |
 | Limits and errors | WebSocket limits are per connection, not per user, and `set_typing` still writes to MongoDB; no limits on login and signup | #40 |
 | WebSocket replies and events | Replies and events are inconsistent or leave out details, which affects the Android plan | #48, #50, #51 |

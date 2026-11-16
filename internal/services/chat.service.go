@@ -1138,15 +1138,16 @@ func groupManagerFilter(chatID, userID bson.ObjectID) bson.M {
 	}
 }
 
-// CreateInvite adds a new invite code to a group. Only its owner and admins may.
-func CreateInvite(ctx context.Context, userID bson.ObjectID, chatID bson.ObjectID) (inviteCode string, err error) {
+// CreateInvite adds a new invite code to a group and returns it, as stored.
+// Only its owner and admins may.
+func CreateInvite(ctx context.Context, userID bson.ObjectID, chatID bson.ObjectID) (models.InviteCodeEmbed, error) {
 	if err := requireGroupManager(ctx, chatID, userID); err != nil {
-		return "", err
+		return models.InviteCodeEmbed{}, err
 	}
 
 	invite, ok := utils.NewInviteCodeWithDefaults(time.Now().Add(24 * time.Hour))
 	if !ok {
-		return "", fmt.Errorf("failed to create invite code")
+		return models.InviteCodeEmbed{}, fmt.Errorf("failed to create invite code")
 	}
 
 	res, err := database.DB.Collection(string(constants.ChatColl)).UpdateOne(ctx,
@@ -1154,13 +1155,13 @@ func CreateInvite(ctx context.Context, userID bson.ObjectID, chatID bson.ObjectI
 		bson.M{"$push": bson.M{"inviteCode": invite}},
 	)
 	if err != nil {
-		return "", fmt.Errorf("failed to create invite code: %w", err)
+		return models.InviteCodeEmbed{}, fmt.Errorf("failed to create invite code: %w", err)
 	}
 	if res.MatchedCount == 0 {
-		return "", fmt.Errorf("%w: role changed while creating the invite", ErrPermissionDenied)
+		return models.InviteCodeEmbed{}, fmt.Errorf("%w: role changed while creating the invite", ErrPermissionDenied)
 	}
 
-	return invite.InviteCode, nil
+	return invite, nil
 }
 
 // GetGroupInvites lists every invite code of a group, deleted and expired ones
