@@ -22,6 +22,20 @@ func storedCount(t *testing.T, chatID bson.ObjectID) (count, participants int) {
 	return chat.Stats.ParticipantCount, len(chat.Participants)
 }
 
+// requireInt32Count fails unless stats.participantCount is stored as a 32-bit int, the
+// type CreateGroupChat, $inc and the backfill's $size all write, so the field keeps one type.
+func requireInt32Count(t *testing.T, chatID bson.ObjectID) {
+	t.Helper()
+	n, err := database.DB.Collection(string(constants.ChatColl)).CountDocuments(t.Context(),
+		bson.M{"_id": chatID, "stats.participantCount": bson.M{"$type": "int"}})
+	if err != nil {
+		t.Fatalf("check count type: %v", err)
+	}
+	if n != 1 {
+		t.Fatalf("chat %s: stats.participantCount isn't stored as int32", chatID.Hex())
+	}
+}
+
 // #16: participantCount follows every add, join and removal, so it can't drift or go
 // negative. The steps are the ones in the issue.
 func TestParticipantCountFollowsMembership(t *testing.T) {
@@ -57,10 +71,11 @@ func TestParticipantCountFollowsMembership(t *testing.T) {
 		if count != want || n != want {
 			t.Fatalf("after %s: participantCount = %d, participants = %d; want both %d", step, count, n, want)
 		}
+		requireInt32Count(t, chatID)
 	}
 
-	// Listing someone already in the group adds nobody and must not count them.
-	if err := AddGroupMember(ctx, owner, chatID, []bson.ObjectID{a1, a2, m1}); err != nil {
+	// Someone already in the group, or listed twice, is added and counted once at most.
+	if err := AddGroupMember(ctx, owner, chatID, []bson.ObjectID{a1, a2, a1, m1}); err != nil {
 		t.Fatalf("add members: %v", err)
 	}
 	check(t, "adding 2 members", 5)
@@ -90,12 +105,14 @@ func TestBackfillParticipantCounts(t *testing.T) {
 	a, b := bson.NewObjectID(), bson.NewObjectID()
 	two := bson.M{a.Hex(): bson.M{"role": "owner"}, b.Hex(): bson.M{"role": "member"}}
 
-	negative, missing, correct, direct := bson.NewObjectID(), bson.NewObjectID(), bson.NewObjectID(), bson.NewObjectID()
+	negative, missing, correct, direct, malformed := bson.NewObjectID(), bson.NewObjectID(), bson.NewObjectID(), bson.NewObjectID(), bson.NewObjectID()
 	docs := []any{
 		bson.M{"_id": negative, "chatType": string(constants.ChatTypeGroup), "participants": two, "stats": bson.M{"participantCount": -1}},
 		bson.M{"_id": missing, "chatType": string(constants.ChatTypeGroup), "participants": two},
 		bson.M{"_id": correct, "chatType": string(constants.ChatTypeGroup), "participants": two, "stats": bson.M{"participantCount": 2}},
 		bson.M{"_id": direct, "chatType": string(constants.ChatTypeDirect), "participants": two, "stats": bson.M{"participantCount": 0}},
+		// Must be skipped, not fail the update for every other group.
+		bson.M{"_id": malformed, "chatType": string(constants.ChatTypeGroup), "participants": bson.A{a, b}, "stats": bson.M{"participantCount": 7}},
 	}
 	if _, err := chats.InsertMany(ctx, docs); err != nil {
 		t.Fatalf("insert chats: %v", err)
@@ -112,6 +129,18 @@ func TestBackfillParticipantCounts(t *testing.T) {
 		if count, _ := storedCount(t, id); count != 2 {
 			t.Fatalf("group %s: participantCount = %d, want 2", id.Hex(), count)
 		}
+		requireInt32Count(t, id)
+	}
+	var bad struct {
+		Stats struct {
+			ParticipantCount int `bson:"participantCount"`
+		} `bson:"stats"`
+	}
+	if err := chats.FindOne(ctx, bson.M{"_id": malformed}).Decode(&bad); err != nil {
+		t.Fatalf("load malformed group: %v", err)
+	}
+	if bad.Stats.ParticipantCount != 7 {
+		t.Fatalf("malformed group participantCount = %d, want it left at 7", bad.Stats.ParticipantCount)
 	}
 	if count, _ := storedCount(t, direct); count != 0 {
 		t.Fatalf("direct chat participantCount = %d, want it left at 0", count)

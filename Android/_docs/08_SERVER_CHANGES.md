@@ -6,9 +6,10 @@ what the app should do, and where the details are.
 
 ## A group's participant count is correct (#16)
 
-- `stats.participantCount` on a group now rises with every add and join, and is reset at
-  startup to the number of `participants` for groups where it had drifted (it could be
-  stale or negative). It can be shown as the member count; it includes pending members.
+- `stats.participantCount` now follows every add, join and removal, and drifted counts
+  (stale or negative) are reset at startup. It counts every entry in `participants`,
+  including pending members (#5) and deleted accounts (#35): don't show it as "members
+  who joined" or use it as a size-limit check.
 
 ## Blocked people aren't in the contacts list (#62)
 
