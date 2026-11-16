@@ -134,28 +134,44 @@ func chatMemberFilter(chatID, userID bson.ObjectID) bson.M {
 // RequireChatMember returns ErrNotParticipant unless userID is a participant of
 // the chat. An unknown chat gives the same error, so chat IDs can't be probed.
 func RequireChatMember(ctx context.Context, chatID, userID bson.ObjectID) error {
-	count, err := database.DB.Collection(string(constants.ChatColl)).CountDocuments(ctx, chatMemberFilter(chatID, userID))
+	_, err := findChatForMember(ctx, chatID, userID, bson.M{"_id": 1})
+	return err
+}
+
+// GetChatForMember returns the chat's type, participants and size limit, read
+// in the same query that checks userID is a participant, so a handler that
+// checks membership first doesn't read the chat twice (#106). Like
+// RequireChatMember, an unknown chat gives ErrNotParticipant. Only ChatID,
+// ChatType, Participants and Settings.MaxParticipants are filled; every other
+// field is zero, so add to the projection before reading another one.
+func GetChatForMember(ctx context.Context, chatID, userID bson.ObjectID) (models.Chat, error) {
+	return findChatForMember(ctx, chatID, userID, bson.M{
+		"chatType":                 1,
+		"participants":             1,
+		"settings.maxParticipants": 1,
+	})
+}
+
+func findChatForMember(ctx context.Context, chatID, userID bson.ObjectID, projection bson.M) (models.Chat, error) {
+	var chat models.Chat
+	opts := options.FindOne().SetProjection(projection)
+	err := database.DB.Collection(string(constants.ChatColl)).FindOne(ctx, chatMemberFilter(chatID, userID), opts).Decode(&chat)
+	if errors.Is(err, mongo.ErrNoDocuments) {
+		return chat, fmt.Errorf("%w", ErrNotParticipant)
+	}
 	if err != nil {
-		return fmt.Errorf("failed to check chat membership: %w", err)
+		return chat, fmt.Errorf("failed to check chat membership: %w", err)
 	}
-	if count == 0 {
-		return fmt.Errorf("%w", ErrNotParticipant)
-	}
-	return nil
+	return chat, nil
 }
 
 // RequireChatAccess is RequireChatMember for actions the other members see:
 // typing, read receipts and reactions. In a direct chat, a block either way
 // returns ErrBlocked (#27). Reading history needs membership only.
 func RequireChatAccess(ctx context.Context, chatID, userID bson.ObjectID) error {
-	var chat models.Chat
-	opts := options.FindOne().SetProjection(bson.M{"chatType": 1, "participants": 1})
-	err := database.DB.Collection(string(constants.ChatColl)).FindOne(ctx, chatMemberFilter(chatID, userID), opts).Decode(&chat)
-	if errors.Is(err, mongo.ErrNoDocuments) {
-		return fmt.Errorf("%w", ErrNotParticipant)
-	}
+	chat, err := findChatForMember(ctx, chatID, userID, bson.M{"chatType": 1, "participants": 1})
 	if err != nil {
-		return fmt.Errorf("failed to check chat membership: %w", err)
+		return err
 	}
 	return CheckDirectChatBlock(ctx, &chat, userID)
 }
@@ -912,6 +928,25 @@ func AddGroupMember(ctx context.Context, userID bson.ObjectID, chatID bson.Objec
 		}
 		return fmt.Errorf("failed to get chat: %w", err)
 	}
+	chat.ChatID = chatID
+	return addGroupMembers(ctx, userID, chat, participantIDs)
+}
+
+// AddGroupMemberToChat is AddGroupMember for a caller that has already read the
+// chat with GetChatForMember, so the chat isn't read again (#106). The update
+// still re-checks the role, the chat type and the size limit.
+func AddGroupMemberToChat(ctx context.Context, userID bson.ObjectID, chat models.Chat, participantIDs []bson.ObjectID) error {
+	if chat.ChatID.IsZero() {
+		return fmt.Errorf("add group members: chat has no ID")
+	}
+	if chat.ChatType != string(constants.ChatTypeGroup) {
+		return fmt.Errorf("%w", ErrChatNotFound)
+	}
+	return addGroupMembers(ctx, userID, chat, participantIDs)
+}
+
+func addGroupMembers(ctx context.Context, userID bson.ObjectID, chat models.Chat, participantIDs []bson.ObjectID) error {
+	chatID := chat.ChatID
 
 	// An outsider gets the same error as for a missing group, so group IDs
 	// can't be probed (#59).
