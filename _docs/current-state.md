@@ -1,6 +1,6 @@
 # ECHO: current state
 
-A one-page snapshot of where the project stands. Last checked on 2026-11-16 at `d46c2f8`
+A one-page snapshot of where the project stands. Last checked on 2026-11-16 at `1f3043a`
 on `main`. To learn what the product does, read
 [product-overview.md](./product-overview.md). For the code, read
 [architecture-overview.md](./architecture-overview.md).
@@ -11,13 +11,16 @@ on `main`. To learn what the product does, read
 and with a link to exactly one feature state.md. Updated by /close-increment and
 /feature-docs update. -->
 
-- **Feature:** none yet · #103 on `fix/103-pending-join-by-code`: a `pending` group
-  member who joins with a usable code becomes `accepted`, and their invitation is cleared
+- **Feature:** none yet · #112 on `fix/112-create-group-creator-ref`: `CreateGroupChat`
+  checks the creator's `chats.<id>` write (error and `MatchedCount`) and removes the new
+  group if it fails. Fixed and verified at `074e06a`; PR in review
 - **#72 on Render (paused 2026-11-15):** `/health` answers `200`, but no chat with a message
   saved before PR #74 (`reactions: null`) is left to react to. Continue later, for example
   by setting `reactions: null` on a test message in Atlas first
-- **Next step:** tests first, then fix, verify, PR, and ask before merging
-- **Updated:** 2026-11-16 on `fix/103-pending-join-by-code`
+- **Next step:** merge the #112 PR once the user agrees and CI is green. `rest-api.md`,
+  `websocket-requests.md` and `Android/_docs/08_SERVER_CHANGES.md` are at their 200-line
+  budget: split them (`/feature-docs split`) before the next change that adds to them
+- **Updated:** 2026-11-16 on `fix/112-create-group-creator-ref`
 
 ## Where things stand
 
@@ -32,6 +35,11 @@ declining a group invite. The full list is in
 
 ## Recently finished
 
+- **#103 (PR #113):** a `pending` group member accepts by joining with any usable code of
+  the group; `send` works for pending members, and joining clears every invitation to the
+  group. Live messages start at the next connection ([REST](./rest-api.md#groups),
+  [app changes](../Android/_docs/08_SERVER_CHANGES.md)). A dedicated accept and decline
+  action is left to #5 ([decisions](./decisions.md#how-a-pending-member-accepts-103-5)).
 - **#68 (PR #111):** a group holds at most `settings.maxParticipants` (default 100). Create,
   add and join past it add nobody: REST `409`, WebSocket `GROUP_FULL`, checked in the
   update filter ([REST](./rest-api.md#groups), [app changes](../Android/_docs/08_SERVER_CHANGES.md)).
@@ -164,13 +172,13 @@ name.
 ## Open decisions
 
 None right now. What has been decided, and what each choice unblocks, is in
-[decisions.md](./decisions.md): invite permissions (#30), membership in `participants`
+[decisions.md](./decisions.md): invite permissions (#30), accepting a group invite (#103, #5), membership in `participants`
 only (#14, #17), soft-deleting accounts (#35), transactions on a replica set (#37), how
 blocks are stored, and who counts as a member.
 
 ## Known issues and risks
 
-There are 28 open issues. Where each risk sits in the code: [architecture-overview.md](./architecture-overview.md#riskiest-areas).
+There are 27 open issues. Where each risk sits in the code: [architecture-overview.md](./architecture-overview.md#riskiest-areas).
 
 | Area | The problem, in short | Issues |
 |---|---|---|
