@@ -29,7 +29,7 @@ The hub keeps four lookup tables:
 | `Clients` | Which connections are open on this server? |
 | `ChatClients` | Which connections follow this chat? |
 | `UserClients` | Which connections belong to this user? |
-| `UserActiveChats` | Which chats does this user follow? |
+| `ClientChats` | Which chats does this connection follow? (A user's chats are the union over their connections.) |
 
 These maps must only be touched while holding `hub.Mutex`. To use one after unlocking, copy
 what you need first. Never wait on a hub channel while holding the lock. Registration,
@@ -104,9 +104,11 @@ The list is only read at this moment. Chats added later aren't picked up until t
 reconnects. See
 [which chats you get live events for](./WEBSOCKET_PROTOCOL.md#which-chats-you-get-live-events-for).
 
-**When someone disconnects,** the hub removes the connection from its tables. When a user's
-last connection closes, it is also meant to drop the Redis subscriptions and tell others
-the user went offline. Neither works properly yet (#20, #31).
+**When someone disconnects,** the hub takes the connection out of every room it is in and
+unsubscribes each chat channel whose room is left empty on this server. When a user's last
+connection closes, it also drops the `user:<id>` channel and tells others the user went
+offline; the offline part doesn't work properly yet (#31). A room emptied by `leave_chat`
+or `remove_user` keeps its channel until a disconnect empties it again (#55).
 
 **When a connection is too slow,** its queue of 10 outgoing messages fills up and the server
 disconnects it.
@@ -137,7 +139,7 @@ its connections live, though it is still in the chat history (#43).
 |---|---|
 | A message is saved but doesn't arrive live | Does the person's connection follow the chat? They may need to reconnect. Also check #14 and #17. |
 | Nobody gets live messages | Is Redis up? Look for publish errors in the server log. |
-| Memory or Redis connections keep growing | Known problems: #20, #21 |
+| Memory or Redis connections keep growing | Known problems: #21, #55 |
 | Online status is wrong | Known problem: #31 |
 
 `GET /echo/v1/chats/hub/stats` shows the counts for one server, to operators who send the
@@ -148,11 +150,10 @@ stats token. See
 
 | Issue | Problem |
 |---|---|
-| #20 | Redis subscriptions aren't cleaned up on disconnect |
 | #21 | Each Redis channel uses its own connection, so connections grow with users and chats |
 | #22 | Slow MongoDB or Redis calls hold up all connects and disconnects |
 | #54 | A client that disconnects before it is registered stays registered until cleanup |
-| #55 | `JoinChat` can lose its Redis subscription to a disconnect at the same time; fix it with #20 |
+| #55 | `JoinChat` can lose its Redis subscription to a disconnect at the same time; rooms emptied by `leave_chat` keep their channel |
 | #17 | Pending group members don't get live messages |
 | #31 | Online status is unreliable |
 | #40 | No size limit or rate limit on incoming messages |
