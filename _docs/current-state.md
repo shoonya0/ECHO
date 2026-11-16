@@ -12,13 +12,13 @@ and with a link to exactly one feature state.md. Updated by /close-increment and
 /feature-docs update. -->
 
 - **Feature:** none yet · #59 on `fix/59-hide-chat-existence`: `send_message`, `invite_user`
-  and `remove_user` must answer a non-member with `PERMISSION_DENIED` whether or not the
-  chat exists
+  and `remove_user` check membership first, so a non-member gets `PERMISSION_DENIED`
+  whether or not the chat exists. Verified: `verify.mjs --full` (DB required) and the
+  contract test live
 - **#72 on Render (paused 2026-11-15):** `/health` answers `200`, but no chat with a message
   saved before PR #74 (`reactions: null`) is left to react to. Continue later, for example
   by setting `reactions: null` on a test message in Atlas first
-- **Next step:** failing test first (unknown chat, direct chat), then check membership first
-  in the three handlers
+- **Next step:** `/code-review` and `/security-review`, then push, PR, and ask before merging
 - **Updated:** 2026-11-16 on `fix/59-hide-chat-existence`
 
 ## Where things stand
