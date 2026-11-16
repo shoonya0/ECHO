@@ -398,13 +398,14 @@ func CreateGroupChat(ctx context.Context, chatName, description string, particip
 		bson.M{"$set": bson.M{"chats." + chat.ChatID.Hex(): 0}},
 	)
 
-	// Send invites to participants (creator is the acting user sending invites)
-	creatingGroup := true
+	// Give each invitee an invitation for the new code. The group is already
+	// saved, so an invitee whose account was deleted since the lookup is skipped
+	// instead of failing the create.
 	for _, u := range users {
 		if u.ID == creator.ID {
 			continue
 		}
-		if err := SendInviteToUser(ctx, creator.ID, invite.InviteCode, u.ID, creatingGroup); err != nil {
+		if _, err := addInvitation(ctx, invite.InviteCode, u.ID); err != nil {
 			return nil, fmt.Errorf("failed to send invite to user %s: %w", u.ID.Hex(), err)
 		}
 	}
@@ -1084,21 +1085,60 @@ func RemoveGroupMember(ctx context.Context, actingUserID bson.ObjectID, chatID b
 }
 
 // ================ Invites ================
-func CreateInvite(ctx context.Context, userID bson.ObjectID, chatID bson.ObjectID) (inviteCode string, err error) {
-	filter := bson.M{
-		"_id":      chatID,
-		"chatType": string(constants.ChatTypeGroup),
-		"$and": []bson.M{
-			{"participants." + userID.Hex(): bson.M{"$exists": true}},
-		},
+
+// groupManagerRoles are the roles that may manage a group's invite codes:
+// create, list, delete and send them, and see who joined by one (#30).
+var groupManagerRoles = []string{string(constants.ChatRoleOwner), string(constants.ChatRoleAdmin)}
+
+// requireGroupManager checks that userID is an owner or admin of the group
+// chatID. It returns ErrChatNotFound when there is no such group or userID
+// isn't in it, so group IDs can't be probed, and ErrPermissionDenied for any
+// other role. Writes to the chat still re-check the role with
+// groupManagerFilter, so a demotion between this read and the write can't be
+// overridden.
+func requireGroupManager(ctx context.Context, chatID, userID bson.ObjectID) error {
+	var chat struct {
+		Participants map[string]struct {
+			Role string `bson:"role"`
+		} `bson:"participants"`
+	}
+	err := database.DB.Collection(string(constants.ChatColl)).FindOne(ctx,
+		bson.M{"_id": chatID, "chatType": string(constants.ChatTypeGroup)},
+		options.FindOne().SetProjection(bson.M{"participants." + userID.Hex() + ".role": 1}),
+	).Decode(&chat)
+	if errors.Is(err, mongo.ErrNoDocuments) {
+		return fmt.Errorf("%w", ErrChatNotFound)
+	}
+	if err != nil {
+		return fmt.Errorf("failed to get chat: %w", err)
 	}
 
-	count, err := database.DB.Collection(string(constants.ChatColl)).CountDocuments(ctx, filter)
-	if err != nil {
-		return "", fmt.Errorf("failed to get chat: %w", err)
+	participant, ok := chat.Participants[userID.Hex()]
+	if !ok {
+		return fmt.Errorf("%w", ErrChatNotFound)
 	}
-	if count == 0 {
-		return "", fmt.Errorf("%w", ErrChatNotFound)
+	for _, role := range groupManagerRoles {
+		if participant.Role == role {
+			return nil
+		}
+	}
+	return fmt.Errorf("%w: only owners and admins can manage invites", ErrPermissionDenied)
+}
+
+// groupManagerFilter matches the group chatID only while userID is an owner or
+// admin of it.
+func groupManagerFilter(chatID, userID bson.ObjectID) bson.M {
+	return bson.M{
+		"_id":                                    chatID,
+		"chatType":                               string(constants.ChatTypeGroup),
+		"participants." + userID.Hex() + ".role": bson.M{"$in": groupManagerRoles},
+	}
+}
+
+// CreateInvite adds a new invite code to a group. Only its owner and admins may.
+func CreateInvite(ctx context.Context, userID bson.ObjectID, chatID bson.ObjectID) (inviteCode string, err error) {
+	if err := requireGroupManager(ctx, chatID, userID); err != nil {
+		return "", err
 	}
 
 	invite, ok := utils.NewInviteCodeWithDefaults(time.Now().Add(24 * time.Hour))
@@ -1106,31 +1146,35 @@ func CreateInvite(ctx context.Context, userID bson.ObjectID, chatID bson.ObjectI
 		return "", fmt.Errorf("failed to create invite code")
 	}
 
-	update := bson.M{
-		"$push": bson.M{
-			"inviteCode": invite,
-		},
-	}
-
-	_, err = database.DB.Collection(string(constants.ChatColl)).UpdateOne(ctx, filter, update)
+	res, err := database.DB.Collection(string(constants.ChatColl)).UpdateOne(ctx,
+		groupManagerFilter(chatID, userID),
+		bson.M{"$push": bson.M{"inviteCode": invite}},
+	)
 	if err != nil {
 		return "", fmt.Errorf("failed to create invite code: %w", err)
+	}
+	if res.MatchedCount == 0 {
+		return "", fmt.Errorf("%w: role changed while creating the invite", ErrPermissionDenied)
 	}
 
 	return invite.InviteCode, nil
 }
 
+// GetGroupInvites lists every invite code of a group, deleted and expired ones
+// included (each has deleted and expiredDate). Only its owner and admins may.
 func GetGroupInvites(ctx context.Context, userID bson.ObjectID, chatID bson.ObjectID) ([]models.InviteCodeEmbed, error) {
-	filter := bson.M{
-		"_id": chatID,
-		"$and": []bson.M{
-			{"participants." + userID.Hex(): bson.M{"$exists": true}},
-		},
+	if err := requireGroupManager(ctx, chatID, userID); err != nil {
+		return nil, err
 	}
 
 	chat := models.Chat{}
-
-	err := database.DB.Collection(string(constants.ChatColl)).FindOne(ctx, filter, options.FindOne().SetProjection(bson.M{"inviteCode": 1})).Decode(&chat)
+	err := database.DB.Collection(string(constants.ChatColl)).FindOne(ctx,
+		groupManagerFilter(chatID, userID),
+		options.FindOne().SetProjection(bson.M{"inviteCode": 1}),
+	).Decode(&chat)
+	if errors.Is(err, mongo.ErrNoDocuments) {
+		return nil, fmt.Errorf("%w: role changed while listing invites", ErrPermissionDenied)
+	}
 	if err != nil {
 		return nil, fmt.Errorf("failed to get group invites: %w", err)
 	}
@@ -1138,53 +1182,55 @@ func GetGroupInvites(ctx context.Context, userID bson.ObjectID, chatID bson.Obje
 	return chat.InviteCode, nil
 }
 
+// DeleteInvite marks an invite code deleted, so nobody can join with it. Only
+// the group's owner and admins may. A code that isn't stored is ErrInvalidInvite.
 func DeleteInvite(ctx context.Context, userID bson.ObjectID, inviteID string) error {
 	chatID, _, err := findInvite(ctx, inviteID)
 	if err != nil {
 		return err
 	}
-
-	filter := bson.M{
-		"_id": chatID,
-		"$and": []bson.M{
-			{"participants." + userID.Hex(): bson.M{"$exists": true}},
-			{"inviteCode.inviteCode": inviteID},
-		},
+	if err := requireGroupManager(ctx, chatID, userID); err != nil {
+		return err
 	}
 
-	update := bson.M{
-		"$set": bson.M{
-			"inviteCode.$.deleted": true,
-		},
-	}
+	filter := groupManagerFilter(chatID, userID)
+	filter["inviteCode.inviteCode"] = inviteID
 
-	_, err = database.DB.Collection(string(constants.ChatColl)).UpdateOne(ctx, filter, update)
+	res, err := database.DB.Collection(string(constants.ChatColl)).UpdateOne(ctx, filter,
+		bson.M{"$set": bson.M{"inviteCode.$.deleted": true}},
+	)
 	if err != nil {
 		return fmt.Errorf("failed to delete invite: %w", err)
+	}
+	if res.MatchedCount == 0 {
+		return fmt.Errorf("%w: role changed while deleting the invite", ErrPermissionDenied)
 	}
 
 	return nil
 }
 
+// GetJoinedUsersByInvite lists who joined the group by an invite code. Only the
+// group's owner and admins may see it.
 func GetJoinedUsersByInvite(ctx context.Context, userID bson.ObjectID, inviteID string) ([]bson.ObjectID, error) {
 	chatID, _, err := findInvite(ctx, inviteID)
 	if err != nil {
 		return nil, err
 	}
-
-	filter := bson.M{
-		"_id": chatID,
-		"$and": []bson.M{
-			{"participants." + userID.Hex(): bson.M{"$exists": true}},
-			{"inviteCode.inviteCode": inviteID},
-		},
+	if err := requireGroupManager(ctx, chatID, userID); err != nil {
+		return nil, err
 	}
+
+	filter := groupManagerFilter(chatID, userID)
+	filter["inviteCode.inviteCode"] = inviteID
 
 	chat := models.Chat{}
 
 	// "inviteCode.$" returns only the entry that matched inviteID, not the
 	// chat's first invite (#29).
 	err = database.DB.Collection(string(constants.ChatColl)).FindOne(ctx, filter, options.FindOne().SetProjection(bson.M{"inviteCode.$": 1})).Decode(&chat)
+	if errors.Is(err, mongo.ErrNoDocuments) {
+		return nil, fmt.Errorf("%w: role changed while reading the invite", ErrPermissionDenied)
+	}
 	if err != nil {
 		return nil, fmt.Errorf("failed to get joined users by invite: %w", err)
 	}
@@ -1196,7 +1242,13 @@ func GetJoinedUsersByInvite(ctx context.Context, userID bson.ObjectID, inviteID 
 	return chat.InviteCode[0].UserIDs, nil
 }
 
-func SendInviteToUser(ctx context.Context, actingUserID bson.ObjectID, inviteID string, targetUserID bson.ObjectID, creatingGroup bool) error {
+// SendInviteToUser gives targetUserID a pending invitation for an invite code.
+// Only the group's owner and admins may send one. The code must be live, and the
+// target must exist and not be in the group yet. Sending the same code again adds
+// nothing. The invitation is stored on the user, not the chat, so unlike the
+// other invite writes its write can't re-check the sender's role; that needs a
+// transaction (#37).
+func SendInviteToUser(ctx context.Context, actingUserID bson.ObjectID, inviteID string, targetUserID bson.ObjectID) error {
 	chatID, invite, err := findInvite(ctx, inviteID)
 	if err != nil {
 		return err
@@ -1207,41 +1259,43 @@ func SendInviteToUser(ctx context.Context, actingUserID bson.ObjectID, inviteID 
 		return fmt.Errorf("%w", ErrInvalidInvite)
 	}
 
-	filter := bson.M{
-		"_id": chatID,
-		"$and": []bson.M{
-			{"participants." + targetUserID.Hex(): bson.M{"$exists": false}},
-			{"participants." + actingUserID.Hex(): bson.M{"$exists": true}},
-			{"inviteCode.inviteCode": inviteID},
-		},
+	if err := requireGroupManager(ctx, chatID, actingUserID); err != nil {
+		return err
 	}
 
-	if !creatingGroup {
-		cntDoc, err := database.DB.Collection(string(constants.ChatColl)).CountDocuments(ctx, filter)
-		if err != nil {
-			return fmt.Errorf("failed to get joined users by invite: %w", err)
-		}
-
-		if cntDoc == 0 {
-			return fmt.Errorf("user you do not have permission to send invite or user already in the chat")
-		}
-	}
-
-	targetUserProjection := bson.M{
-		"$push": bson.M{
-			"chatInvitations": models.ChatInvitationEmbed{
-				Token:  inviteID,
-				Status: "pending",
-			},
-		},
-	}
-
-	_, err = database.DB.Collection(string(constants.UserColl)).UpdateOne(ctx, bson.M{"_id": targetUserID}, targetUserProjection)
+	inGroup, err := database.DB.Collection(string(constants.ChatColl)).CountDocuments(ctx,
+		bson.M{"_id": chatID, "participants." + targetUserID.Hex(): bson.M{"$exists": true}},
+	)
 	if err != nil {
-		return fmt.Errorf("failed to update target user: %w", err)
+		return fmt.Errorf("failed to check the target user: %w", err)
+	}
+	if inGroup > 0 {
+		return fmt.Errorf("%w", ErrAlreadyParticipant)
+	}
+
+	found, err := addInvitation(ctx, inviteID, targetUserID)
+	if err != nil {
+		return err
+	}
+	if !found {
+		return fmt.Errorf("%w", ErrUserNotFound)
 	}
 
 	return nil
+}
+
+// addInvitation gives targetUserID a pending invitation for inviteID, with no
+// permission checks, and reports whether the user exists. Sending the same code
+// again adds nothing. Callers check who may send it.
+func addInvitation(ctx context.Context, inviteID string, targetUserID bson.ObjectID) (bool, error) {
+	res, err := database.DB.Collection(string(constants.UserColl)).UpdateOne(ctx,
+		bson.M{"_id": targetUserID},
+		bson.M{"$addToSet": bson.M{"chatInvitations": models.ChatInvitationEmbed{Token: inviteID, Status: "pending"}}},
+	)
+	if err != nil {
+		return false, fmt.Errorf("failed to update target user: %w", err)
+	}
+	return res.MatchedCount > 0, nil
 }
 
 // JoinGroupByInvite adds userID to the group that stores the invite code. The
@@ -1301,10 +1355,14 @@ func JoinGroupByInvite(ctx context.Context, userID bson.ObjectID, inviteID strin
 		return joinNotApplied(ctx, chatObjectID, userID)
 	}
 
-	// Add chat ref to user
+	// Add chat ref to user, and drop their invitation for this code, which is
+	// now used (#30)
 	userRes, err := database.DB.Collection(string(constants.UserColl)).UpdateOne(ctx,
 		bson.M{"_id": userID},
-		bson.M{"$set": bson.M{"chats." + chatObjectID.Hex(): 0}},
+		bson.M{
+			"$set":  bson.M{"chats." + chatObjectID.Hex(): 0},
+			"$pull": bson.M{"chatInvitations": bson.M{"token": inviteID}},
+		},
 	)
 	if err != nil {
 		return fmt.Errorf("failed to add chat to user: %w", err)

@@ -1,6 +1,6 @@
 # ECHO: current state
 
-A one-page snapshot of where the project stands. Last checked on 2026-11-14 at `eb34ba3`
+A one-page snapshot of where the project stands. Last checked on 2026-11-15 at `c914ce2`
 on `main`. To learn what the product does, read
 [product-overview.md](./product-overview.md). For the code, read
 [architecture-overview.md](./architecture-overview.md).
@@ -11,14 +11,17 @@ on `main`. To learn what the product does, read
 and with a link to exactly one feature state.md. Updated by /close-increment and
 /feature-docs update. -->
 
-- **Feature:** none yet · #60 on `fix/60-normalize-chat-id`: a `chatId` in uppercase hex
-  is turned into lowercase where WebSocket requests come in, so its events reach the
-  chat. Verified with `verify.mjs --full`, DB required. Still to do: confirm #72 on Render
-  with a message saved before PR #74
-- **Next step:** push, open the PR, then ask before merging (it deploys to Render). Next
-  candidate: #67 (contract test). #30 needs a decision first: who may create and delete
-  invites
-- **Updated:** 2026-11-15 on `fix/60-normalize-chat-id`
+- **Feature:** none yet · #30 on `fix/30-invite-permissions`: only owners and admins may
+  manage invite codes (`403` for other members, `404` for outsiders so group IDs can't be
+  probed). Code and security reviews done; their fixes are in `a7a0351`. Verified:
+  `verify.mjs --full` (DB required) and the contract test live
+- **#72 on Render (paused 2026-11-15):** `/health` answers `200`, but no chat with a message
+  saved before PR #74 (`reactions: null`) is left to react to. Continue later, for example
+  by setting `reactions: null` on a test message in Atlas first
+- **Next step:** push, PR, and ask before merging. Then propose issues: pending invitees from
+  group creation can't join by code and keep their invitation (#14), and creating an
+  invite code doesn't return it (`CreateInvite` in `chat.controller.go`)
+- **Updated:** 2026-11-16 on `fix/30-invite-permissions`
 
 ## Where things stand
 
@@ -33,6 +36,10 @@ declining a group invite. The full list is in
 
 ## Recently finished
 
+- **#67 (PR #101):** the contract test pages history with `?before=<nextCursor>` and checks
+  that `offset` gets `400`; every step passes against a local server.
+- **#60 (PR #100):** a `chatId` in any case is lowercased where WebSocket requests come
+  in, so its events reach the chat ([requests](./websocket-requests.md)).
 - **#47 (PR #99):** `send_message` replies have a top-level `requestId` ([events](./websocket-events.md)).
 - **#75 (PR #98):** reaction `details` hold usernames; older entries keep `""`
   ([REST](./rest-api.md#messages), [app changes](../Android/_docs/08_SERVER_CHANGES.md)).
@@ -64,20 +71,14 @@ declining a group invite. The full list is in
   stored gets `400` on every route ([REST](./rest-api.md#groups),
   [app changes](../Android/_docs/08_SERVER_CHANGES.md)). Security review: nothing found.
   The code review found #91 (a deleted code can still be sent).
-- **#88 (PR #89):** the WebSocket connect log names the user by ID only. With #65 and
-  #84, no log line writes an email or username any more.
+- **#65, #84, #88 (PRs #82, #86, #89):** signup, the auth middleware and the WebSocket
+  connect log name the user by ID only; no log line writes an email, username or hash.
 - **#83 (PR #87):** `invite_user` answers a failed chat lookup (timeout, MongoDB down) with
   the retryable `INVITE_FAILED`; only a chat that doesn't exist is `INVALID_CHAT_ID`.
   `GetChat` now returns `ErrChatNotFound` for a missing chat.
-- **#84 (PR #86):** the auth middleware logs the user's ID only, not the email and
-  username it wrote at Debug on every request. The WebSocket connect log still holds the
-  username at Info (#88).
 - **#39 part 1 (PR #85):** `limit=0` no longer crashes the contact lists with a `500`;
   `limit` is kept in 1..100 ([REST](./rest-api.md#contacts)). Still open on #39: the lists
   aren't cut to `limit`, which needs a cursor first.
-- **#65 (PR #82):** signup logs the new user's ID only. Before, it logged the whole user:
-  the email on the server, and also the password hash under the text formatter. Checking
-  the other log lines found #84 (email in a Debug line); the #41 review found #83.
 - **#41 (PR #81):** no REST or WebSocket reply carries internal error text. A `400`'s
   `error` names each field by its JSON path and rule (`password: min=8`), and
   `invite_user` answers with specific codes ([REST](./rest-api.md#the-basics),
@@ -139,46 +140,19 @@ name.
   sets it.
 - `internal/realtime/hub_race_test.go` uses the hub from several goroutines at once. It only
   catches races under `go test -race`.
-- The contract test (`scripts/contract-test`) isn't part of verify. Its `chat messages` step
-  fails on every build, because it still sends `offset` (#67).
+- The contract test (`scripts/contract-test`) isn't part of verify; it needs a running
+  server. All its steps passed on 2026-11-15 (#67).
 
 ## Open decisions
 
-These need a choice before the linked issues can be fixed.
-
-| # | Decision needed | Options | Blocking? |
-|---|---|---|---|
-| 1 | Where chat membership is stored | `participants` only / keep `users.chats` in sync | #14, #17 |
-| 3 | What deleting an account does | soft delete + anonymize / hard delete + cleanup | #35 |
-| 4 | MongoDB transactions | require a replica set (Atlas yes, local compose no) | #37 |
-
-### Decided: how blocks are stored
-
-Decided on 2026-11-08 (#26). A block is stored on both people, with direction:
-`contactInfo.blocked` on the blocker and `contactInfo.blockedBy` on the blocked person.
-`blockedBy` is never sent to clients. Old `blockedChats` data has no direction, so the
-startup migration (`MigrateLegacyBlocks`) turns each pair into a mutual block and removes
-the old field. Nobody is unblocked without choosing to be.
-
-### Decided: who counts as a chat member
-
-Decided on 2026-11-07.
-
-| Participant | Counts as a member? | In the code today |
-|---|---|---|
-| Pending | No | **Not enforced yet:** pending members still pass every membership check |
-| Blocked | Yes | Already true. `send_message` still refuses them, as a separate check |
-| Removed | No | Already true: removal deletes the participant entry |
-
-Enforcing the pending rule has to wait for #5. Everyone added to a group is `pending`,
-except the creator and people who join by invite code, and nobody can accept yet, so
-enforcing it now would lock those members out. The order is: build accept and decline,
-backfill existing members, then enforce it in `chatMemberFilter`. Direct-chat participants
-have no status, so the check must allow for that.
+None right now. What has been decided, and what each choice unblocks, is in
+[decisions.md](./decisions.md): invite permissions (#30), membership in `participants`
+only (#14, #17), soft-deleting accounts (#35), transactions on a replica set (#37), how
+blocks are stored, and who counts as a member.
 
 ## Known issues and risks
 
-There are 31 open issues. Where each risk sits in the code: [architecture-overview.md](./architecture-overview.md#riskiest-areas).
+There are 29 open issues. Where each risk sits in the code: [architecture-overview.md](./architecture-overview.md#riskiest-areas).
 
 | Area | The problem, in short | Issues |
 |---|---|---|
@@ -191,7 +165,7 @@ There are 31 open issues. Where each risk sits in the code: [architecture-overvi
 | Online status and privacy | Online status is unreliable, and privacy settings aren't applied | #31, #32 |
 | Messages and data | Writes can half-finish, and some lists grow without limit | #37, #42 |
 | Limits and errors | WebSocket limits are per connection, not per user, and `set_typing` still writes to MongoDB; no limits on login and signup | #40 |
-| WebSocket replies and events | Replies and events are inconsistent or leave out details, which affects the Android plan, and uppercase chat IDs lose live events | #48, #50, #51, #60 |
+| WebSocket replies and events | Replies and events are inconsistent or leave out details, which affects the Android plan | #48, #50, #51 |
 
 ## Next task
 

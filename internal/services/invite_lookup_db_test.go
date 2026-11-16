@@ -82,13 +82,13 @@ func TestInviteRoutesFindTheGroupByTheStoredCode(t *testing.T) {
 	})
 
 	t.Run("send a code in the old format", func(t *testing.T) {
-		if err := SendInviteToUser(ctx, owner, legacy, target, false); err != nil {
+		if err := SendInviteToUser(ctx, owner, legacy, target); err != nil {
 			t.Fatalf("SendInviteToUser: %v", err)
 		}
 	})
 
 	t.Run("send an expired code", func(t *testing.T) {
-		err := SendInviteToUser(ctx, owner, "ffeeddccbbaa99887766554433221100", target, false)
+		err := SendInviteToUser(ctx, owner, "ffeeddccbbaa99887766554433221100", target)
 		if !errors.Is(err, ErrInvalidInvite) {
 			t.Fatalf("err = %v, want ErrInvalidInvite", err)
 		}
@@ -107,7 +107,7 @@ func TestInviteRoutesFindTheGroupByTheStoredCode(t *testing.T) {
 	// #91: sending a deleted code used to succeed and push a pending
 	// invitation for the revoked code to the target user.
 	t.Run("send a deleted code", func(t *testing.T) {
-		err := SendInviteToUser(ctx, owner, opaque, target, false)
+		err := SendInviteToUser(ctx, owner, opaque, target)
 		if !errors.Is(err, ErrInvalidInvite) {
 			t.Fatalf("err = %v, want ErrInvalidInvite", err)
 		}

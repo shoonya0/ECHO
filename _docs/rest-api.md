@@ -149,8 +149,8 @@ Only participants can read a chat. Everyone else gets `404 Chat not found`.
 | `POST groups/invites/:inviteID/:userID/send` | Sends a code to someone |
 | `POST groups/join/:inviteCode` | Joins a group with a code |
 
-`:inviteID` and `:inviteCode` are both the invite code itself. See #30 for missing
-permission checks on these routes.
+`:inviteID` and `:inviteCode` are both the code itself. Creating, listing, deleting and
+sending codes, and `joined`, are for owners and admins (#30): members `403`, others `404`.
 
 **How group membership works today**
 
@@ -162,18 +162,18 @@ permission checks on these routes.
   full access (#5). They get no live messages, though (#17).
 - `add-members` returns `403` if you aren't an owner or admin. People already in the group
   are skipped, so they keep their role. If everyone is already in, it returns `409`.
-- An invite code is 32 random hex characters, with nothing inside it (#15). Codes made
-  before 2026-11-14 are longer and still work until they expire. Treat a code as an opaque
-  string.
+- An invite code is 32 random hex characters (#15); codes made before 2026-11-14 are
+  longer and work until they expire. Treat a code as an opaque string.
 - Invite codes last 24 hours. Joining with a code makes you an `accepted` member. The code
   must be stored on that group, not deleted and not expired, or joining returns
   `400 Invalid invite`. Joining fails with `409` if you are already in the group, even as
   `pending`. If an earlier join failed halfway, retrying it finishes the join and returns
   `409`.
 - Every invite route returns `400 Invalid invite` for a code that isn't stored on any
-  group. Sending a code to someone returns `400` if the code is deleted or expired (#91).
-  Deleting a code and listing who joined with it still accept a deleted or expired code,
-  and none of these routes check your role (#30).
+  group, and `404` for a group that doesn't exist or you aren't in. The list includes
+  deleted and expired codes (`deleted`, `expiredDate`). Sending returns `400` for a deleted
+  or expired code (#91), `404` for an unknown user and `409` for a member; sending again
+  adds nothing. Joining removes your invitation; pending members, who can't join, keep it.
 
 ## Hub statistics
 
