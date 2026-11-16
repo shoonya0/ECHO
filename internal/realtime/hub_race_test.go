@@ -15,6 +15,7 @@ import (
 	"go.mongodb.org/mongo-driver/v2/bson"
 
 	"github.com/shoonya0/ECHO/internal/models"
+	"github.com/shoonya0/ECHO/internal/testutil"
 )
 
 // These tests guard #19. They only prove anything under `go test -race`, which
@@ -438,5 +439,93 @@ func TestDisconnectKeepsChatOtherUserFollows(t *testing.T) {
 	}
 	if pm.IsSubscribed(pm.getUserChannel(closing.UserID.Hex())) {
 		t.Fatal("closed user's channel is still subscribed")
+	}
+}
+
+// leave_chat emptying a room releases its channel (#20).
+func TestLeaveChatReleasesEmptyRoom(t *testing.T) {
+	hub := newTestHub(t)
+	pm := hub.pubSubManager
+	client := newTestClient("c1", bson.NewObjectID())
+	addClient(hub, client, "chatA")
+	stubSubscriptions(hub, pm.getChatChannel("chatA"))
+
+	_ = hub.LeaveChat(client, "chatA") // publish fails without Redis
+
+	if pm.IsSubscribed(pm.getChatChannel("chatA")) {
+		t.Fatal("empty room's channel is still subscribed after leave_chat")
+	}
+}
+
+// Removing the last local members of a group releases its channel (#20).
+// Without Redis the publish fails, so the local removal path runs.
+func TestRemoveMembersReleasesEmptyRoom(t *testing.T) {
+	hub := newTestHub(t)
+	pm := hub.pubSubManager
+	client := newTestClient("c1", bson.NewObjectID())
+	addClient(hub, client, "chatA")
+	stubSubscriptions(hub, pm.getChatChannel("chatA"))
+
+	_ = hub.RemoveMembersFromChat("chatA", []string{client.UserID.Hex()})
+
+	if pm.IsSubscribed(pm.getChatChannel("chatA")) {
+		t.Fatal("empty room's channel is still subscribed after remove_user")
+	}
+}
+
+// A join_chat handled after the connection was unregistered must not put the
+// closed connection back in a room, where nothing would ever remove it.
+func TestJoinChatAfterDisconnectIsIgnored(t *testing.T) {
+	hub := newTestHub(t)
+	pm := hub.pubSubManager
+	client := newTestClient("c1", bson.NewObjectID())
+	addClient(hub, client)
+	stubSubscriptions(hub, pm.getChatChannel("chatA"))
+	hub.handleClientUnregistration(client)
+
+	_ = hub.JoinChat(context.Background(), client, "chatA")
+
+	if inRoomUnlocked(hub, "chatA", client.ID) {
+		t.Fatal("closed connection was added to a room")
+	}
+	if _, ok := hub.ClientChats[client.ID]; ok {
+		t.Fatal("closed connection is in ClientChats")
+	}
+}
+
+// A join landing between the release's "room is empty" check and its
+// unsubscribe must leave the joiner subscribed (#55). The hook runs the whole
+// join at exactly that point. Needs Redis: run with TEST_DB_REQUIRED=1.
+func TestJoinDuringChannelReleaseKeepsSubscription(t *testing.T) {
+	redisClient := testutil.UseTestRedis(t)
+	hub := newTestHub(t)
+	hub.redisClient = redisClient
+	hub.pubSubManager = NewPubSubManager(redisClient, hub.Hub, hub.logger, "test")
+	pm := hub.pubSubManager
+	t.Cleanup(pm.cancel)
+
+	chatID := bson.NewObjectID().Hex()
+	leaving := newTestClient("leaving", bson.NewObjectID())
+	joining := newTestClient("joining", bson.NewObjectID())
+	addClient(hub, leaving, chatID)
+	addClient(hub, joining)
+	if err := pm.subscribeToChannel(pm.getChatChannel(chatID)); err != nil {
+		t.Fatalf("subscribe: %v", err)
+	}
+	t.Cleanup(func() { _ = pm.unsubscribeFromChannel(pm.getChatChannel(chatID)) })
+
+	testHookAfterEmptyCheck = func(string) {
+		testHookAfterEmptyCheck = nil
+		_ = hub.JoinChat(context.Background(), joining, chatID)
+	}
+	t.Cleanup(func() { testHookAfterEmptyCheck = nil })
+
+	hub.handleClientUnregistration(leaving)
+
+	if !inRoomUnlocked(hub, chatID, joining.ID) {
+		t.Fatal("joiner is not in the room")
+	}
+	if !pm.IsSubscribed(pm.getChatChannel(chatID)) {
+		t.Fatal("joiner is in the room but the chat isn't subscribed")
 	}
 }

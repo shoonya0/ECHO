@@ -113,22 +113,43 @@ func (pm *PubSubManager) UnsubscribeUser(userID bson.ObjectID) {
 	}
 }
 
-// UnsubscribeEmptyChats releases the channels of chats no connection on this
-// instance is in. Each room is checked again under the lock, so a chat someone
-// joined in the meantime keeps its channel.
-func (pm *PubSubManager) UnsubscribeEmptyChats(chatIDs []string) {
+// testHookAfterEmptyCheck, when set by a test, runs between a release's
+// "room is empty" check and its unsubscribe. Always nil in production.
+var testHookAfterEmptyCheck func(chatID string)
+
+// releaseEmptyChats unsubscribes the channels of chats no connection on this
+// instance is in. JoinChat adds a client to the room before it subscribes, so
+// a join racing this release is either seen by the first check (the channel
+// is kept) or subscribes again after the close; the second check re-subscribes
+// for a join that slipped in between (#55). Messages published during that
+// gap are missed (#43). No lock is held across a Redis call.
+func (pm *PubSubManager) releaseEmptyChats(chatIDs []string) {
 	for _, chatID := range chatIDs {
-		pm.hub.Mutex.RLock()
-		_, inUse := pm.hub.ChatClients[chatID]
-		pm.hub.Mutex.RUnlock()
-		if inUse {
+		if pm.roomInUse(chatID) {
 			continue
 		}
+		if testHookAfterEmptyCheck != nil {
+			testHookAfterEmptyCheck(chatID)
+		}
 
-		if err := pm.unsubscribeFromChannel(pm.getChatChannel(chatID)); err != nil {
+		channel := pm.getChatChannel(chatID)
+		if err := pm.unsubscribeFromChannel(channel); err != nil {
 			pm.logger.WithFields(logrus.Fields{"chatID": chatID}).WithError(err).Error("Failed to unsubscribe from chat channel")
 		}
+
+		if pm.roomInUse(chatID) {
+			if err := pm.subscribeToChannel(channel); err != nil {
+				pm.logger.WithFields(logrus.Fields{"chatID": chatID}).WithError(err).Error("Failed to subscribe again to chat channel")
+			}
+		}
 	}
+}
+
+func (pm *PubSubManager) roomInUse(chatID string) bool {
+	pm.hub.Mutex.RLock()
+	defer pm.hub.Mutex.RUnlock()
+	_, inUse := pm.hub.ChatClients[chatID]
+	return inUse
 }
 
 // PublishToChat publishes a message to a chat channel

@@ -144,11 +144,6 @@ func (eh *Hub) handleClientRegistration(client *models.Client) {
 		userChats = []string{}
 	}
 
-	// Subscribe to user and chat channels via pub/sub BEFORE acquiring mutex
-	if err := eh.pubSubManager.SubscribeUserToChannels(client.UserID, userChats); err != nil {
-		eh.logger.WithError(err).Error("Failed to subscribe to channels")
-	}
-
 	eh.Mutex.Lock()
 
 	// Add client to hub
@@ -182,6 +177,12 @@ func (eh *Hub) handleClientRegistration(client *models.Client) {
 	}
 
 	eh.Mutex.Unlock()
+
+	// Subscribe after joining the rooms, never before: a release of a chat's
+	// channel racing this then sees the room in use or is undone (#55).
+	if err := eh.pubSubManager.SubscribeUserToChannels(client.UserID, userChats); err != nil {
+		eh.logger.WithError(err).Error("Failed to subscribe to channels")
+	}
 
 	// Off the hub goroutine, so registrations don't wait on Redis (#22, #76).
 	go eh.checkNewSession(client)
@@ -219,8 +220,7 @@ func (eh *Hub) handleClientUnregistration(client *models.Client) {
 	// slice this replaced, #116).
 	var emptyRooms []string
 	for chatID := range eh.ClientChats[clientID] {
-		removeClientFromRoom(eh.Hub, client, chatID)
-		if _, stillUsed := eh.ChatClients[chatID]; !stillUsed {
+		if removeClientFromRoom(eh.Hub, client, chatID) {
 			emptyRooms = append(emptyRooms, chatID)
 		}
 	}
@@ -238,8 +238,8 @@ func (eh *Hub) handleClientUnregistration(client *models.Client) {
 
 	eh.Mutex.Unlock()
 
-	// Redis calls run after unlocking; the unsubscribe calls take the lock themselves
-	eh.pubSubManager.UnsubscribeEmptyChats(emptyRooms)
+	// Redis calls run after unlocking; the release takes the lock itself
+	eh.pubSubManager.releaseEmptyChats(emptyRooms)
 
 	if lastConnection {
 		eh.pubSubManager.UnsubscribeUser(client.UserID)
@@ -266,24 +266,20 @@ func (eh *Hub) handleClientUnregistration(client *models.Client) {
 func (eh *Hub) JoinChat(ctx context.Context, client *models.Client, chatID string) error {
 	eh.logger.WithFields(logrus.Fields{"clientID": client.ID, "chatID": chatID}).Info("Client joining chat")
 
-	// Check if pub/sub subscription is needed BEFORE acquiring mutex
-	chatChannel := "chat:" + chatID
-	needsSubscription := false
-	if !eh.pubSubManager.IsSubscribed(chatChannel) {
-		needsSubscription = true
-	}
-
-	// Subscribe to chat channel BEFORE acquiring mutex (if needed)
-	if needsSubscription {
-		if err := eh.pubSubManager.subscribeToChannel(chatChannel); err != nil {
-			eh.logger.WithFields(logrus.Fields{"chatID": chatID}).WithError(err).Error("Failed to subscribe to chat channel")
-		}
-	}
-
 	eh.Mutex.Lock()
-	defer eh.Mutex.Unlock()
-
+	// A join handled after the connection closed would put it back in a room
+	// that nothing removes it from again.
+	if _, open := eh.Clients[client.ID]; !open {
+		eh.Mutex.Unlock()
+		return nil
+	}
 	addClientToRoom(eh.Hub, client, chatID)
+	eh.Mutex.Unlock()
+
+	// Subscribe after joining the room, never before (#55): see releaseEmptyChats.
+	if err := eh.pubSubManager.subscribeToChannel(eh.pubSubManager.getChatChannel(chatID)); err != nil {
+		eh.logger.WithFields(logrus.Fields{"chatID": chatID}).WithError(err).Error("Failed to subscribe to chat channel")
+	}
 
 	// Publish join event to chat
 	joinMsg := &models.WebSocketMessage{
@@ -306,17 +302,17 @@ func (eh *Hub) LeaveChat(client *models.Client, chatID string) error {
 	eh.logger.WithFields(logrus.Fields{"clientID": client.ID, "chatID": chatID}).Info("Client leaving chat")
 
 	eh.Mutex.Lock()
-	defer eh.Mutex.Unlock()
 
 	// Only a client in the room may announce a leave, so nobody can spoof one.
 	// A member removed from a group has already left the room (#14), so their
 	// leave gets ErrNotInChat.
 	if _, inRoom := eh.ChatClients[chatID][client.ID]; !inRoom {
+		eh.Mutex.Unlock()
 		return ErrNotInChat
 	}
 
-	// Remove from chat
-	removeClientFromRoom(eh.Hub, client, chatID)
+	emptied := removeClientFromRoom(eh.Hub, client, chatID)
+	eh.Mutex.Unlock()
 
 	// Publish leave event
 	leaveMsg := &models.WebSocketMessage{
@@ -331,7 +327,11 @@ func (eh *Hub) LeaveChat(client *models.Client, chatID string) error {
 		Timestamp: time.Now(),
 	}
 
-	return eh.pubSubManager.PublishToChat(chatID, leaveMsg)
+	err := eh.pubSubManager.PublishToChat(chatID, leaveMsg)
+	if emptied {
+		eh.pubSubManager.releaseEmptyChats([]string{chatID})
+	}
+	return err
 }
 
 // ErrNotInChat means the connection isn't following the chat it tried to leave.
@@ -352,12 +352,15 @@ func addClientToRoom(h *models.Hub, client *models.Client, chatID string) {
 }
 
 // removeClientFromRoom takes a connection out of a chat's room. The user's
-// other connections keep their rooms. The caller holds h.Mutex.
-func removeClientFromRoom(h *models.Hub, client *models.Client, chatID string) {
+// other connections keep their rooms. It reports whether the room is now
+// empty, so the caller can release the chat's channel after unlocking with
+// releaseEmptyChats. The caller holds h.Mutex.
+func removeClientFromRoom(h *models.Hub, client *models.Client, chatID string) (emptied bool) {
 	if chatClients, exists := h.ChatClients[chatID]; exists {
 		delete(chatClients, client.ID)
 		if len(chatClients) == 0 {
 			delete(h.ChatClients, chatID)
+			emptied = true
 		}
 	}
 
@@ -367,6 +370,7 @@ func removeClientFromRoom(h *models.Hub, client *models.Client, chatID string) {
 			delete(h.ClientChats, client.ID)
 		}
 	}
+	return emptied
 }
 
 // userActiveChats lists the chats any of the user's connections on this
