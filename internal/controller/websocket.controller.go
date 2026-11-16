@@ -1066,6 +1066,8 @@ func sendInviteError(client *models.Client, requestID string, err error) {
 		code, message = "PERMISSION_DENIED", "You are not a participant of this chat"
 	case errors.Is(err, services.ErrAlreadyParticipant):
 		code, message = "INVALID_REQUEST", "Users are already in the chat"
+	case errors.Is(err, services.ErrGroupFull):
+		code, message = "GROUP_FULL", "Group is full"
 	case errors.Is(err, services.ErrUserNotFound):
 		code, message = "INVALID_USER_ID", "User not found"
 	}
