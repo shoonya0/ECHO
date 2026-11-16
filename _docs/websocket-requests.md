@@ -190,8 +190,8 @@ Removes people from a group. You must be the group's `owner` or an `admin`.
 list holds only the people who were removed, not those who were skipped (#28). A `chat_updated`
 event goes to the chat.
 
-**Errors:** `INVALID_REQUEST` (also when nobody could be removed), `INVALID_CHAT_ID`,
-`PERMISSION_DENIED`, `REMOVE_FAILED`.
+**Errors:** `INVALID_REQUEST` (also when nobody could be removed, or the chat isn't a
+group), `INVALID_CHAT_ID`, `PERMISSION_DENIED`, `REMOVE_FAILED`.
 
 ## Not built yet
 

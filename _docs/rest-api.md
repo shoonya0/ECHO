@@ -160,8 +160,8 @@ sending codes, and `joined`, are for owners and admins (#30): members `403`, oth
   become `member` with status `pending` and can read and write.
 - Nothing checks `pending` yet, and nobody can accept or decline, so pending members have
   full access (#5). They get no live messages, though (#17).
-- `add-members` returns `403` if you aren't an owner or admin. People already in the group
-  are skipped, so they keep their role. If everyone is already in, it returns `409`.
+- `add-members` returns `403` for members who aren't an owner or admin, `404` if you aren't
+  in the group (#59). People already in are skipped; if everyone is already in, `409`.
 - An invite code is 32 random hex characters (#15); codes made before 2026-11-14 are
   longer and work until they expire. Treat a code as an opaque string.
 - Invite codes last 24 hours. Joining with a code makes you an `accepted` member. The code

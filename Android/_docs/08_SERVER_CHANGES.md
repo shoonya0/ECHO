@@ -9,8 +9,11 @@ what the app should do, and where the details are.
 - `send_message`, `invite_user` and `remove_user` now answer `PERMISSION_DENIED` for a chat
   you aren't in, whether or not it exists. Before, an unknown chat got `INVALID_CHAT_ID` or
   `PERMISSION_CHECK_FAILED`, and `invite_user` to a direct chat got `INVALID_REQUEST`.
-- `INVALID_CHAT_ID` now only means a badly formed chat ID. Treat `PERMISSION_DENIED` on a
-  chat as "not available to you" and drop it from the UI.
+- `INVALID_CHAT_ID` now only means a badly formed chat ID. `remove_user` on a direct chat
+  gets `INVALID_REQUEST`, as `invite_user` does.
+- Don't drop a chat from the UI on `PERMISSION_DENIED`: members get it too, for a missing
+  role, muting or a block. Refresh the chat list instead; a chat you left won't be in it.
+- REST `add-members` returns `404` (was `403`) if you aren't in the group.
 
 Details: [WEBSOCKET_PROTOCOL.md](../../_docs/WEBSOCKET_PROTOCOL.md#error-codes).
 
