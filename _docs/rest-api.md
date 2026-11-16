@@ -147,7 +147,7 @@ Only participants can read a chat. Everyone else gets `404 Chat not found`.
 | `DELETE groups/invites/:inviteID` | Deletes an invite code |
 | `GET groups/invites/:inviteID/joined` | Shows who joined with that code |
 | `POST groups/invites/:inviteID/:userID/send` | Sends a code to someone |
-| `POST groups/join/:inviteCode` | Joins a group with a code |
+| `POST groups/join/:inviteCode` | Joins a group with a code, or accepts if you are a `pending` member (#103) |
 
 `:inviteID` and `:inviteCode` are both the code itself. Creating, listing, deleting and
 sending codes, and `joined`, are for owners and admins (#30): members `403`, others `404`.
@@ -158,8 +158,8 @@ sending codes, and `joined`, are for owners and admins (#30): members `403`, oth
   one invite code.
 - People added when the group is created, or later with `add-members` or `invite_user`,
   become `member` with status `pending` and can read and write.
-- Nothing checks `pending` yet, and nobody can accept or decline, so pending members have
-  full access (#5). They get no live messages, though (#17).
+- Pending members have full access (#5) but no live messages (#17). They accept by joining
+  with a usable code of the group (#103), which clears their invitation. Declining isn't built.
 - `add-members` returns `403` for members who aren't an owner or admin, `404` if you aren't
   in the group (#59). People already in are skipped; if everyone is already in, `409`.
 - An invite code is 32 random hex characters (#15); codes made before 2026-11-14 are
