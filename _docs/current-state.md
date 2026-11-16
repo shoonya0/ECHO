@@ -11,16 +11,15 @@ on `main`. To learn what the product does, read
 and with a link to exactly one feature state.md. Updated by /close-increment and
 /feature-docs update. -->
 
-- **Feature:** none yet · #106 on `fix/106-one-chat-read`: `send_message` and
-  `invite_user` read the chat once, together with the membership check. Done and verified
-  at `4d8b07e` (`verify --full`), code review applied; PR in review
+- **Feature:** none yet · #14 on `fix/14-cut-removed-members-live`: after `remove_user`,
+  the removed members' open connections leave the group's room on every server
 - **#72 on Render (paused 2026-11-15):** `/health` answers `200`, but no chat with a message
   saved before PR #74 (`reactions: null`) is left to react to. Continue later, for example
   by setting `reactions: null` on a test message in Atlas first
-- **Next step:** merge the #106 PR once the user agrees and CI is green. `rest-api.md`,
+- **Next step:** tests first, then the hub change, docs, review, PR. `rest-api.md`,
   `websocket-requests.md` and `Android/_docs/08_SERVER_CHANGES.md` are at their 200-line
   budget: split them (`/feature-docs split`) before the next change that adds to them
-- **Updated:** 2026-11-16 on `fix/106-one-chat-read`
+- **Updated:** 2026-11-16 on `fix/14-cut-removed-members-live`
 
 ## Where things stand
 
@@ -35,6 +34,9 @@ declining a group invite. The full list is in
 
 ## Recently finished
 
+- **#106 (PR #115):** `send_message` and `invite_user` read the chat once, in the same
+  query that checks membership (`services.GetChatForMember`); replies are unchanged.
+  `remove_user` still reads it twice.
 - **#112 (PR #114):** creating a group checks the write that adds it to the creator's chat
   list; if that write fails or finds no user, the new group is removed and the request
   fails (`404` or `500`) before any invitation goes out.
@@ -177,7 +179,7 @@ blocks are stored, and who counts as a member.
 
 ## Known issues and risks
 
-There are 26 open issues. Where each risk sits in the code: [architecture-overview.md](./architecture-overview.md#riskiest-areas).
+There are 25 open issues. Where each risk sits in the code: [architecture-overview.md](./architecture-overview.md#riskiest-areas).
 
 | Area | The problem, in short | Issues |
 |---|---|---|
@@ -187,7 +189,6 @@ There are 26 open issues. Where each risk sits in the code: [architecture-overvi
 | Accounts | Deleting an account leaves old references, emails are case-sensitive, and usernames aren't unique | #35, #36 |
 | Contacts and blocking | Contact lists aren't cut to `limit`, and blocks written during a deploy can be missed | #39, #63 |
 | Online status and privacy | Online status is unreliable, and privacy settings aren't applied | #31, #32 |
-| Request cost | Membership checks read the same chat two or three times per request | #106 |
 | Messages and data | Writes can half-finish, and some lists grow without limit | #37, #42 |
 | Limits and errors | WebSocket limits are per connection, not per user, and `set_typing` still writes to MongoDB; no limits on login and signup | #40 |
 | WebSocket replies and events | Replies and events are inconsistent or leave out details, which affects the Android plan | #48, #50, #51 |
