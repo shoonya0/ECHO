@@ -372,13 +372,16 @@ func CreateGroupChat(ctx context.Context, chatName, description string, particip
 	}
 
 	participants := newGroupParticipants(creator, users)
+	if len(participants) > constants.DefaultMaxGroupParticipants {
+		return nil, fmt.Errorf("%w: %d participants", ErrGroupFull, len(participants))
+	}
 
 	chat := utils.NewChatWithDefaults(creator.ID, string(constants.ChatTypeGroup))
 	chat.Participants = participants
 	chat.Name = chatName
 	chat.Description = description
 	chat.Stats.ParticipantCount = len(participants)
-	chat.Settings.MaxParticipants = 100
+	chat.Settings.MaxParticipants = constants.DefaultMaxGroupParticipants
 
 	// Create invite code
 	invite, ok := utils.NewInviteCodeWithDefaults(time.Now().Add(24 * time.Hour))
@@ -889,7 +892,8 @@ func AddGroupMember(ctx context.Context, userID bson.ObjectID, chatID bson.Objec
 
 	var chat models.Chat
 	err := database.DB.Collection(string(constants.ChatColl)).FindOne(ctx, filter, options.FindOne().SetProjection(bson.M{
-		"participants": 1,
+		"participants":             1,
+		"settings.maxParticipants": 1,
 	})).Decode(&chat)
 	if err != nil {
 		if err == mongo.ErrNoDocuments {
@@ -925,16 +929,20 @@ func AddGroupMember(ctx context.Context, userID bson.ObjectID, chatID bson.Objec
 	if len(users) == 0 {
 		return fmt.Errorf("%w", ErrUserNotFound)
 	}
+	if len(chat.Participants)+len(users) > groupSizeLimit(chat.Settings.MaxParticipants) {
+		return fmt.Errorf("%w", ErrGroupFull)
+	}
 
-	// Re-check the acting user's role and the targets' absence in the update
-	// itself, so a concurrent demotion or add between the read and the write
-	// can't be overridden.
+	// Re-check the acting user's role, the targets' absence and the size limit
+	// in the update itself, so a concurrent demotion or add between the read
+	// and the write can't be overridden.
 	updateFilter := bson.M{
 		"_id":      chatID,
 		"chatType": string(constants.ChatTypeGroup),
 		"participants." + userID.Hex() + ".role": bson.M{"$in": []string{
 			string(constants.ChatRoleOwner), string(constants.ChatRoleAdmin),
 		}},
+		"$expr": roomForParticipants(len(users)),
 	}
 
 	// Build per-participant $set entries (merge, not replace)
@@ -966,10 +974,48 @@ func AddGroupMember(ctx context.Context, userID bson.ObjectID, chatID bson.Objec
 		return fmt.Errorf("failed to update chat: %w", err)
 	}
 	if res.MatchedCount == 0 {
+		full, err := groupLacksRoom(ctx, chatID, len(users))
+		if err != nil {
+			return err
+		}
+		if full {
+			return fmt.Errorf("%w: filled while adding members", ErrGroupFull)
+		}
 		return fmt.Errorf("%w: chat changed while adding members", ErrPermissionDenied)
 	}
 
 	return nil
+}
+
+// groupSizeLimit is a group's size limit: the stored settings.maxParticipants, or
+// the default for groups that store none (#68).
+func groupSizeLimit(stored int) int {
+	if stored > 0 {
+		return stored
+	}
+	return constants.DefaultMaxGroupParticipants
+}
+
+// roomForParticipants is an update-filter $expr that matches a group only if n more
+// participants fit within its size limit (#68). It counts the participants map
+// itself, not stats.participantCount, so a drifted count can't let a group grow.
+func roomForParticipants(n int) bson.M {
+	stored := bson.M{"$ifNull": bson.A{"$settings.maxParticipants", 0}}
+	limit := bson.M{"$cond": bson.A{bson.M{"$gt": bson.A{stored, 0}}, stored, constants.DefaultMaxGroupParticipants}}
+	size := bson.M{"$size": bson.M{"$objectToArray": bson.M{"$ifNull": bson.A{"$participants", bson.M{}}}}}
+	return bson.M{"$lte": bson.A{bson.M{"$add": bson.A{size, n}}, limit}}
+}
+
+// groupLacksRoom reports whether the group chatID has no room for n more
+// participants. It explains an add or join whose update matched nothing.
+func groupLacksRoom(ctx context.Context, chatID bson.ObjectID, n int) (bool, error) {
+	count, err := database.DB.Collection(string(constants.ChatColl)).CountDocuments(ctx,
+		bson.M{"_id": chatID, "$expr": roomForParticipants(n)},
+	)
+	if err != nil {
+		return false, fmt.Errorf("failed to check group size: %w", err)
+	}
+	return count == 0, nil
 }
 
 // RemoveGroupMember removes one or more participants from a group chat.
@@ -1346,24 +1392,15 @@ func JoinGroupByInvite(ctx context.Context, userID bson.ObjectID, inviteID strin
 		"$inc": bson.M{"stats.participantCount": 1},
 	}
 
-	res, err := database.DB.Collection(string(constants.ChatColl)).UpdateOne(ctx,
-		bson.M{
-			"_id":                    chatObjectID,
-			"chatType":               string(constants.ChatTypeGroup),
-			participantField(userID): bson.M{"$exists": false},
-			"inviteCode": bson.M{"$elemMatch": bson.M{
-				"inviteCode":  inviteID,
-				"deleted":     bson.M{"$ne": true},
-				"expiredDate": bson.M{"$gt": time.Now()},
-			}},
-		},
-		updateInviteCodeUserIDs,
-	)
+	joinFilter := usableInviteFilter(chatObjectID, inviteID)
+	joinFilter[participantField(userID)] = bson.M{"$exists": false}
+	joinFilter["$expr"] = roomForParticipants(1)
+	res, err := database.DB.Collection(string(constants.ChatColl)).UpdateOne(ctx, joinFilter, updateInviteCodeUserIDs)
 	if err != nil {
 		return fmt.Errorf("failed to update invite code user IDs: %w", err)
 	}
 	if res.MatchedCount == 0 {
-		return joinNotApplied(ctx, chatObjectID, userID)
+		return joinNotApplied(ctx, chatObjectID, userID, inviteID)
 	}
 
 	// Add chat ref to user, and drop their invitation for this code, which is
@@ -1385,18 +1422,41 @@ func JoinGroupByInvite(ctx context.Context, userID bson.ObjectID, inviteID strin
 	return nil
 }
 
+// usableInviteFilter matches the group chatID while it stores inviteID as a code
+// that is neither deleted nor expired.
+func usableInviteFilter(chatID bson.ObjectID, inviteID string) bson.M {
+	return bson.M{
+		"_id":      chatID,
+		"chatType": string(constants.ChatTypeGroup),
+		"inviteCode": bson.M{"$elemMatch": bson.M{
+			"inviteCode":  inviteID,
+			"deleted":     bson.M{"$ne": true},
+			"expiredDate": bson.M{"$gt": time.Now()},
+		}},
+	}
+}
+
 // joinNotApplied picks the error for a join whose update matched nothing:
-// ErrAlreadyParticipant if userID is already in the chat, else ErrInvalidInvite.
+// ErrAlreadyParticipant if userID is already in the chat, ErrGroupFull if the code
+// is usable but the group has no room (#68), else ErrInvalidInvite.
 // A member can get here because an earlier join stopped after adding them to
 // participants but before adding the chat to their chats list, which the hub
 // needs to deliver live messages. A retry would never get past this point, so
 // the missing entry is added here. An existing entry keeps its unread count.
-func joinNotApplied(ctx context.Context, chatID, userID bson.ObjectID) error {
-	count, err := database.DB.Collection(string(constants.ChatColl)).CountDocuments(ctx, chatMemberFilter(chatID, userID))
+func joinNotApplied(ctx context.Context, chatID, userID bson.ObjectID, inviteID string) error {
+	chats := database.DB.Collection(string(constants.ChatColl))
+	count, err := chats.CountDocuments(ctx, chatMemberFilter(chatID, userID))
 	if err != nil {
 		return fmt.Errorf("failed to check if user is in the chat: %w", err)
 	}
 	if count == 0 {
+		usable, err := chats.CountDocuments(ctx, usableInviteFilter(chatID, inviteID))
+		if err != nil {
+			return fmt.Errorf("failed to check invite: %w", err)
+		}
+		if usable > 0 {
+			return fmt.Errorf("%w", ErrGroupFull)
+		}
 		return fmt.Errorf("%w", ErrInvalidInvite)
 	}
 

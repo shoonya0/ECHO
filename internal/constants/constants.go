@@ -57,6 +57,10 @@ const (
 	ChatRoleMember ChatRole = "member"
 )
 
+// DefaultMaxGroupParticipants is the size limit a new group stores in
+// settings.maxParticipants, and the one used for groups that store none (#68).
+const DefaultMaxGroupParticipants = 100
+
 // Context keys.
 type ContextKey string
 type UserData string
