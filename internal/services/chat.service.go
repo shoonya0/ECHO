@@ -1423,15 +1423,24 @@ func JoinGroupByInvite(ctx context.Context, userID bson.ObjectID, inviteID strin
 		return fmt.Errorf("failed to update invite code user IDs: %w", err)
 	}
 	if res.MatchedCount == 0 {
-		return joinNotApplied(ctx, chatObjectID, userID, inviteID, now)
+		// A pending member (added by an owner or admin, #5) accepts by joining
+		// with a usable code (#103).
+		accepted, err := acceptPendingMember(ctx, chatObjectID, userID, inviteID, now)
+		if err != nil {
+			return err
+		}
+		if !accepted {
+			return joinNotApplied(ctx, chatObjectID, userID, inviteID, now)
+		}
 	}
 
 	// Add chat ref to user, and drop their invitation for this code, which is
-	// now used (#30)
+	// now used (#30). $max adds a missing entry as 0 and keeps an unread count
+	// that is already there.
 	userRes, err := database.DB.Collection(string(constants.UserColl)).UpdateOne(ctx,
 		bson.M{"_id": userID},
 		bson.M{
-			"$set":  bson.M{"chats." + chatObjectID.Hex(): 0},
+			"$max":  bson.M{"chats." + chatObjectID.Hex(): 0},
 			"$pull": bson.M{"chatInvitations": bson.M{"token": inviteID}},
 		},
 	)
@@ -1443,6 +1452,29 @@ func JoinGroupByInvite(ctx context.Context, userID bson.ObjectID, inviteID strin
 	}
 
 	return nil
+}
+
+// acceptPendingMember makes userID, a pending member of the group chatID, an
+// accepted one, if inviteID is a usable code of that group at now (#103). The
+// member already counts toward the size limit and participantCount, so neither
+// changes. It reports whether the member was accepted.
+func acceptPendingMember(ctx context.Context, chatID, userID bson.ObjectID, inviteID string, now time.Time) (bool, error) {
+	filter := usableInviteFilter(chatID, inviteID, now)
+	filter[participantField(userID)+".requestStatus"] = string(constants.StatusPending)
+	key := participantField(userID)
+	res, err := database.DB.Collection(string(constants.ChatColl)).UpdateOne(ctx, filter, bson.M{
+		"$set": bson.M{
+			key + ".requestStatus": string(constants.StatusAccepted),
+			key + ".joinedAt":      now,
+			key + ".updatedAt":     now,
+			"updatedAt":            now,
+		},
+		"$addToSet": bson.M{"inviteCode.$.userIDs": userID},
+	})
+	if err != nil {
+		return false, fmt.Errorf("failed to accept pending member: %w", err)
+	}
+	return res.MatchedCount == 1, nil
 }
 
 // usableInviteFilter matches the group chatID while it stores inviteID as a code
@@ -1460,7 +1492,8 @@ func usableInviteFilter(chatID bson.ObjectID, inviteID string, now time.Time) bs
 }
 
 // joinNotApplied picks the error for a join whose update matched nothing:
-// ErrAlreadyParticipant if userID is already in the chat, ErrInvalidInvite if the
+// ErrAlreadyParticipant if userID is already in the chat (ErrInvalidInvite if
+// they are still pending, since acceptPendingMember refused the code), ErrInvalidInvite if the
 // code isn't usable at now (the time the join's filter used), ErrGroupFull if the
 // group has no room (#68), and otherwise a plain error: membership changed during
 // the join, and a retry may work.
@@ -1473,6 +1506,17 @@ func joinNotApplied(ctx context.Context, chatID, userID bson.ObjectID, inviteID 
 	count, err := chats.CountDocuments(ctx, chatMemberFilter(chatID, userID))
 	if err != nil {
 		return fmt.Errorf("failed to check if user is in the chat: %w", err)
+	}
+	if count > 0 {
+		pending, err := chats.CountDocuments(ctx, bson.M{
+			"_id": chatID, participantField(userID) + ".requestStatus": string(constants.StatusPending),
+		})
+		if err != nil {
+			return fmt.Errorf("failed to check if user is pending: %w", err)
+		}
+		if pending > 0 {
+			return fmt.Errorf("%w", ErrInvalidInvite)
+		}
 	}
 	if count == 0 {
 		usable, err := chats.CountDocuments(ctx, usableInviteFilter(chatID, inviteID, now))
