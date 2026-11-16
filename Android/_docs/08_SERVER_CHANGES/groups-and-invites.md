@@ -57,5 +57,8 @@ Details: [rest-api.md](../../../_docs/rest-api.md#groups).
 - Listing yourself among the users no longer takes the group off your own chat list.
 - The reply's `removedUsers` now lists only the people removed. Before, it echoed every ID
   sent, including you and people not in the group; update the member list from it.
+- A removed member gets the `chat_updated` event and then no more live events from the
+  group, on any open connection (#14). When it arrives, the app can't tell from the event
+  alone who was removed: reload the group, and if it now fails, take it off the chat list.
 
 Details: [websocket-requests.md](../../../_docs/websocket-requests.md#remove_user).

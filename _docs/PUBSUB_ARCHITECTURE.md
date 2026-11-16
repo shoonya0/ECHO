@@ -76,7 +76,7 @@ call `BroadcastToChat`, which calls the hub's `PublishToChat`.
 
 | Channel | Meant for | Used today? |
 |---|---|---|
-| `chat:<chatID>` | All events of one chat | **Yes.** This is the main path. |
+| `chat:<chatID>` | All events of one chat | **Yes.** This is the main path. It also carries `internal.members_removed` after `remove_user`: each server takes those users' connections out of the room, and never forwards it. Being on the same channel keeps its place after the `chat_updated` (#14). |
 | `presence:global` | Online and offline updates | Yes, but unreliable (#31) |
 | `user:<userID>` | Messages for one person | No. Servers listen, but nothing publishes to it. |
 | `system:global` | Announcements to everyone | No. Servers listen, but nothing publishes to it. |
@@ -153,7 +153,7 @@ stats token. See
 | #22 | Slow MongoDB or Redis calls hold up all connects and disconnects |
 | #54 | A client that disconnects before it is registered stays registered until cleanup |
 | #55 | `JoinChat` can lose its Redis subscription to a disconnect at the same time; fix it with #20 |
-| #14, #17 | Who gets live messages doesn't match who is in the group |
+| #17 | Pending group members don't get live messages |
 | #31 | Online status is unreliable |
 | #40 | No size limit or rate limit on incoming messages |
 | #43 | Apps can't detect or recover missed live messages |
