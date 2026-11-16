@@ -9,7 +9,7 @@ what the app should do, and where the details are.
 - A group holds at most 100 people. A create, add or join by code past that adds nobody:
   REST `409` `Group is full`, WebSocket `GROUP_FULL`. Show "group is full"; don't retry.
 - `stats.participantCount` is now correct, but counts pending members (#5) and deleted accounts (#35).
-- A `pending` member accepts by joining with a code (`200`; the invite is cleared). No decline yet.
+- A `pending` member accepts by joining with a code (`200`, invites cleared); then reconnect for live messages.
 
 Details: [rest-api.md](../../_docs/rest-api.md#groups).
 
