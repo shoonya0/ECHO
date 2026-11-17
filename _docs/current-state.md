@@ -11,16 +11,15 @@ on `main`. To learn what the product does, read
 and with a link to exactly one feature state.md. Updated by /close-increment and
 /feature-docs update. -->
 
-- **Feature:** none · **#20 + #55** on `fix/20-hub-subscription-leak`: rooms are tracked
-  per connection (`ClientChats`); every room removal releases unused channels, and a join
-  racing a release keeps its subscription. Verified (`verify.mjs --full`; live: no channel
-  left after the last socket closes, `main` left 3) at `597fe14`; code review applied
+- **Feature:** none · **#54** on `fix/54-dead-client-registration`: a disconnect the
+  hub handles before the connection's registration closes its send queue, and the
+  registration skips a closed connection. Verified (`verify.mjs --full`)
 - **#72 on Render (paused 2026-11-15):** `/health` answers `200`, but no chat with a message
   saved before PR #74 (`reactions: null`) is left to react to. Continue later, for example
   by setting `reactions: null` on a test message in Atlas first
-- **Next step:** push and open the PR (`Fixes #20`, `Fixes #55`). Split `rest-api.md`, `websocket-requests.md`
+- **Next step:** code review, then push and open the PR (`Fixes #54`). Split `rest-api.md`, `websocket-requests.md`
   before adding to them
-- **Updated:** 2026-11-16 on `fix/20-hub-subscription-leak`
+- **Updated:** 2026-11-17 on `fix/54-dead-client-registration`
 
 ## Where things stand
 
@@ -35,6 +34,10 @@ declining a group invite. The full list is in
 
 ## Recently finished
 
+- **#20 + #55 (PR #120):** rooms are tracked per connection (`ClientChats`). Every room
+  removal (disconnect, `leave_chat`, `remove_user`) releases the chat channels left
+  unused, a user's last connection releases `user:<id>`, and a join racing a release keeps
+  its subscription ([pub/sub](./PUBSUB_ARCHITECTURE.md#connecting-and-disconnecting)).
 - **#116 (PR #119):** a user's last connection closing leaves every chat and unsubscribes
   each of their chat channels (the loop used to skip some).
 - **#14 (PR #118):** a member removed with `remove_user` gets the `chat_updated` and then
@@ -94,13 +97,7 @@ declining a group invite. The full list is in
 - **#38 (PR #95):** a contact request or direct chat with yourself gets `400`
   (`INVALID_USER_ID` from `join_chat`) instead of storing broken data
   ([app changes](../Android/_docs/08_SERVER_CHANGES/README.md)).
-- **#28 (PR #94):** only the owner can remove the owner (also when the owner is only
-  stored as `ownerId`); a request naming the owner removes nobody. Listing yourself no
-  longer drops the group from your chat list, `removedUsers` lists only the people removed,
-  and the role is re-checked in the write ([requests](./websocket-requests.md#remove_user),
-  [app changes](../Android/_docs/08_SERVER_CHANGES/README.md)). The code review's other points
-  (a race reported as `PERMISSION_DENIED`, the second write not checked, #37) were left.
-Older work, from #15 (PR #90) back: [finished-work.md](./finished-work.md).
+Older work, from #28 (PR #94) back: [finished-work.md](./finished-work.md).
 
 ## How to build, run, test
 
@@ -139,11 +136,11 @@ blocks are stored, and who counts as a member.
 
 ## Known issues and risks
 
-There are 23 open issues once #20 and #55 close. Where each risk sits in the code: [architecture-overview.md](./architecture-overview.md#riskiest-areas).
+There are 22 open issues once #54 closes. Where each risk sits in the code: [architecture-overview.md](./architecture-overview.md#riskiest-areas).
 
 | Area | The problem, in short | Issues |
 |---|---|---|
-| Live connections | The server can leak resources or stall under load, missed live messages can't be detected, and open connections miss new chats, and a restart of a running hub doubles its loops | #21, #22, #43, #49, #54, #79, #117 |
+| Live connections | The server can leak resources or stall under load, missed live messages can't be detected, and open connections miss new chats, and a restart of a running hub doubles its loops | #21, #22, #43, #49, #79, #117 |
 | Groups | Members are never asked to accept, pending members get no live messages, and the participant count is maintained by hand | #5, #17, #110 |
 | Invite codes | Entries left by forged joins before #9 was fixed are still stored | #69 |
 | Accounts | Deleting an account leaves old references, emails are case-sensitive, and usernames aren't unique | #35, #36 |
