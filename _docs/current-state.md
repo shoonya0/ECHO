@@ -11,17 +11,18 @@ on `main`. To learn what the product does, read
 and with a link to exactly one feature state.md. Updated by /close-increment and
 /feature-docs update. -->
 
-- **Feature:** none · no branch open. Merged today: #117 (PR #128), #39 (PR #129), #49
-  (PR #130), after the realtime fixes #54, #122, #40 (typing), #123, #124
+- **Feature:** none · **#51** on `fix/51-message-length-characters`: `content` is limited to
+  4000 characters (code points), not bytes ([decided](./decisions.md#how-the-message-length-limit-counts-51)).
+  Verified (`verify.mjs --full` with `TEST_DB_REQUIRED=1`; the Hindi and emoji cases fail
+  on the old byte check). Merged today before it: #117, #39, #49 and the realtime fixes
 - **#72 on Render (paused 2026-11-15):** `/health` answers `200`, but no chat with a message
   saved before PR #74 (`reactions: null`) is left to react to. Continue later, for example
   by setting `reactions: null` on a test message in Atlas first
-- **Next step:** commit this state as the first commit of the next branch. Candidates:
-  #51 (characters or bytes: needs a decision), #48 (`join_chat` ignores `chatId`), #50
-  (live events lack sender details). Two issues wait for a yes: `users/suggestions`
-  unbounded `page`, `CreateDirectChat` ignoring the `MatchedCount` of its `chats` update.
-  Split `rest-api.md`, `websocket-requests.md` (199 lines) before adding to them
-- **Updated:** 2026-11-17 on `main` at `c083ad6` (uncommitted)
+- **Next step:** PR for #51; ask before merging. After it: #131 (`users/suggestions`
+  unbounded `page`), #132 (`CreateDirectChat` ignores `MatchedCount`), #48 (`join_chat`
+  ignores `chatId`), #50 (live events lack sender details). Split `rest-api.md`,
+  `websocket-requests.md` (199 lines) before adding to them
+- **Updated:** 2026-11-17 on `fix/51-message-length-characters` at `240a462`
 
 ## Where things stand
 
@@ -146,7 +147,7 @@ name.
 ## Open decisions
 
 None right now. What has been decided, and what each choice unblocks, is in
-[decisions.md](./decisions.md): invite permissions (#30), accepting a group invite (#103, #5), membership in `participants`
+[decisions.md](./decisions.md): invite permissions (#30), the message length limit (#51), accepting a group invite (#103, #5), membership in `participants`
 only (#14, #17), soft-deleting accounts (#35), transactions on a replica set (#37), how
 blocks are stored, and who counts as a member.
 

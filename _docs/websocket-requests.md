@@ -31,7 +31,7 @@ Sends a message to a chat you are in.
 | Field | Rule |
 |---|---|
 | `chatId` | Required. You must be a participant of the chat, and not on either side of a block in a direct chat (see **Blocks** at the top). |
-| `content` | Required, even for image or file messages. Up to 4000 bytes. Emoji and non-English letters use more than one byte each, so the limit in characters can be lower (#51). |
+| `content` | Required, even for image or file messages. Up to 4000 characters (#51), counted as Unicode code points, not bytes: a Hindi letter or a plain emoji is one; a flag or skin-tone emoji is several. |
 | `messageType` | `text` (the default), `image`, `file`, `audio` or `video` |
 | `attachments` | Up to 10. Each needs `url` and `originalName`, and `size` can be up to 50 MB. ECHO stores these details only. The file itself must be hosted somewhere else. |
 | `mentions` | Up to 20 user IDs |

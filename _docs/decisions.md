@@ -11,6 +11,12 @@ send one to a user, delete one, or list them. The list shows every code, with de
 expired ones marked. Everyone else in the group, pending members included, is refused.
 `settings.allowInvites` doesn't widen this.
 
+## How the message length limit counts (#51)
+
+Decided on 2026-11-17. `content` may hold 4000 characters, counted as Unicode code points,
+not bytes, so the limit doesn't shrink for non-Latin text. 4000 code points are at most
+16000 bytes, which fits the 64 KiB frame limit (#40) even fully JSON-escaped.
+
 ## How a pending member accepts (#103, #5)
 
 Decided on 2026-11-16. For now a `pending` member accepts by joining with any usable code

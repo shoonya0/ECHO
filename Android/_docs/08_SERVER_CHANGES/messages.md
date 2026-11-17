@@ -2,6 +2,14 @@
 
 Part of [server changes the app must handle](./README.md).
 
+## The 4000 limit counts characters (#51)
+
+- `send_message` `content` may hold 4000 characters (Unicode code points), not 4000
+  bytes. Before, text in Hindi or emoji was refused at about 1300 to 2000 characters.
+- Count the same way in the message box: Kotlin `text.codePointCount(0, text.length)`,
+  not `text.length` (UTF-16 units count an emoji as 2). Over the limit the server answers
+  `INVALID_CONTENT` ([details](../../../_docs/websocket-requests.md)).
+
 ## Reactions count each user once (#25)
 
 - `add_reaction` with an emoji you already reacted with, or `remove_reaction` with one you
