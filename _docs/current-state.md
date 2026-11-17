@@ -1,6 +1,6 @@
 # ECHO: current state
 
-A one-page snapshot of where the project stands. Last checked on 2026-11-17 at `5e8a1cb`
+A one-page snapshot of where the project stands. Last checked on 2026-11-17 at `ce87d16`
 on `main`. To learn what the product does, read
 [product-overview.md](./product-overview.md). For the code, read
 [architecture-overview.md](./architecture-overview.md).
@@ -11,17 +11,17 @@ on `main`. To learn what the product does, read
 and with a link to exactly one feature state.md. Updated by /close-increment and
 /feature-docs update. -->
 
-- **Feature:** none · **#131** on `fix/131-suggestions-page-overflow`: `GET users/suggestions`
-  takes `page` through the shared `parsePage` (1 to `services.MaxPage` = 10000, clamped), and
-  the service refuses an out-of-range page and multiplies the skip in `int64`. Verified
-  (`verify.mjs --full` with `TEST_DB_REQUIRED=1`; `page=MaxInt64` returned `500` before)
+- **Feature:** none · **#132** on `fix/132-direct-chat-matched-count`: a new direct chat is
+  kept only when both users got their `chats` entry (else `ErrUserNotFound`, chat and entries
+  removed), and opening an existing one writes back a missing entry. Verified
+  (`verify.mjs --full` with `TEST_DB_REQUIRED=1`; both test cases fail on the old code)
 - **#72 on Render (paused 2026-11-15):** `/health` answers `200`, but no chat with a message
   saved before PR #74 (`reactions: null`) is left to react to. Continue later, for example
   by setting `reactions: null` on a test message in Atlas first
-- **Next step:** PR for #131; ask before merging. After it: #132 (`CreateDirectChat` ignores `MatchedCount`), #48 (`join_chat`
-  ignores `chatId`), #50 (live events lack sender details). Split `rest-api.md`,
+- **Next step:** PR for #132; ask before merging. After it: #48 (`join_chat` ignores
+  `chatId`), #50 (live events lack sender details). Split `rest-api.md`,
   `websocket-requests.md` (199 lines) before adding to them
-- **Updated:** 2026-11-17 on `fix/131-suggestions-page-overflow` from `5e8a1cb`
+- **Updated:** 2026-11-17 on `fix/132-direct-chat-matched-count` from `ce87d16`
 
 ## Where things stand
 
@@ -36,6 +36,9 @@ declining a group invite. The full list is in
 
 ## Recently finished
 
+- **#131 (PR #134):** `GET users/suggestions` takes `page` 1 to 10000 (clamped, shared
+  `services.MaxPage` with the contact lists), so a huge page no longer overflows the skip
+  into a `500` ([REST](./rest-api.md#finding-people)).
 - **#51 (PR #133):** a message `content` is limited to 4000 characters (code points), not
   bytes, so Hindi or emoji text is no longer cut at about a third
   ([decided](./decisions.md#how-the-message-length-limit-counts-51),
