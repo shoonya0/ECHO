@@ -175,22 +175,33 @@ func ChatMembers(ctx context.Context, chatIDs []bson.ObjectID) (map[string]map[s
 		return members, nil
 	}
 
-	opts := options.Find().SetProjection(bson.M{"participants": 1})
-	cursor, err := database.DB.Collection(string(constants.ChatColl)).Find(ctx, bson.M{"_id": bson.M{"$in": chatIDs}}, opts)
+	// Only the participants map's keys are sent back, as strings: the entries
+	// can be large, and one that doesn't decode must not fail the whole batch.
+	pipeline := mongo.Pipeline{
+		{{Key: "$match", Value: bson.M{"_id": bson.M{"$in": chatIDs}}}},
+		{{Key: "$project", Value: bson.M{"members": bson.M{"$map": bson.M{
+			"input": bson.M{"$objectToArray": bson.M{"$ifNull": bson.A{"$participants", bson.M{}}}},
+			"in":    "$$this.k",
+		}}}}},
+	}
+	cursor, err := database.DB.Collection(string(constants.ChatColl)).Aggregate(ctx, pipeline)
 	if err != nil {
 		return nil, fmt.Errorf("failed to read chat members: %w", err)
 	}
-	var chats []models.Chat
+	var chats []struct {
+		ID      bson.ObjectID `bson:"_id"`
+		Members []string      `bson:"members"`
+	}
 	if err := cursor.All(ctx, &chats); err != nil {
 		return nil, fmt.Errorf("failed to decode chat members: %w", err)
 	}
 
 	for _, chat := range chats {
-		users := make(map[string]struct{}, len(chat.Participants))
-		for userID := range chat.Participants {
-			users[userID.Hex()] = struct{}{}
+		users := make(map[string]struct{}, len(chat.Members))
+		for _, userID := range chat.Members {
+			users[userID] = struct{}{}
 		}
-		members[chat.ChatID.Hex()] = users
+		members[chat.ID.Hex()] = users
 	}
 	return members, nil
 }

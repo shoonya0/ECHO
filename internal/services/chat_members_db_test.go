@@ -15,7 +15,7 @@ func TestChatMembers(t *testing.T) {
 	ctx := useTestDB(t)
 
 	alice, bob, carol := bson.NewObjectID(), bson.NewObjectID(), bson.NewObjectID()
-	group, direct, unknown := bson.NewObjectID(), bson.NewObjectID(), bson.NewObjectID()
+	group, direct, empty, unknown := bson.NewObjectID(), bson.NewObjectID(), bson.NewObjectID(), bson.NewObjectID()
 
 	chats := database.DB.Collection(string(constants.ChatColl))
 	if _, err := chats.InsertMany(ctx, []any{
@@ -23,12 +23,14 @@ func TestChatMembers(t *testing.T) {
 			alice.Hex(): bson.M{"status": "accepted"},
 			bob.Hex():   bson.M{"status": "pending"},
 		}},
-		bson.M{"_id": direct, "participants": bson.M{carol.Hex(): bson.M{"status": "accepted"}}},
+		// An entry that doesn't decode into ParticipantEmbed: only keys are read.
+		bson.M{"_id": direct, "participants": bson.M{carol.Hex(): "not-an-embed"}},
+		bson.M{"_id": empty, "participants": nil},
 	}); err != nil {
 		t.Fatalf("insert chats: %v", err)
 	}
 
-	members, err := ChatMembers(ctx, []bson.ObjectID{group, direct, unknown})
+	members, err := ChatMembers(ctx, []bson.ObjectID{group, direct, empty, unknown})
 	if err != nil {
 		t.Fatalf("ChatMembers: %v", err)
 	}
@@ -36,6 +38,7 @@ func TestChatMembers(t *testing.T) {
 	want := map[string][]string{
 		group.Hex():  {alice.Hex(), bob.Hex()},
 		direct.Hex(): {carol.Hex()},
+		empty.Hex():  {},
 	}
 	if len(members) != len(want) {
 		t.Fatalf("got %d chats, want %d (an unknown chat has no entry): %v", len(members), len(want), members)
@@ -51,7 +54,7 @@ func TestChatMembers(t *testing.T) {
 		}
 	}
 
-	if empty, err := ChatMembers(ctx, nil); err != nil || len(empty) != 0 {
-		t.Errorf("no chat IDs: got %v, %v; want an empty result", empty, err)
+	if none, err := ChatMembers(ctx, nil); err != nil || len(none) != 0 {
+		t.Errorf("no chat IDs: got %v, %v; want an empty result", none, err)
 	}
 }
