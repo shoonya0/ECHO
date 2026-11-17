@@ -534,9 +534,11 @@ func TestJoinDuringChannelReleaseKeepsSubscription(t *testing.T) {
 	}
 	t.Cleanup(func() { _ = pm.unsubscribeFromChannel(pm.getChatChannel(chatID)) })
 
+	// Set before anything runs and never changed, so no goroutine races it
+	// (#124). The join releases again itself, which must not join again.
+	var once sync.Once
 	pm.afterEmptyCheck = func(string) {
-		pm.afterEmptyCheck = nil
-		_ = hub.JoinChat(context.Background(), joining, chatID)
+		once.Do(func() { _ = hub.JoinChat(context.Background(), joining, chatID) })
 	}
 
 	hub.handleClientUnregistration(leaving)
@@ -566,8 +568,14 @@ func TestRemovalDuringJoinReleasesChannel(t *testing.T) {
 	addClient(hub, joining)
 	t.Cleanup(func() { _ = pm.unsubscribeFromChannel(pm.getChatChannel(chatID)) })
 
+	// Another connection watches the chat, to see whether a join is announced.
+	observer := redisClient.Subscribe(context.Background(), pm.getChatChannel(chatID))
+	t.Cleanup(func() { _ = observer.Close() })
+	if _, err := observer.Receive(context.Background()); err != nil {
+		t.Fatalf("observer subscribe: %v", err)
+	}
+
 	pm.afterRoomJoin = func(string) {
-		pm.afterRoomJoin = nil
 		// What RemoveMembersFromChat does when its publish fails.
 		if removeUsersFromRoom(hub.Hub, chatID, []string{joining.UserID.Hex()}) {
 			pm.releaseEmptyChats([]string{chatID})
@@ -581,6 +589,43 @@ func TestRemovalDuringJoinReleasesChannel(t *testing.T) {
 	}
 	if pm.IsSubscribed(pm.getChatChannel(chatID)) {
 		t.Fatal("chat nobody on this instance is in is still subscribed")
+	}
+	if msg, err := observer.ReceiveTimeout(context.Background(), 200*time.Millisecond); err == nil {
+		t.Fatalf("a join was announced for a removed member: %v", msg)
+	}
+}
+
+// The usual removal path: a members-removed message read from the chat's
+// channel releases it on another goroutine, possibly while the join releases
+// too (#123).
+func TestAsyncRemovalDuringJoinReleasesChannel(t *testing.T) {
+	redisClient := testutil.UseTestRedis(t)
+	hub := newTestHub(t)
+	hub.redisClient = redisClient
+	hub.pubSubManager = NewPubSubManager(redisClient, hub.Hub, hub.logger, "test")
+	pm := hub.pubSubManager
+	t.Cleanup(pm.cancel)
+
+	chatID := bson.NewObjectID().Hex()
+	joining := newTestClient("joining", bson.NewObjectID())
+	addClient(hub, joining)
+	t.Cleanup(func() { _ = pm.unsubscribeFromChannel(pm.getChatChannel(chatID)) })
+
+	pm.afterRoomJoin = func(string) {
+		pm.handleMembersRemoved(chatID, &models.WebSocketMessage{Data: []any{joining.UserID.Hex()}})
+	}
+
+	_ = hub.JoinChat(context.Background(), joining, chatID)
+
+	deadline := time.Now().Add(2 * time.Second)
+	for pm.IsSubscribed(pm.getChatChannel(chatID)) && time.Now().Before(deadline) {
+		time.Sleep(10 * time.Millisecond)
+	}
+	if pm.IsSubscribed(pm.getChatChannel(chatID)) {
+		t.Fatal("chat nobody on this instance is in is still subscribed")
+	}
+	if inRoomUnlocked(hub, chatID, joining.ID) {
+		t.Fatal("removed member is still in the room")
 	}
 }
 

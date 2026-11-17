@@ -208,20 +208,11 @@ func (eh *Hub) handleClientRegistration(client *models.Client) {
 
 	eh.Mutex.Unlock()
 
-	if hook := eh.pubSubManager.afterRoomJoin; hook != nil {
-		for _, chatID := range userChats {
-			hook(chatID)
-		}
-	}
-
-	// Subscribe after joining the rooms, never before: a release of a chat's
-	// channel racing this then sees the room in use or is undone (#55).
+	// Subscribe after joining the rooms, never before (#55, #123): see
+	// subscribeChats.
 	if err := eh.pubSubManager.SubscribeUserToChannels(client.UserID, userChats); err != nil {
 		eh.logger.WithError(err).Error("Failed to subscribe to channels")
 	}
-	// A removal that emptied a room before the subscribe had nothing to
-	// release; release such channels now (#123).
-	eh.pubSubManager.releaseEmptyChats(userChats)
 
 	// Off the hub goroutine, so registrations don't wait on Redis (#22, #76).
 	go eh.checkNewSession(client)
@@ -324,17 +315,16 @@ func (eh *Hub) JoinChat(ctx context.Context, client *models.Client, chatID strin
 	addClientToRoom(eh.Hub, client, chatID)
 	eh.Mutex.Unlock()
 
-	if eh.pubSubManager.afterRoomJoin != nil {
-		eh.pubSubManager.afterRoomJoin(chatID)
-	}
+	eh.pubSubManager.subscribeChats([]string{chatID})
 
-	// Subscribe after joining the room, never before (#55): see releaseEmptyChats.
-	if err := eh.pubSubManager.subscribeToChannel(eh.pubSubManager.getChatChannel(chatID)); err != nil {
-		eh.logger.WithFields(logrus.Fields{"chatID": chatID}).WithError(err).Error("Failed to subscribe to chat channel")
+	// A removal during the join took the connection out again: announcing the
+	// join would tell the chat a removed member joined (#123).
+	eh.Mutex.RLock()
+	_, stillIn := eh.ChatClients[chatID][client.ID]
+	eh.Mutex.RUnlock()
+	if !stillIn {
+		return nil
 	}
-	// A removal that emptied the room before the subscribe had nothing to
-	// release; release the channel now (#123).
-	eh.pubSubManager.releaseEmptyChats([]string{chatID})
 
 	// Publish join event to chat
 	joinMsg := &models.WebSocketMessage{
