@@ -3,6 +3,9 @@ package realtime
 import (
 	"errors"
 
+	"github.com/sirupsen/logrus"
+	"go.mongodb.org/mongo-driver/v2/bson"
+
 	"github.com/shoonya0/ECHO/internal/models"
 	"github.com/shoonya0/ECHO/internal/services"
 )
@@ -14,6 +17,11 @@ import (
 // user's own Redis channel, which every instance with a connection of that
 // user subscribes to. Clients never see it, and no join event is sent: nobody
 // joined from the clients' point of view.
+//
+// A removal travels on the chat's channel, read by another goroutine, so a
+// removal right after an add can be applied first and the add then re-enter
+// the room. The membership re-check (membership.go, #117) takes such a
+// connection out again within SessionRecheckInterval.
 
 // chatAddedType is the hub-internal message type. Its ChatID is the chat the
 // user gained. Services build it after their write succeeded; clients can't
@@ -36,9 +44,7 @@ func (eh *Hub) AddMembersToChat(chatID string, userIDs []string) error {
 	for _, userID := range userIDs {
 		msg := chatAddedMessage(chatID)
 		if err := eh.pubSubManager.publishMessage(eh.pubSubManager.getUserChannel(userID), &msg); err != nil {
-			if eh.pubSubManager.joinUserConnections(userID, chatID) {
-				eh.pubSubManager.subscribeChats([]string{chatID})
-			}
+			eh.pubSubManager.addUserToRoom(userID, chatID)
 			errs = append(errs, err)
 		}
 	}
@@ -46,10 +52,11 @@ func (eh *Hub) AddMembersToChat(chatID string, userIDs []string) error {
 }
 
 // handleChatAdded applies a chatAddedType message received on the user's
-// channel.
+// channel. Rooms are keyed by the lowercase hex ID, so any other form would
+// put the connections in a room nothing publishes to.
 func (pm *PubSubManager) handleChatAdded(userID string, message *models.WebSocketMessage) {
-	if message.ChatID == "" {
-		pm.logger.Warn("Ignoring a chat-added message without a chat ID")
+	if id, err := bson.ObjectIDFromHex(message.ChatID); err != nil || id.Hex() != message.ChatID {
+		pm.logger.WithFields(logrus.Fields{"chatID": message.ChatID}).Warn("Ignoring a chat-added message without a valid chat ID")
 		return
 	}
 	pm.addUserToRoom(userID, message.ChatID)
@@ -57,7 +64,7 @@ func (pm *PubSubManager) handleChatAdded(userID string, message *models.WebSocke
 
 // addUserToRoom puts the user's open connections on this instance in the chat's
 // room and subscribes to the chat's channel. The subscribe runs off the
-// caller's goroutine, which is the reader of the user's channel.
+// caller's goroutine: a request's, or the reader of the user's channel.
 func (pm *PubSubManager) addUserToRoom(userID, chatID string) {
 	if pm.joinUserConnections(userID, chatID) {
 		go pm.subscribeChats([]string{chatID})

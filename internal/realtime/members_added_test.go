@@ -2,6 +2,7 @@ package realtime
 
 import (
 	"fmt"
+	"strings"
 	"testing"
 
 	"github.com/shoonya0/ECHO/internal/models"
@@ -74,13 +75,15 @@ func TestChatAddedMessage(t *testing.T) {
 		}
 	})
 
-	t.Run("a message without a chat ID is ignored", func(t *testing.T) {
+	t.Run("a message without a valid chat ID is ignored", func(t *testing.T) {
 		hub := newTestHub(t)
 		user := bson.NewObjectID()
 		c := bufferedClient("c", user)
 		addClient(hub, c)
 
-		hub.pubSubManager.routeMessage(UserChannelPrefix+user.Hex(), overRedis(t, chatAddedMessage("")))
+		for _, bad := range []string{"", "not-an-id", strings.ToUpper(chat)} {
+			hub.pubSubManager.routeMessage(UserChannelPrefix+user.Hex(), overRedis(t, chatAddedMessage(bad)))
+		}
 
 		hub.Mutex.RLock()
 		rooms := len(hub.ClientChats[c.ID])
