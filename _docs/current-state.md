@@ -14,8 +14,9 @@ and with a link to exactly one feature state.md. Updated by /close-increment and
 - **Feature:** none · **#48** on `fix/48-join-chat-chat-id`: `join_chat` with `chatId`
   follows any chat the caller is a participant of (membership checked first), `senderId`
   still opens a direct chat, and both answer with a `response` holding `chatId`
-  ([requests](./websocket-requests.md#join_chat)). Verified (`verify.mjs --full` with
-  `TEST_DB_REQUIRED=1`; the new cases fail on the old handler)
+  ([requests](./websocket-requests.md#join_chat)). From the code review: blocks refused by
+  `chatId` too, a repeated join isn't announced again, a join a removal undid is refused.
+  Verified (`verify.mjs --full` with `TEST_DB_REQUIRED=1`; the new cases fail on the old code)
 - **#72 on Render (paused 2026-11-15):** `/health` answers `200`, but no chat with a message
   saved before PR #74 (`reactions: null`) is left to react to. Continue later, for example
   by setting `reactions: null` on a test message in Atlas first

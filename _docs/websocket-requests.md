@@ -53,12 +53,12 @@ Starts following a chat on this connection: any chat you are in by `chatId` (#48
 ```
 
 - With `chatId` (it wins if both are sent), a chat you aren't in, or that doesn't exist,
-  gets `PERMISSION_DENIED`.
-- `senderId` is the *other* person: your own ID gets `INVALID_USER_ID` (#38), and so does
-  a deleted account. A block either way gets `PERMISSION_DENIED` (`User is blocked`) (#27).
+  gets `PERMISSION_DENIED`. Pending group members count as members until #5.
+- `senderId` is the *other* person: your own ID or a deleted account gets `INVALID_USER_ID`
+  (#38). A block either way gets `PERMISSION_DENIED` (`User is blocked`) by either field (#27).
 
-**You get:** a `response` with `data.chatId`, and a `join` event. These two can arrive in
-either order.
+**You get:** a `response` with `data.chatId`, and a `join` event in either order. A chat
+this connection already follows gets the `response` only.
 
 **Errors:** `INVALID_REQUEST` (neither field), `INVALID_CHAT_ID`, `INVALID_USER_ID`,
 `PERMISSION_DENIED`, `JOIN_FAILED`, `CHAT_CREATION_FAILED`, `USER_NOT_AUTHENTICATED`.

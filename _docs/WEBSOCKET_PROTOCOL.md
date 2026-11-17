@@ -78,7 +78,8 @@ A connection follows:
 
 Two more cases to know about:
 
-- Members added to a group get no live events at all, even after reconnecting (#17).
+- Members added to a group don't follow it on their own, even after reconnecting (#17);
+  they can follow it with `join_chat` by `chatId` (#48).
 - Members removed from a group stop getting live events at once (#14).
 
 ## Message format
