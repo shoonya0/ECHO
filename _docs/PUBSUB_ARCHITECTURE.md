@@ -114,7 +114,9 @@ closing the channel, so a join is never left without a subscription (#55). Messa
 published in that short gap are missed (#43). A connection that drops while its
 registration still waits in the queue can have its disconnect handled first; that closes
 its send queue, and the registration then skips it instead of adding a dead connection
-(#54).
+(#54). The server reads a connection's requests only after the hub has handled its
+registration (waiting at most 10 seconds), so a `join_chat` sent right after connecting
+can't run before the connection's rooms are set and be dropped (#122).
 
 **When a connection is too slow,** its queue of 10 outgoing messages fills up and the server
 disconnects it.

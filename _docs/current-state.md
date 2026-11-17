@@ -11,12 +11,15 @@ on `main`. To learn what the product does, read
 and with a link to exactly one feature state.md. Updated by /close-increment and
 /feature-docs update. -->
 
-- **Feature:** none · **#122** on `fix/122-join-before-registration`: a `join_chat`
-  handled before the connection is registered is kept instead of dropped. In progress
+- **Feature:** none · **#122** on `fix/122-join-before-registration`: the server reads a
+  connection's requests only after the hub has registered it (`Hub.WaitRegistered`), so
+  an early `join_chat` is no longer dropped. Verified (`verify.mjs --full`; contract test:
+  no differences from `main`); code review applied (registering before reading replaced
+  letting connections join before registration)
 - **#72 on Render (paused 2026-11-15):** `/health` answers `200`, but no chat with a message
   saved before PR #74 (`reactions: null`) is left to react to. Continue later, for example
   by setting `reactions: null` on a test message in Atlas first
-- **Next step:** failing test, fix, verify, review, PR (`Fixes #122`). Split `rest-api.md`, `websocket-requests.md`
+- **Next step:** code review, then push and open the PR (`Fixes #122`). Split `rest-api.md`, `websocket-requests.md`
   before adding to them
 - **Updated:** 2026-11-17 on `fix/122-join-before-registration`
 
