@@ -26,6 +26,15 @@ type PubSubManager struct {
 	ctx           context.Context
 	cancel        context.CancelFunc
 	instanceID    string // Unique identifier for this server instance
+
+	// Test hooks, always nil in production. Fields, not package variables, so
+	// a goroutine left over from one test can't race the next test (#124).
+	//
+	// afterEmptyCheck runs between a release's "room is empty" check and its
+	// unsubscribe; afterRoomJoin runs between a join's room entry and its
+	// subscribe.
+	afterEmptyCheck func(chatID string)
+	afterRoomJoin   func(chatID string)
 }
 
 // Channel naming conventions for pub/sub
@@ -113,10 +122,6 @@ func (pm *PubSubManager) UnsubscribeUser(userID bson.ObjectID) {
 	}
 }
 
-// testHookAfterEmptyCheck, when set by a test, runs between a release's
-// "room is empty" check and its unsubscribe. Always nil in production.
-var testHookAfterEmptyCheck func(chatID string)
-
 // releaseEmptyChats unsubscribes the channels of chats no connection on this
 // instance is in. JoinChat adds a client to the room before it subscribes, so
 // a join racing this release is either seen by the first check (the channel
@@ -128,8 +133,8 @@ func (pm *PubSubManager) releaseEmptyChats(chatIDs []string) {
 		if pm.roomInUse(chatID) {
 			continue
 		}
-		if testHookAfterEmptyCheck != nil {
-			testHookAfterEmptyCheck(chatID)
+		if pm.afterEmptyCheck != nil {
+			pm.afterEmptyCheck(chatID)
 		}
 
 		channel := pm.getChatChannel(chatID)

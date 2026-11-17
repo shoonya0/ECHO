@@ -267,16 +267,22 @@ func TestDisconnectKeepsOtherConnectionOfUser(t *testing.T) {
 	if _, open := <-closing.Send; open {
 		t.Fatal("closing client's Send channel should be closed")
 	}
-	if _, ok := hub.Clients[closing.ID]; ok {
+	hub.Mutex.RLock()
+	_, closingRegistered := hub.Clients[closing.ID]
+	_, closingInChat := hub.ChatClients["chat1"][closing.ID]
+	_, stayingRegistered := hub.UserClients[userID.Hex()][staying.ID]
+	_, stayingInChat := hub.ChatClients["chat1"][staying.ID]
+	hub.Mutex.RUnlock()
+	if closingRegistered {
 		t.Fatal("closing client is still in Clients")
 	}
-	if _, ok := hub.ChatClients["chat1"][closing.ID]; ok {
+	if closingInChat {
 		t.Fatal("closing client is still in the chat")
 	}
-	if _, ok := hub.UserClients[userID.Hex()][staying.ID]; !ok {
+	if !stayingRegistered {
 		t.Fatal("other connection was removed from UserClients")
 	}
-	if _, ok := hub.ChatClients["chat1"][staying.ID]; !ok {
+	if !stayingInChat {
 		t.Fatal("other connection was removed from the chat")
 	}
 
@@ -294,13 +300,18 @@ func TestDisconnectOfLastConnectionRemovesUser(t *testing.T) {
 
 	hub.handleClientUnregistration(client)
 
-	if _, ok := hub.UserClients[client.UserID.Hex()]; ok {
+	hub.Mutex.RLock()
+	_, inUsers := hub.UserClients[client.UserID.Hex()]
+	_, hasRooms := hub.ClientChats[client.ID]
+	_, chatLeft := hub.ChatClients["chat1"]
+	hub.Mutex.RUnlock()
+	if inUsers {
 		t.Fatal("user is still in UserClients")
 	}
-	if _, ok := hub.ClientChats[client.ID]; ok {
+	if hasRooms {
 		t.Fatal("closed connection is still in ClientChats")
 	}
-	if _, ok := hub.ChatClients["chat1"]; ok {
+	if chatLeft {
 		t.Fatal("empty chat is still in ChatClients")
 	}
 }
@@ -324,11 +335,17 @@ func TestDisconnectOfLastConnectionLeavesEveryChat(t *testing.T) {
 
 	hub.handleClientUnregistration(client)
 
-	if left, ok := hub.ClientChats[client.ID]; ok {
+	hub.Mutex.RLock()
+	left, ok := hub.ClientChats[client.ID]
+	hub.Mutex.RUnlock()
+	if ok {
 		t.Fatalf("closed connection is still in chats %v", left)
 	}
 	for _, chatID := range chats {
-		if _, ok := hub.ChatClients[chatID]; ok {
+		hub.Mutex.RLock()
+		_, ok := hub.ChatClients[chatID]
+		hub.Mutex.RUnlock()
+		if ok {
 			t.Errorf("%s is still in ChatClients", chatID)
 		}
 		if pm.IsSubscribed(pm.getChatChannel(chatID)) {
@@ -488,7 +505,10 @@ func TestJoinChatAfterDisconnectIsIgnored(t *testing.T) {
 	if inRoomUnlocked(hub, "chatA", client.ID) {
 		t.Fatal("closed connection was added to a room")
 	}
-	if _, ok := hub.ClientChats[client.ID]; ok {
+	hub.Mutex.RLock()
+	_, ok := hub.ClientChats[client.ID]
+	hub.Mutex.RUnlock()
+	if ok {
 		t.Fatal("closed connection is in ClientChats")
 	}
 }
@@ -514,11 +534,10 @@ func TestJoinDuringChannelReleaseKeepsSubscription(t *testing.T) {
 	}
 	t.Cleanup(func() { _ = pm.unsubscribeFromChannel(pm.getChatChannel(chatID)) })
 
-	testHookAfterEmptyCheck = func(string) {
-		testHookAfterEmptyCheck = nil
+	pm.afterEmptyCheck = func(string) {
+		pm.afterEmptyCheck = nil
 		_ = hub.JoinChat(context.Background(), joining, chatID)
 	}
-	t.Cleanup(func() { testHookAfterEmptyCheck = nil })
 
 	hub.handleClientUnregistration(leaving)
 
@@ -527,5 +546,75 @@ func TestJoinDuringChannelReleaseKeepsSubscription(t *testing.T) {
 	}
 	if !pm.IsSubscribed(pm.getChatChannel(chatID)) {
 		t.Fatal("joiner is in the room but the chat isn't subscribed")
+	}
+}
+
+// A removal that empties the room between a join's room entry and its
+// subscribe finds nothing to release; the join must then release the channel
+// itself, or it stays subscribed for a room nobody is in (#123). Needs Redis:
+// run with TEST_DB_REQUIRED=1.
+func TestRemovalDuringJoinReleasesChannel(t *testing.T) {
+	redisClient := testutil.UseTestRedis(t)
+	hub := newTestHub(t)
+	hub.redisClient = redisClient
+	hub.pubSubManager = NewPubSubManager(redisClient, hub.Hub, hub.logger, "test")
+	pm := hub.pubSubManager
+	t.Cleanup(pm.cancel)
+
+	chatID := bson.NewObjectID().Hex()
+	joining := newTestClient("joining", bson.NewObjectID())
+	addClient(hub, joining)
+	t.Cleanup(func() { _ = pm.unsubscribeFromChannel(pm.getChatChannel(chatID)) })
+
+	pm.afterRoomJoin = func(string) {
+		pm.afterRoomJoin = nil
+		// What RemoveMembersFromChat does when its publish fails.
+		if removeUsersFromRoom(hub.Hub, chatID, []string{joining.UserID.Hex()}) {
+			pm.releaseEmptyChats([]string{chatID})
+		}
+	}
+
+	_ = hub.JoinChat(context.Background(), joining, chatID)
+
+	if inRoomUnlocked(hub, chatID, joining.ID) {
+		t.Fatal("removed member is still in the room")
+	}
+	if pm.IsSubscribed(pm.getChatChannel(chatID)) {
+		t.Fatal("chat nobody on this instance is in is still subscribed")
+	}
+}
+
+// The same race on registration, which subscribes to all of the user's chats
+// after entering their rooms (#123).
+func TestRemovalDuringRegistrationReleasesChannel(t *testing.T) {
+	redisClient := testutil.UseTestRedis(t)
+	hub := newTestHub(t)
+	hub.redisClient = redisClient
+	hub.pubSubManager = NewPubSubManager(redisClient, hub.Hub, hub.logger, "test")
+	pm := hub.pubSubManager
+	t.Cleanup(pm.cancel)
+
+	removed, kept := bson.NewObjectID().Hex(), bson.NewObjectID().Hex()
+	stubRegistration(hub, removed, kept)
+	client := newTestClient("c1", bson.NewObjectID())
+	t.Cleanup(func() {
+		pm.UnsubscribeUser(client.UserID)
+		_ = pm.unsubscribeFromChannel(pm.getChatChannel(removed))
+		_ = pm.unsubscribeFromChannel(pm.getChatChannel(kept))
+	})
+
+	pm.afterRoomJoin = func(chatID string) {
+		if chatID == removed && removeUsersFromRoom(hub.Hub, chatID, []string{client.UserID.Hex()}) {
+			pm.releaseEmptyChats([]string{chatID})
+		}
+	}
+
+	hub.handleClientRegistration(client)
+
+	if pm.IsSubscribed(pm.getChatChannel(removed)) {
+		t.Fatal("chat the user was removed from is still subscribed")
+	}
+	if !inRoomUnlocked(hub, kept, client.ID) || !pm.IsSubscribed(pm.getChatChannel(kept)) {
+		t.Fatal("the user's other chat lost its room or subscription")
 	}
 }
