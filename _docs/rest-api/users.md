@@ -6,8 +6,8 @@ Index: [REST API](./README.md). Shared rules: [the basics](./basics.md).
 
 | Route | What it does |
 |---|---|
-| `POST signup` | Creates an account. Send `email`, `username` and `password` (8 characters or more). `409` if the email is taken. The server picks the new user's ID and returns it as `data._id`. An `_id` in the request is ignored. |
-| `POST login` | Send `email` and `password`. Returns `data.token` (valid for 7 days) and `data.user`. `401` for a wrong password, `403` for a banned or inactive account. |
+| `POST signup` | Creates an account. Send `email`, `username` and `password` (8 characters or more). `409` if the email is taken. The server picks the new user's ID and returns it as `data._id`. An `_id` in the request is ignored. `429` after 10 signups from one IP in an hour (#40). |
+| `POST login` | Send `email` and `password`. Returns `data.token` (valid for 7 days) and `data.user`. `401` for a wrong password, `403` for a banned or inactive account. `429` after 10 failed logins for the email in 15 minutes (from any IP, even with the right password), or 50 logins from one IP in 10 minutes (#40). |
 | `POST auth/logout` | Cancels the token you are using |
 | `GET /health` | Returns `{"status":"ok"}`. It sits at the root, not under `/echo/v1/`, and needs no login. |
 

@@ -66,3 +66,13 @@ except the creator and people who join by invite code, and nobody can accept yet
 enforcing it now would lock those members out. The order is: build accept and decline,
 backfill existing members, then enforce it in `chatMemberFilter`. Direct-chat participants
 have no status, so the check must allow for that.
+
+## How login and signup limits find the client (#40)
+
+Decided on 2026-11-17. Failed logins are counted per email, from any IP: that count can't
+be dodged and protects the account. Logins and signups are also counted per client IP.
+The IP comes from the header named in `CLIENT_IP_HEADER` (`True-Client-IP` on Render, set
+by Cloudflare in front of it), or else the socket address. `X-Forwarded-For` is never
+trusted, because Render's proxy appends to what the client sent. Per-IP limits are
+generous because mobile carriers put many users behind one address. Counts live in Redis.
+When Redis is down, requests go through: an outage shouldn't block every login.

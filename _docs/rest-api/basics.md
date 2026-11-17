@@ -51,5 +51,6 @@ the server can't check the token or the account, it returns `503` with
 | `403` | You aren't allowed to do this |
 | `404` | Not found, or you aren't allowed to know it exists |
 | `409` | Conflict, such as "already in your contacts" |
+| `429` | Too many attempts: `error` is `RATE_LIMITED`, and `Retry-After` gives the wait in seconds |
 | `500` | Something went wrong on the server |
 | `503` | The server can't check your token right now (`AUTH_UNAVAILABLE`); retry later |
