@@ -130,6 +130,7 @@ disconnects it.
 | Every 30 seconds | Removes connections with no activity for 5 minutes, and clears expired cache entries |
 | Every 30 seconds | Writes `presence:<userID>` to Redis for connected users |
 | Every 30 seconds | Re-checks each open connection's token and account, and closes those that may no longer be used (#76) |
+| Every 30 seconds, after that | Reads the participants of every room's chat (200 chats per query) and takes out the connections of users who aren't members any more. This catches what `internal.members_removed` missed: a reconnect racing `remove_user`, or Redis failing during it (#117). A failed read removes nobody |
 
 Each server also keeps user display names in memory for 5 minutes, so it doesn't have to ask
 MongoDB every time.

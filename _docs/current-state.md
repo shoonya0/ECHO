@@ -11,17 +11,18 @@ on `main`. To learn what the product does, read
 and with a link to exactly one feature state.md. Updated by /close-increment and
 /feature-docs update. -->
 
-- **Feature:** none · no branch open. Today's realtime fixes are all merged: #54 (PR #121),
-  #122 (PR #125), the #40 typing part (PR #126), #123 + #124 (PR #127)
+- **Feature:** none · **#117** on `fix/117-recheck-room-membership`: every 30 s each
+  server reads the participants of its rooms' chats (`services.ChatMembers`) and takes out
+  connections of users who aren't members any more (`internal/realtime/membership.go`,
+  [pub/sub](./PUBSUB_ARCHITECTURE.md#background-jobs)). Verified (`verify.mjs --full` with
+  `TEST_DB_REQUIRED=1`; the new tests fail with the removal turned off). Not reviewed yet
 - **#72 on Render (paused 2026-11-15):** `/health` answers `200`, but no chat with a message
   saved before PR #74 (`reactions: null`) is left to react to. Continue later, for example
   by setting `reactions: null` on a test message in Atlas first
-- **Next step:** commit this state as the first commit of the next branch. Candidates:
-  #117 (re-check open connections against membership; the #127 review found a `join_chat`
-  variant to add to it), #39 (cut contact lists to `limit`), #51 (characters or bytes:
-  needs a decision). Split `rest-api.md`, `websocket-requests.md` (199 lines) before
-  adding to them
-- **Updated:** 2026-11-17 on `main` at `8185bd8` (uncommitted)
+- **Next step:** `/code-review`, then push and open the PR (`Fixes #117`). After it:
+  #39 (cut contact lists to `limit`), #51 (characters or bytes: needs a decision). Split
+  `rest-api.md`, `websocket-requests.md` (199 lines) before adding to them
+- **Updated:** 2026-11-17 on `fix/117-recheck-room-membership` at `9f4b72d`
 
 ## Where things stand
 
