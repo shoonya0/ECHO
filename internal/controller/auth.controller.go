@@ -150,13 +150,14 @@ func Login(c *gin.Context) {
 	// Attempts on this account (#40): per IP and account, then per account from
 	// all IPs. Counted before bcrypt, so guesses sent together can't all pass
 	// before one is counted. Only existing accounts get counts, so made-up emails
-	// can't fill Redis; LoginIPLimit covers those.
-	emailID := services.EmailRateLimitID(req.Email)
-	pairKey := services.RateLimitKey("login-pair", c.ClientIP()+"|"+emailID)
-	emailKey := services.RateLimitKey("login-email", emailID)
+	// can't fill Redis; LoginIPLimit covers those. Keyed by the account's ID, the
+	// same identity the lookup matched, so a lookalike account can't clear them.
+	accountID := user.ID.Hex()
+	pairKey := services.RateLimitKey("login-pair", c.ClientIP()+"|"+accountID)
+	accountKey := services.RateLimitKey("login-account", accountID)
 	allowed, wait := services.Hit(c.Request.Context(), pairKey, services.LoginPairFailLimit)
 	if allowed {
-		allowed, wait = services.Hit(c.Request.Context(), emailKey, services.LoginEmailFailLimit)
+		allowed, wait = services.Hit(c.Request.Context(), accountKey, services.LoginAccountLimit)
 	}
 	if !allowed {
 		log.Info("login refused: too many attempts on this account")
@@ -173,7 +174,7 @@ func Login(c *gin.Context) {
 	}
 
 	// The right password ends both counts, so earlier typos don't add up.
-	services.ClearRateLimits(c.Request.Context(), pairKey, emailKey)
+	services.ClearRateLimits(c.Request.Context(), pairKey, accountKey)
 
 	if user.AccountStatus.IsBanned {
 		log.Debug("account is banned")

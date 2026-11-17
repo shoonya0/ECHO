@@ -22,13 +22,13 @@ import (
 // earlier run left under the login keys.
 func useLoginLimits(t *testing.T, pairMax, emailMax int) {
 	t.Helper()
-	prevPair, prevEmail := services.LoginPairFailLimit, services.LoginEmailFailLimit
+	prevPair, prevEmail := services.LoginPairFailLimit, services.LoginAccountLimit
 	services.LoginPairFailLimit = services.Limit{Max: pairMax, Window: time.Minute}
-	services.LoginEmailFailLimit = services.Limit{Max: emailMax, Window: time.Minute}
-	t.Cleanup(func() { services.LoginPairFailLimit, services.LoginEmailFailLimit = prevPair, prevEmail })
+	services.LoginAccountLimit = services.Limit{Max: emailMax, Window: time.Minute}
+	t.Cleanup(func() { services.LoginPairFailLimit, services.LoginAccountLimit = prevPair, prevEmail })
 
 	ctx := context.Background()
-	for _, pattern := range []string{"ratelimit:login-pair:*", "ratelimit:login-email:*"} {
+	for _, pattern := range []string{"ratelimit:login-*"} {
 		keys, err := database.Redis.Keys(ctx, pattern).Result()
 		if err != nil {
 			t.Fatalf("listing %s: %v", pattern, err)
@@ -94,7 +94,7 @@ func TestLoginPairLimitStopsOneIPOnly(t *testing.T) {
 }
 
 // Guesses spread over many IPs stop at the per-account limit.
-func TestLoginEmailLimitStopsSpreadGuessing(t *testing.T) {
+func TestLoginAccountLimitStopsSpreadGuessing(t *testing.T) {
 	setupVictim(t, 100, 4)
 
 	for i, ip := range []string{"198.51.100.1", "198.51.100.2", "198.51.100.3", "198.51.100.4"} {
@@ -166,5 +166,27 @@ func TestLoginUnknownEmailStoresNoCount(t *testing.T) {
 	}
 	if len(keys) != 0 {
 		t.Fatalf("unknown email left keys %v, want none", keys)
+	}
+}
+
+// Two accounts whose emails differ only in case are separate accounts (#36), so
+// a correct login to one must not clear the other's count (security review of
+// #40: an attacker's own lookalike account could reset the victim's count).
+func TestLoginLookalikeAccountKeepsVictimCount(t *testing.T) {
+	setupVictim(t, 3, 100)
+	if w := postJSON(Signup, `{"email":"VICTIM@example.com","username":"decoy","password":"decoy-pass-1"}`); w.Code != http.StatusOK {
+		t.Fatalf("decoy signup: status %d (body %s)", w.Code, w.Body)
+	}
+	ip := "198.51.100.1"
+
+	for range 2 {
+		loginFrom(ip, victimWrong)
+	}
+	if w := loginFrom(ip, `{"email":"VICTIM@example.com","password":"decoy-pass-1"}`); w.Code != http.StatusOK {
+		t.Fatalf("decoy login: status %d, want 200 (body %s)", w.Code, w.Body)
+	}
+	loginFrom(ip, victimWrong) // third guess: at the limit
+	if w := loginFrom(ip, victimWrong); w.Code != http.StatusTooManyRequests {
+		t.Fatalf("fourth guess after the decoy login: status %d, want 429", w.Code)
 	}
 }

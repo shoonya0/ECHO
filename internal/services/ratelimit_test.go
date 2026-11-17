@@ -113,9 +113,3 @@ func TestRateLimitAllowsWhenRedisIsDown(t *testing.T) {
 	}
 	ClearRateLimits(ctx, key) // only logs
 }
-
-func TestEmailRateLimitIDIgnoresCaseAndSpace(t *testing.T) {
-	if a, b := EmailRateLimitID(" Ann@Example.com "), EmailRateLimitID("ann@example.com"); a != b {
-		t.Fatalf("EmailRateLimitID gives %q and %q; want one bucket", a, b)
-	}
-}

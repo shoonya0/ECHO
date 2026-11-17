@@ -2,7 +2,6 @@ package services
 
 import (
 	"context"
-	"strings"
 	"time"
 
 	"github.com/redis/go-redis/v9"
@@ -28,10 +27,10 @@ var (
 	// LoginPairFailLimit counts login attempts on one account from one IP. It
 	// stops one address from guessing, without locking the account for others.
 	LoginPairFailLimit = Limit{Max: 10, Window: 15 * time.Minute}
-	// LoginEmailFailLimit counts login attempts on one account from all IPs
+	// LoginAccountLimit counts login attempts on one account from all IPs
 	// together. It caps guessing spread over many addresses; locking a user out
 	// takes several addresses at the pair limit.
-	LoginEmailFailLimit = Limit{Max: 100, Window: time.Hour}
+	LoginAccountLimit = Limit{Max: 100, Window: time.Hour}
 	// SignupIPLimit counts every signup from one client IP; each one runs bcrypt.
 	SignupIPLimit = Limit{Max: 10, Window: time.Hour}
 )
@@ -39,12 +38,6 @@ var (
 // RateLimitKey is the Redis key that counts requests of one kind for one client.
 func RateLimitKey(name, id string) string {
 	return "ratelimit:" + name + ":" + id
-}
-
-// EmailRateLimitID is the id an email counts under. Case and surrounding space
-// don't make a new bucket. It is used only for the count, never for the lookup.
-func EmailRateLimitID(email string) string {
-	return strings.ToLower(strings.TrimSpace(email))
 }
 
 // hitScript counts one request and starts the window on the first one, in one
