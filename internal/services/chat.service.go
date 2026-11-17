@@ -686,6 +686,30 @@ func RemoveMembersFromLiveChat(chatID string, userIDs []string) error {
 	return remover.RemoveMembersFromChat(chatID, userIDs)
 }
 
+// LiveMemberAdder puts users' open connections in a chat's room on every
+// instance. The realtime hub implements it next to Broadcaster.
+type LiveMemberAdder interface {
+	AddMembersToChat(chatID string, userIDs []string) error
+}
+
+// AddMembersToLiveChat makes the users' open connections follow a chat they just
+// gained, so its live events reach them without a reconnect (#49). Call it after
+// the write that made them members succeeded. A failure is only logged: the
+// chat exists, and a reconnect follows it.
+func AddMembersToLiveChat(ctx context.Context, chatID bson.ObjectID, userIDs ...bson.ObjectID) {
+	adder, ok := broadcaster.(LiveMemberAdder)
+	if !ok {
+		return // no hub in this process, as in tests without one
+	}
+	ids := make([]string, len(userIDs))
+	for i, id := range userIDs {
+		ids[i] = id.Hex()
+	}
+	if err := adder.AddMembersToChat(chatID.Hex(), ids); err != nil {
+		logger.WithContext(ctx).WithError(err).Warn("Open connections may not follow a new chat until they reconnect")
+	}
+}
+
 // ============ HELPER FUNCTIONS ============
 
 // updateChatLastMessage updates the last message reference in chat
