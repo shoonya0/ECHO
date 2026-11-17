@@ -21,9 +21,11 @@ and with a link to exactly one feature state.md. Updated by /close-increment and
   saved before PR #74 (`reactions: null`) is left to react to. Continue later, for example
   by setting `reactions: null` on a test message in Atlas first
 - **Code review fixed:** concurrent guesses, the lockout of other users, typos adding up,
-  Redis filling with made-up emails, non-IP header values, Redis < 7. Left: emails that
+  Redis filling with made-up emails, non-IP header values, Redis < 7. Security review fixed:
+  counts are keyed by account ID, so a lookalike account (case differs) can't clear them.
+  Left: emails that
   differ only in case are separate accounts (#36); a fixed window allows ~2x at its edge
-- **Next step:** `/security-review`, then PR; ask before merging. After
+- **Next step:** PR; ask before merging. After
   deploy: on Render, a login loop with a forged `X-Forwarded-For` must still get `429`, and
   two real clients mustn't share a bucket (else unset `CLIENT_IP_HEADER`, note it on #40).
   Split `websocket-requests.md` and `websocket-events.md` (~199 lines) before adding to them
