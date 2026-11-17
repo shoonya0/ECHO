@@ -36,6 +36,9 @@ type Hub struct {
 	checkSession SessionChecker
 	// loadChats lists the chats a new connection joins; nil means getUserChats.
 	loadChats func(ctx context.Context, userID bson.ObjectID) ([]string, error)
+	// loadMembers reads chat participants for the membership re-check; nil
+	// means services.ChatMembers.
+	loadMembers MembersLoader
 }
 
 // GetHubInstance returns the process-wide hub, creating it on first use.

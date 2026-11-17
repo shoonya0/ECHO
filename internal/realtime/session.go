@@ -188,7 +188,8 @@ func (eh *Hub) checkNewSession(client *models.Client) {
 	// Any other error: the periodic re-check tries again.
 }
 
-// recheckSessions runs performSessionRecheck every SessionRecheckInterval.
+// recheckSessions runs performSessionRecheck and then
+// performMembershipRecheck every SessionRecheckInterval.
 func (eh *Hub) recheckSessions() {
 	ticker := time.NewTicker(SessionRecheckInterval)
 	defer ticker.Stop()
@@ -199,6 +200,7 @@ func (eh *Hub) recheckSessions() {
 			return
 		case <-ticker.C:
 			eh.performSessionRecheck()
+			eh.performMembershipRecheck()
 		}
 	}
 }
