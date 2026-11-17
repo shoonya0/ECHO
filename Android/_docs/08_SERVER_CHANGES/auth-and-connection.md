@@ -15,6 +15,17 @@ Part of [server changes the app must handle](./README.md).
 
 Details: [WEBSOCKET_PROTOCOL.md](../../../_docs/WEBSOCKET_PROTOCOL.md#error-codes).
 
+## `join_chat` follows any chat you are in (#48)
+
+- `join_chat` with `chatId` now follows that chat on this connection, groups included; a
+  chat you aren't in gets `PERMISSION_DENIED`. Before, `chatId` was ignored and the request
+  failed with `INVALID_USER_ID`. `senderId` still opens a direct chat.
+- Both now answer with a `response` whose `data.chatId` names the chat: wait for it like
+  `send_message`, instead of waiting for the `join` event. A chat the socket already
+  follows gets no second `join` event, so joining again on reconnect is safe.
+
+Details: [websocket-requests.md](../../../_docs/websocket-requests.md#join_chat).
+
 ## Auth replies (#33, PR #77, live on Render since 2026-11-11)
 
 Every request now checks the account itself, not only the token. A token stops working

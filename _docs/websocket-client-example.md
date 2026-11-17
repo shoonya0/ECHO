@@ -54,7 +54,8 @@ export class ChatClient {
     settle(entry);
   }
 
-  // For requests that get a response: send_message, reactions, invite_user, remove_user.
+  // For requests that get a response: send_message, join_chat, reactions, invite_user,
+  // remove_user.
   request(body) {
     const requestId = `req_${++this.lastId}`;
     return new Promise((resolve, reject) => {
@@ -67,7 +68,7 @@ export class ChatClient {
     });
   }
 
-  // For requests with no response: join_chat, leave_chat, set_typing, mark_read.
+  // For requests with no response: leave_chat, set_typing, mark_read.
   send(body) {
     this.ws.send(JSON.stringify(body));
   }
@@ -80,8 +81,13 @@ export class ChatClient {
     return this.request({ type: "add_reaction", chatId, metadata: { messageId, emoji } });
   }
 
+  // Both resolve with { chatId } (#48).
   openDirectChat(otherUserId) {
-    this.send({ type: "join_chat", senderId: otherUserId }); // Watch for the "join" event.
+    return this.request({ type: "join_chat", senderId: otherUserId });
+  }
+
+  followChat(chatId) {
+    return this.request({ type: "join_chat", chatId });
   }
 
   setTyping(chatId, isTyping) {

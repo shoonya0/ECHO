@@ -1,6 +1,6 @@
 # ECHO: current state
 
-A one-page snapshot of where the project stands. Last checked on 2026-11-17 at `ce87d16`
+A one-page snapshot of where the project stands. Last checked on 2026-11-17 at `144b7dd`
 on `main`. To learn what the product does, read
 [product-overview.md](./product-overview.md). For the code, read
 [architecture-overview.md](./architecture-overview.md).
@@ -11,17 +11,18 @@ on `main`. To learn what the product does, read
 and with a link to exactly one feature state.md. Updated by /close-increment and
 /feature-docs update. -->
 
-- **Feature:** none · **#132** on `fix/132-direct-chat-matched-count`: a new direct chat is
-  kept only when both users got their `chats` entry (else `ErrUserNotFound`, chat and entries
-  removed), and opening an existing one writes back a missing entry. Verified
-  (`verify.mjs --full` with `TEST_DB_REQUIRED=1`; both test cases fail on the old code)
+- **Feature:** none · **#48** on `fix/48-join-chat-chat-id`: `join_chat` with `chatId`
+  follows any chat the caller is a participant of (membership checked first), `senderId`
+  still opens a direct chat, and both answer with a `response` holding `chatId`
+  ([requests](./websocket-requests.md#join_chat)). From the code review: blocks refused by
+  `chatId` too, a repeated join isn't announced again, a join a removal undid is refused.
+  Verified (`verify.mjs --full` with `TEST_DB_REQUIRED=1`; the new cases fail on the old code)
 - **#72 on Render (paused 2026-11-15):** `/health` answers `200`, but no chat with a message
   saved before PR #74 (`reactions: null`) is left to react to. Continue later, for example
   by setting `reactions: null` on a test message in Atlas first
-- **Next step:** PR for #132; ask before merging. After it: #48 (`join_chat` ignores
-  `chatId`), #50 (live events lack sender details). Split `rest-api.md`,
-  `websocket-requests.md` (199 lines) before adding to them
-- **Updated:** 2026-11-17 on `fix/132-direct-chat-matched-count` from `ce87d16`
+- **Next step:** PR for #48; ask before merging. After it: #50 (live events lack sender
+  details). Split `rest-api.md`, `websocket-requests.md` (199 lines) before adding to them
+- **Updated:** 2026-11-17 on `fix/48-join-chat-chat-id` from `144b7dd`
 
 ## Where things stand
 
@@ -36,6 +37,9 @@ declining a group invite. The full list is in
 
 ## Recently finished
 
+- **#132 (PR #135):** a new direct chat is kept only when both users got their `chats`
+  entry (else `404` / `INVALID_USER_ID`, chat and entries removed), and opening an existing
+  one writes back a missing entry ([REST](./rest-api.md#chats)).
 - **#131 (PR #134):** `GET users/suggestions` takes `page` 1 to 10000 (clamped, shared
   `services.MaxPage` with the contact lists), so a huge page no longer overflows the skip
   into a `500` ([REST](./rest-api.md#finding-people)).
