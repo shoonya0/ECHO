@@ -382,6 +382,7 @@ func CreateDirectChat(ctx context.Context, targetUserID bson.ObjectID) (*models.
 				return nil, fmt.Errorf("failed to update user: %w", err)
 			}
 
+			AddMembersToLiveChat(ctx, chat.ChatID, user.ID, targetUserID) // #49
 			return &chat, nil
 		}
 		return nil, fmt.Errorf("failed to fetch existing chat: %w", err)
@@ -468,6 +469,8 @@ func CreateGroupChat(ctx context.Context, chatName, description string, particip
 		}
 		return nil, fmt.Errorf("failed to add group chat to creator: %w", err)
 	}
+	// The group stays even if an invitation below fails, so follow it now (#49).
+	AddMembersToLiveChat(ctx, chat.ChatID, creator.ID)
 
 	// Give each invitee an invitation for the new code. The group is already
 	// saved, so an invitee whose account was deleted since the lookup is skipped
@@ -1553,6 +1556,7 @@ func JoinGroupByInvite(ctx context.Context, userID bson.ObjectID, inviteID strin
 		return fmt.Errorf("add chat to user: %w", ErrUserNotFound)
 	}
 
+	AddMembersToLiveChat(ctx, chatObjectID, userID) // #49
 	return nil
 }
 
