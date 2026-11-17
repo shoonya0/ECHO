@@ -56,3 +56,37 @@ func TestRegistrationThenDisconnect(t *testing.T) {
 		t.Fatal("disconnect did not remove and close the connection")
 	}
 }
+
+// The controller stores presence for a connection before the hub registers it.
+// A disconnect handled first must remove that entry: the skipped registration
+// leaves nothing else to remove it (#54).
+func TestDisconnectBeforeRegistrationRemovesItsPresence(t *testing.T) {
+	hub := newTestHub(t)
+	stubRegistration(hub)
+	client := newTestClient("gone", bson.NewObjectID())
+	GetPresenceInstance().Set(UserPresence{UserID: client.UserID, Status: "online", ClientID: client.ID})
+	t.Cleanup(func() { GetPresenceInstance().Delete(client.UserID) })
+
+	hub.handleClientUnregistration(client)
+	hub.handleClientRegistration(client)
+
+	if _, ok := GetPresenceInstance().Get(client.UserID); ok {
+		t.Fatal("presence of a connection that never registered is still stored")
+	}
+}
+
+// Presence stored by another connection of the user stays: that connection is
+// still open, or will register.
+func TestDisconnectBeforeRegistrationKeepsOtherConnectionsPresence(t *testing.T) {
+	hub := newTestHub(t)
+	userID := bson.NewObjectID()
+	gone := newTestClient("gone", userID)
+	GetPresenceInstance().Set(UserPresence{UserID: userID, Status: "online", ClientID: "newer"})
+	t.Cleanup(func() { GetPresenceInstance().Delete(userID) })
+
+	hub.handleClientUnregistration(gone)
+
+	if p, ok := GetPresenceInstance().Get(userID); !ok || p.ClientID != "newer" {
+		t.Fatalf("presence of the other connection was removed: %+v, %v", p, ok)
+	}
+}

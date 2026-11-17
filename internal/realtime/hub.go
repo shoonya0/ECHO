@@ -222,10 +222,16 @@ func (eh *Hub) handleClientUnregistration(client *models.Client) {
 	eh.Mutex.Lock()
 
 	if _, ok := eh.Clients[client.ID]; !ok {
+		_, userConnected := eh.UserClients[client.UserID.Hex()]
 		eh.Mutex.Unlock()
 		// Not registered yet, or already removed. Closing Send marks it
 		// closed, so a registration still queued skips it (#54).
 		client.CloseSend()
+		// The controller stored presence for this connection before queueing
+		// it; with the registration skipped, nothing else removes it.
+		if !userConnected {
+			GetPresenceInstance().DeleteForClient(client.UserID, client.ID)
+		}
 		return
 	}
 

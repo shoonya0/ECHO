@@ -53,6 +53,16 @@ func (pm *PresenceManager) Set(user UserPresence) {
 	pm.presence[user.UserID] = user
 }
 
+// DeleteForClient removes the user's presence only if the connection clientID
+// stored it, so a newer connection's entry stays.
+func (pm *PresenceManager) DeleteForClient(userID bson.ObjectID, clientID string) {
+	pm.mutex.Lock()
+	defer pm.mutex.Unlock()
+	if pm.presence[userID].ClientID == clientID {
+		delete(pm.presence, userID)
+	}
+}
+
 func (pm *PresenceManager) Delete(userID bson.ObjectID) {
 	pm.mutex.Lock()
 	defer pm.mutex.Unlock()
