@@ -11,21 +11,16 @@ on `main`. To learn what the product does, read
 and with a link to exactly one feature state.md. Updated by /close-increment and
 /feature-docs update. -->
 
-- **Feature:** none · **#117** on `fix/117-recheck-room-membership`: every 30 s each
-  server reads the participants of its rooms' chats (`services.ChatMembers`) and takes out
-  connections of users who aren't members any more (`internal/realtime/membership.go`,
-  [pub/sub](./PUBSUB_ARCHITECTURE.md#background-jobs)). Verified (`verify.mjs --full` with
-  `TEST_DB_REQUIRED=1`; the new tests fail with the removal turned off). Code review applied:
-  only participant keys are read, parsed IDs go to the loader, no membership pass after a
-  session outage. Not done: a member removed and re-added within one pass is taken out
-  until they reconnect (as any new member is, #49); evicted connections get no event
+- **Feature:** none · **#39** on `fix/39-contact-list-paging`: the five contact lists get
+  `page` and are really cut to `limit`, sorted by username; `pagination.total` is the real
+  count (decided 2026-11-17: page-based, like `users/suggestions`)
 - **#72 on Render (paused 2026-11-15):** `/health` answers `200`, but no chat with a message
   saved before PR #74 (`reactions: null`) is left to react to. Continue later, for example
   by setting `reactions: null` on a test message in Atlas first
-- **Next step:** PR open for #117; ask before merging. After it:
-  #39 (cut contact lists to `limit`), #51 (characters or bytes: needs a decision). Split
-  `rest-api.md`, `websocket-requests.md` (199 lines) before adding to them
-- **Updated:** 2026-11-17 on `fix/117-recheck-room-membership` at `82cfa15`
+- **Next step:** failing DB test for `GetContacts` paging, then the fix. After it: #51
+  (characters or bytes: needs a decision). Split `rest-api.md`, `websocket-requests.md`
+  (199 lines) before adding to them
+- **Updated:** 2026-11-17 on `fix/39-contact-list-paging`, from `main` at `b84237b`
 
 ## Where things stand
 
@@ -40,6 +35,11 @@ declining a group invite. The full list is in
 
 ## Recently finished
 
+- **#117 (PR #128):** every 30 s each server reads the participants of its rooms' chats
+  (`services.ChatMembers`, keys only) and takes out connections of users who aren't
+  members any more ([pub/sub](./PUBSUB_ARCHITECTURE.md#background-jobs)). Not done from the
+  code review: a member removed and re-added within one pass stays out until they
+  reconnect (#49); evicted connections get no event.
 - **#123 + #124 (PR #127):** a join or registration releases the chat channel again after
   subscribing if a removal emptied the room meanwhile, and no `join` is announced for a
   member removed during the join. The release test hooks are `PubSubManager` fields
@@ -104,8 +104,7 @@ declining a group invite. The full list is in
   that `offset` gets `400`; every step passes against a local server.
 - **#60 (PR #100):** a `chatId` in any case is lowercased where WebSocket requests come
   in, so its events reach the chat ([requests](./websocket-requests.md)).
-- **#47 (PR #99):** `send_message` replies have a top-level `requestId` ([events](./websocket-events.md)).
-Older work, from #75 (PR #98) back: [finished-work.md](./finished-work.md).
+Older work, from #47 (PR #99) back: [finished-work.md](./finished-work.md).
 
 ## How to build, run, test
 
