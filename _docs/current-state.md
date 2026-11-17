@@ -11,21 +11,16 @@ on `main`. To learn what the product does, read
 and with a link to exactly one feature state.md. Updated by /close-increment and
 /feature-docs update. -->
 
-- **Feature:** none · **#39** on `fix/39-contact-list-paging`: the five contact lists get
-  `page` and are really cut to `limit`, sorted by username; `pagination.total` is the real
-  count (decided 2026-11-17: page-based, like `users/suggestions`). Verified
-  (`verify.mjs --full` with `TEST_DB_REQUIRED=1`; the paging test fails without skip and
-  limit); the app must load more pages ([app changes](../Android/_docs/08_SERVER_CHANGES/contacts-and-blocking.md)).
-  Code review applied: case-insensitive order, `page` capped at 10000. Not done: offset
-  pages can skip or repeat an entry when the list changes between requests (accepted with
-  page-based paging); `users/suggestions` has the same unbounded `page` (issue proposed)
+- **Feature:** none · **#49** on `fix/49-follow-new-chats`: a chat a user gains (new
+  direct chat, new group, invite join) is followed by their open connections through a
+  hub-internal `internal.chat_added` on `user:<id>`, the reverse of #14's removal
 - **#72 on Render (paused 2026-11-15):** `/health` answers `200`, but no chat with a message
   saved before PR #74 (`reactions: null`) is left to react to. Continue later, for example
   by setting `reactions: null` on a test message in Atlas first
-- **Next step:** PR for #39; ask before merging. After it: #51
-  (characters or bytes: needs a decision). Split `rest-api.md`, `websocket-requests.md`
-  (199 lines) before adding to them
-- **Updated:** 2026-11-17 on `fix/39-contact-list-paging` at `447c714`
+- **Next step:** hub tests and `members_added.go`, then the service calls. After it: #51
+  (characters or bytes: needs a decision); the `users/suggestions` unbounded `page` issue
+  waits for a yes. Split `rest-api.md`, `websocket-requests.md` (199 lines) before adding
+- **Updated:** 2026-11-17 on `fix/49-follow-new-chats`, from `main` at `fbe563e`
 
 ## Where things stand
 
@@ -40,6 +35,11 @@ declining a group invite. The full list is in
 
 ## Recently finished
 
+- **#39 (PR #129):** the five contact lists come in pages: `page` 1 to 10000, cut to
+  `limit`, sorted by username ignoring case, with the real `total`
+  ([REST](./rest-api.md#contacts), [app changes](../Android/_docs/08_SERVER_CHANGES/contacts-and-blocking.md)).
+  Not done from the review: offset pages can shift when the list changes; `users/suggestions`
+  has the same unbounded `page`.
 - **#117 (PR #128):** every 30 s each server reads the participants of its rooms' chats
   (`services.ChatMembers`, keys only) and takes out connections of users who aren't
   members any more ([pub/sub](./PUBSUB_ARCHITECTURE.md#background-jobs)). Not done from the
@@ -107,9 +107,7 @@ declining a group invite. The full list is in
   Security review: nothing found. From the code review: #103, #104.
 - **#67 (PR #101):** the contract test pages history with `?before=<nextCursor>` and checks
   that `offset` gets `400`; every step passes against a local server.
-- **#60 (PR #100):** a `chatId` in any case is lowercased where WebSocket requests come
-  in, so its events reach the chat ([requests](./websocket-requests.md)).
-Older work, from #47 (PR #99) back: [finished-work.md](./finished-work.md).
+Older work, from #60 (PR #100) back: [finished-work.md](./finished-work.md).
 
 ## How to build, run, test
 
