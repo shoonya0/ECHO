@@ -110,8 +110,10 @@ connection closes, it also drops the `user:<id>` channel and tells others the us
 offline; the offline part doesn't work properly yet (#31). `leave_chat` and `remove_user`
 release a chat's channel the same way when they empty its room. A join always enters the
 room before it subscribes, and a release re-subscribes if someone joined while it was
-closing the channel, so a join is never left without a subscription (#55). Messages
-published in that short gap are missed (#43). A connection that drops while its
+closing the channel, so a join is never left without a subscription (#55). The other
+way round, a join or registration checks the room again after subscribing and releases
+the channel if a removal emptied it meanwhile (#123). Messages published in that short
+gap are missed (#43). A connection that drops while its
 registration still waits in the queue can have its disconnect handled first; that closes
 its send queue, and the registration then skips it instead of adding a dead connection
 (#54). The server reads a connection's requests only after the hub has handled its
