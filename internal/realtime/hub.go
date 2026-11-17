@@ -304,7 +304,9 @@ func (eh *Hub) handleClientUnregistration(client *models.Client) {
 	client.CloseSend()
 }
 
-// JoinChat handles client joining a chat with pub/sub subscription
+// JoinChat adds the connection to the chat's room, subscribes the chat and
+// announces the join. A connection already in the room, or already closed, is
+// left as it is. A removal during the join undoes it and returns ErrNotInChat.
 func (eh *Hub) JoinChat(ctx context.Context, client *models.Client, chatID string) error {
 	eh.logger.WithFields(logrus.Fields{"clientID": client.ID, "chatID": chatID}).Info("Client joining chat")
 
@@ -312,6 +314,12 @@ func (eh *Hub) JoinChat(ctx context.Context, client *models.Client, chatID strin
 	// A join handled after the connection closed would put it back in a room
 	// that nothing removes it from again.
 	if _, open := eh.Clients[client.ID]; !open {
+		eh.Mutex.Unlock()
+		return nil
+	}
+	// Already following: announcing again would let join_chat flood the chat
+	// with join events (#48).
+	if _, already := eh.ChatClients[chatID][client.ID]; already {
 		eh.Mutex.Unlock()
 		return nil
 	}
@@ -326,7 +334,7 @@ func (eh *Hub) JoinChat(ctx context.Context, client *models.Client, chatID strin
 	_, stillIn := eh.ChatClients[chatID][client.ID]
 	eh.Mutex.RUnlock()
 	if !stillIn {
-		return nil
+		return fmt.Errorf("removed during the join: %w", ErrNotInChat)
 	}
 
 	// Publish join event to chat
@@ -382,7 +390,8 @@ func (eh *Hub) LeaveChat(client *models.Client, chatID string) error {
 	return err
 }
 
-// ErrNotInChat means the connection isn't following the chat it tried to leave.
+// ErrNotInChat means the connection isn't following the chat it tried to leave,
+// or a removal undid its join.
 var ErrNotInChat = errors.New("client is not in this chat")
 
 // addClientToRoom puts a connection in a chat's room. Doing it twice changes
