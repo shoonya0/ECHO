@@ -1639,12 +1639,16 @@ func resolveMissedJoin(ctx context.Context, chatID, userID bson.ObjectID, invite
 		return nil
 	case member:
 		chatRef := "chats." + chatID.Hex()
-		_, err := database.DB.Collection(string(constants.UserColl)).UpdateOne(ctx,
+		res, err := database.DB.Collection(string(constants.UserColl)).UpdateOne(ctx,
 			bson.M{"_id": userID, chatRef: bson.M{"$exists": false}},
 			bson.M{"$set": bson.M{chatRef: 0}},
 		)
 		if err != nil {
 			return fmt.Errorf("failed to restore chat ref of user: %w", err)
+		}
+		if res.ModifiedCount > 0 {
+			// Their connections read the chats without this one (#49).
+			AddMembersToLiveChat(ctx, chatID, userID)
 		}
 		return fmt.Errorf("%w", ErrAlreadyParticipant)
 	case !usable:

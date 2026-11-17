@@ -2,10 +2,12 @@ package services
 
 import (
 	"context"
+	"errors"
 	"slices"
 	"testing"
 
 	"github.com/shoonya0/ECHO/internal/constants"
+	"github.com/shoonya0/ECHO/internal/database"
 	"github.com/shoonya0/ECHO/internal/models"
 
 	"go.mongodb.org/mongo-driver/v2/bson"
@@ -84,5 +86,24 @@ func TestChatsGainedAreFollowedLive(t *testing.T) {
 			t.Fatalf("JoinGroupByInvite (pending member): %v", err)
 		}
 		assertAdded(t, group.ChatID, alice, carol, bob)
+
+		// A join that stopped before carol's chats entry: the retry restores the
+		// entry and must make her connections follow the chat too.
+		if _, err := database.DB.Collection(string(constants.UserColl)).UpdateOne(ctx,
+			bson.M{"_id": carol}, bson.M{"$unset": bson.M{"chats." + group.ChatID.Hex(): ""}}); err != nil {
+			t.Fatalf("unset carol's chats entry: %v", err)
+		}
+		delete(rec.added, group.ChatID.Hex())
+		if err := JoinGroupByInvite(ctx, carol, group.InviteCode[0].InviteCode); !errors.Is(err, ErrAlreadyParticipant) {
+			t.Fatalf("retried join: err = %v, want ErrAlreadyParticipant", err)
+		}
+		assertAdded(t, group.ChatID, carol)
+
+		// A member whose entry is there isn't added again.
+		delete(rec.added, group.ChatID.Hex())
+		if err := JoinGroupByInvite(ctx, carol, group.InviteCode[0].InviteCode); !errors.Is(err, ErrAlreadyParticipant) {
+			t.Fatalf("second join: err = %v, want ErrAlreadyParticipant", err)
+		}
+		assertAdded(t, group.ChatID)
 	})
 }
