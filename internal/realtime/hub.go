@@ -84,47 +84,32 @@ func (eh *Hub) Start() error {
 		return fmt.Errorf("failed to start pub/sub manager: %w", err)
 	}
 
-	// Start hub goroutines
-	go eh.runHub()
-	go eh.cleanupInactiveConnections()
-	go eh.syncPresenceWithRedis()
-	go eh.recheckSessions()
+	eh.startLoops()
 
 	eh.logger.Info("Enhanced WebSocket hub started successfully")
 	return nil
 }
 
-// Restart attempts to restart the hub if it has stopped
-func (eh *Hub) Restart() error {
-	eh.logger.Info("Attempting to restart hub")
-
-	// Check if context is cancelled
-	select {
-	case <-eh.Ctx.Done():
-		eh.logger.Warn("Hub context is cancelled, creating new context")
-		// Create new context
-		ctx, cancel := context.WithCancel(context.Background())
-		eh.Hub.Ctx = ctx
-		eh.Hub.Cancel = cancel
-	default:
-		eh.logger.Info("Hub context is still active")
+// startLoops starts the hub's background loops. They stop when the hub's
+// context is cancelled; nothing restarts them (#79).
+func (eh *Hub) startLoops() {
+	ctx := eh.Ctx
+	loops := []func(context.Context){
+		eh.runHub,
+		eh.cleanupInactiveConnections,
+		eh.syncPresenceWithRedis,
+		eh.recheckSessions,
 	}
-
-	// Restart goroutines
-	go eh.runHub()
-	go eh.cleanupInactiveConnections()
-	go eh.syncPresenceWithRedis()
-	go eh.recheckSessions()
-
-	eh.logger.Info("Hub restarted successfully")
-	return nil
+	for _, loop := range loops {
+		go loop(ctx)
+	}
 }
 
 // runHub manages the main hub operations
-func (eh *Hub) runHub() {
+func (eh *Hub) runHub(ctx context.Context) {
 	for {
 		select {
-		case <-eh.Ctx.Done():
+		case <-ctx.Done():
 			eh.logger.Warn("Hub context cancelled, stopping main loop")
 			return
 
@@ -471,13 +456,13 @@ func (eh *Hub) getUserChats(ctx context.Context, userID bson.ObjectID) ([]string
 }
 
 // syncPresenceWithRedis periodically syncs presence data with Redis
-func (eh *Hub) syncPresenceWithRedis() {
+func (eh *Hub) syncPresenceWithRedis(ctx context.Context) {
 	ticker := time.NewTicker(30 * time.Second)
 	defer ticker.Stop()
 
 	for {
 		select {
-		case <-eh.Ctx.Done():
+		case <-ctx.Done():
 			return
 		case <-ticker.C:
 			eh.performPresenceSync()
@@ -514,13 +499,13 @@ func (eh *Hub) performPresenceSync() {
 }
 
 // cleanupInactiveConnections removes inactive connections
-func (eh *Hub) cleanupInactiveConnections() {
+func (eh *Hub) cleanupInactiveConnections(ctx context.Context) {
 	ticker := time.NewTicker(30 * time.Second)
 	defer ticker.Stop()
 
 	for {
 		select {
-		case <-eh.Ctx.Done():
+		case <-ctx.Done():
 			return
 		case <-ticker.C:
 			eh.performCleanup()

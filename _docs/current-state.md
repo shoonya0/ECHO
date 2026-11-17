@@ -1,6 +1,6 @@
 # ECHO: current state
 
-A one-page snapshot of where the project stands. Last checked on 2026-11-17 at `18afc67`
+A one-page snapshot of where the project stands. Last checked on 2026-11-17 at `8fd32a6`
 on `main`. To learn what the product does, read
 [product-overview.md](./product-overview.md). For the code, read
 [architecture-overview.md](./architecture-overview.md).
@@ -11,18 +11,16 @@ on `main`. To learn what the product does, read
 and with a link to exactly one feature state.md. Updated by /close-increment and
 /feature-docs update. -->
 
-- **Feature:** none · **#50** on `fix/50-live-event-sender-details`: `message` events carry
-  `data.sender` and `data.mentions` from the saved message; `join` and `leave` carry the
-  username and avatar the connection loaded at connect (`Client.Username`, `Client.Avatar`)
-  ([events](./websocket-events.md)). Verified (`verify.mjs --full` with
-  `TEST_DB_REQUIRED=1`; both new tests fail on the old code)
+- **Feature:** none · **#79** on `fix/79-hub-restart-duplicate-loops`: `Hub.Restart` and
+  the controller's cancelled-context check are removed (nothing cancels the hub in
+  production; the code review found it raced on `hub.Ctx` and could run two `runHub`
+  loops). `startLoops` gives each background loop its context. Verified (`verify.mjs --full`)
 - **#72 on Render (paused 2026-11-15):** `/health` answers `200`, but no chat with a message
   saved before PR #74 (`reactions: null`) is left to react to. Continue later, for example
   by setting `reactions: null` on a test message in Atlas first
-- **Next step:** PR for #50; ask before merging. After it, pick from the open issues
-  (`gh issue list`), for example #79 (`Hub.Restart` starts duplicate loops). Split
-  `rest-api.md`, `websocket-requests.md`, `websocket-events.md` (~199 lines) before adding to them
-- **Updated:** 2026-11-17 on `fix/50-live-event-sender-details` from `18afc67`
+- **Next step:** PR for #79; ask before merging. Split `rest-api.md`,
+  `websocket-requests.md`, `websocket-events.md` (~199 lines) before adding to them
+- **Updated:** 2026-11-17 on `fix/79-hub-restart-duplicate-loops` from `8fd32a6`
 
 ## Where things stand
 
@@ -37,6 +35,9 @@ declining a group invite. The full list is in
 
 ## Recently finished
 
+- **#50 (PR #137):** `message` events carry `data.sender` and `data.mentions` from the
+  saved message; `join` and `leave` carry the username and avatar the connection loaded
+  at connect ([events](./websocket-events.md)). A rename shows on the next connect.
 - **#48 (PR #136):** `join_chat` with `chatId` follows any chat you are in (block rule
   included), `senderId` still opens a direct chat, and both answer with a `response`
   holding `chatId`. A repeated join isn't announced again
@@ -137,7 +138,7 @@ to remember is `node scripts/verify.mjs`.
 
 ## Test baseline
 
-Run on 2026-11-17 on `main` at `c083ad6`, on Windows, with MongoDB and Redis running and
+Run on 2026-11-17 on `main` at `8fd32a6`, on Windows, with MongoDB and Redis running and
 `TEST_DB_REQUIRED=1`, through `node scripts/verify.mjs --full` after `go clean -testcache`.
 The lint row is from 2026-11-07 at `90b2f73`. Compare new runs against this table by test
 name.

@@ -191,13 +191,13 @@ func (eh *Hub) checkNewSession(client *models.Client) {
 // recheckSessions runs performSessionRecheck and then
 // performMembershipRecheck every SessionRecheckInterval. The second is skipped
 // when the first couldn't make its checks.
-func (eh *Hub) recheckSessions() {
+func (eh *Hub) recheckSessions(ctx context.Context) {
 	ticker := time.NewTicker(SessionRecheckInterval)
 	defer ticker.Stop()
 
 	for {
 		select {
-		case <-eh.Ctx.Done():
+		case <-ctx.Done():
 			return
 		case <-ticker.C:
 			// After an outage the membership reads would only wait out
