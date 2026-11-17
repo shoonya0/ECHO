@@ -98,9 +98,9 @@ All of these start with `users/contacts`.
 | `POST /favorite/:userId` | Adds to favorites |
 | `DELETE /favorite/:userId` | Removes from favorites |
 
-The five lists accept `limit`, 1 to 100 (default 10). A value below 1 or not a number
-counts as 10, and anything over 100 as 100. The lists aren't cut to `limit` yet: you get
-every entry, and `pagination.limit` only echoes the value (#39).
+The five lists come in pages sorted by username (#39): `limit` 1 to 100 (default 10; below
+1 or not a number counts as 10, over 100 as 100) and `page` from 1 (default 1). The reply
+has `data.items` and `data.pagination` (`limit`, `total`, `total_pages`).
 
 ## Chats
 
