@@ -103,15 +103,6 @@ func Login(c *gin.Context) {
 		return
 	}
 
-	// Failed logins per email, from any IP (#40). Checked before the lookup and
-	// bcrypt, so guessing stops for the window even with the right password.
-	emailKey := services.RateLimitKey("login-email", services.EmailRateLimitID(req.Email))
-	if exceeded, wait := services.Exceeded(c.Request.Context(), emailKey, services.LoginEmailFailLimit); exceeded {
-		log.Info("login refused: too many failed logins for this email")
-		utils.RateLimitedResponse(c, wait)
-		return
-	}
-
 	userProjection := bson.M{
 		"_id":                 1,
 		"email":               1,
@@ -129,7 +120,6 @@ func Login(c *gin.Context) {
 	err := database.DB.Collection(string(constants.UserColl)).FindOne(c.Request.Context(), bson.M{"email": req.Email}, options.FindOne().SetProjection(userProjection)).Decode(&rawDoc)
 	if err == mongo.ErrNoDocuments {
 		log.Debug("invalid credentials")
-		services.Hit(c.Request.Context(), emailKey, services.LoginEmailFailLimit) // counts like a wrong password
 		utils.ErrorResponse(c, http.StatusUnauthorized, "invalid credentials", nil)
 		return
 	} else if err != nil {
@@ -157,14 +147,33 @@ func Login(c *gin.Context) {
 		return
 	}
 
+	// Attempts on this account (#40): per IP and account, then per account from
+	// all IPs. Counted before bcrypt, so guesses sent together can't all pass
+	// before one is counted. Only existing accounts get counts, so made-up emails
+	// can't fill Redis; LoginIPLimit covers those.
+	emailID := services.EmailRateLimitID(req.Email)
+	pairKey := services.RateLimitKey("login-pair", c.ClientIP()+"|"+emailID)
+	emailKey := services.RateLimitKey("login-email", emailID)
+	allowed, wait := services.Hit(c.Request.Context(), pairKey, services.LoginPairFailLimit)
+	if allowed {
+		allowed, wait = services.Hit(c.Request.Context(), emailKey, services.LoginEmailFailLimit)
+	}
+	if !allowed {
+		log.Info("login refused: too many attempts on this account")
+		utils.RateLimitedResponse(c, wait)
+		return
+	}
+
 	if err := bcrypt.CompareHashAndPassword(
 		[]byte(user.PasswordHash), []byte(req.Password),
 	); err != nil {
 		log.WithError(err).Debug("invalid credentials")
-		services.Hit(c.Request.Context(), emailKey, services.LoginEmailFailLimit)
 		utils.ErrorResponse(c, http.StatusUnauthorized, "invalid credentials", nil)
 		return
 	}
+
+	// The right password ends both counts, so earlier typos don't add up.
+	services.ClearRateLimits(c.Request.Context(), pairKey, emailKey)
 
 	if user.AccountStatus.IsBanned {
 		log.Debug("account is banned")

@@ -2,6 +2,8 @@ package services
 
 import (
 	"context"
+	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -60,25 +62,41 @@ func TestHitWindowEnds(t *testing.T) {
 	}
 }
 
-func TestExceededDoesNotCount(t *testing.T) {
+// TestHitCountsConcurrentRequests guards the review finding on #40: requests
+// that arrive together must not all pass before any is counted.
+func TestHitCountsConcurrentRequests(t *testing.T) {
 	testutil.UseTestRedis(t)
 	ctx := context.Background()
-	l := Limit{Max: 2, Window: time.Minute}
+	l := Limit{Max: 5, Window: time.Minute}
 	key := freshKey(t, "")
 
-	for range 5 {
-		if exceeded, _ := Exceeded(ctx, key, l); exceeded {
-			t.Fatal("Exceeded reported true before any hit")
-		}
+	var allowed atomic.Int32
+	var wg sync.WaitGroup
+	for range 50 {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			if ok, _ := Hit(ctx, key, l); ok {
+				allowed.Add(1)
+			}
+		}()
 	}
-	Hit(ctx, key, l)
-	if exceeded, _ := Exceeded(ctx, key, l); exceeded {
-		t.Fatal("Exceeded true below Max hits")
+	wg.Wait()
+	if got := allowed.Load(); got != 5 {
+		t.Fatalf("%d of 50 concurrent hits allowed, want 5", got)
 	}
+}
+
+func TestClearRateLimitsResetsTheCount(t *testing.T) {
+	testutil.UseTestRedis(t)
+	ctx := context.Background()
+	l := Limit{Max: 1, Window: time.Minute}
+	key := freshKey(t, "")
+
 	Hit(ctx, key, l)
-	exceeded, retryAfter := Exceeded(ctx, key, l)
-	if !exceeded || retryAfter <= 0 {
-		t.Fatalf("Exceeded = %v, %v after Max hits; want true and a wait", exceeded, retryAfter)
+	ClearRateLimits(ctx, key)
+	if ok, _ := Hit(ctx, key, l); !ok {
+		t.Fatal("hit refused after ClearRateLimits")
 	}
 }
 
@@ -93,9 +111,7 @@ func TestRateLimitAllowsWhenRedisIsDown(t *testing.T) {
 			t.Fatal("Hit refused while Redis is down; want allowed")
 		}
 	}
-	if exceeded, _ := Exceeded(ctx, key, l); exceeded {
-		t.Fatal("Exceeded true while Redis is down; want false")
-	}
+	ClearRateLimits(ctx, key) // only logs
 }
 
 func TestEmailRateLimitIDIgnoresCaseAndSpace(t *testing.T) {
