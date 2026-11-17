@@ -4,6 +4,11 @@ Older entries moved here from
 [current-state.md](./current-state.md#recently-finished), newest first. Links point to
 the docs that describe each change today. Newer work is listed on that page.
 
+- **#39 (PR #129):** the five contact lists come in pages: `page` 1 to 10000, cut to
+  `limit`, sorted by username ignoring case, with the real `total`
+  ([REST](./rest-api.md#contacts), [app changes](../Android/_docs/08_SERVER_CHANGES/contacts-and-blocking.md)).
+  Not done from the review: offset pages can shift when the list changes; `users/suggestions`
+  has the same unbounded `page`.
 - **#67 (PR #101):** the contract test pages history with `?before=<nextCursor>` and checks
   that `offset` gets `400`; every step passes against a local server.
 - **#60 (PR #100):** a `chatId` in any case is lowercased where WebSocket requests come

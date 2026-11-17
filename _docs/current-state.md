@@ -11,16 +11,17 @@ on `main`. To learn what the product does, read
 and with a link to exactly one feature state.md. Updated by /close-increment and
 /feature-docs update. -->
 
-- **Feature:** none · **#79** on `fix/79-hub-restart-duplicate-loops`: `Hub.Restart` and
-  the controller's cancelled-context check are removed (nothing cancels the hub in
-  production; the code review found it raced on `hub.Ctx` and could run two `runHub`
-  loops). `startLoops` gives each background loop its context. Verified (`verify.mjs --full`)
+- **Feature:** none · **#40, login and signup limits** on `fix/40-auth-rate-limit`:
+  per-email failed-login limit plus per-IP limits on `login` and `signup`, IP from the
+  `CLIENT_IP_HEADER` header (Render: `True-Client-IP`). Plan:
+  `~/.claude/plans/fuzzy-percolating-stardust.md`. Not started in code yet
 - **#72 on Render (paused 2026-11-15):** `/health` answers `200`, but no chat with a message
   saved before PR #74 (`reactions: null`) is left to react to. Continue later, for example
   by setting `reactions: null` on a test message in Atlas first
-- **Next step:** PR for #79; ask before merging. Split `rest-api.md`,
-  `websocket-requests.md`, `websocket-events.md` (~199 lines) before adding to them
-- **Updated:** 2026-11-17 on `fix/79-hub-restart-duplicate-loops` from `8fd32a6`
+- **Next step:** split `rest-api.md` (199 lines), then the counters in
+  `services/ratelimit.go`, tests first. Split `websocket-requests.md` and
+  `websocket-events.md` (~199 lines) before adding to them
+- **Updated:** 2026-11-17 on `fix/40-auth-rate-limit` from `77fc8f5`
 
 ## Where things stand
 
@@ -35,6 +36,9 @@ declining a group invite. The full list is in
 
 ## Recently finished
 
+- **#79 (PR #138):** `Hub.Restart` and the WebSocket controller's cancelled-context check
+  are removed: nothing cancels the hub in production, and the path started duplicate loops
+  and raced on `hub.Ctx`. Each background loop gets its context from `startLoops`.
 - **#50 (PR #137):** `message` events carry `data.sender` and `data.mentions` from the
   saved message; `join` and `leave` carry the username and avatar the connection loaded
   at connect ([events](./websocket-events.md)). A rename shows on the next connect.
@@ -59,11 +63,6 @@ declining a group invite. The full list is in
   [app changes](../Android/_docs/08_SERVER_CHANGES/groups-and-invites.md)). Not done from
   the review: a connection registering in the same ms misses the add; a removal racing an
   add is undone by the #117 re-check within 30 s.
-- **#39 (PR #129):** the five contact lists come in pages: `page` 1 to 10000, cut to
-  `limit`, sorted by username ignoring case, with the real `total`
-  ([REST](./rest-api.md#contacts), [app changes](../Android/_docs/08_SERVER_CHANGES/contacts-and-blocking.md)).
-  Not done from the review: offset pages can shift when the list changes; `users/suggestions`
-  has the same unbounded `page`.
 - **#117 (PR #128):** every 30 s each server reads the participants of its rooms' chats
   (`services.ChatMembers`, keys only) and takes out connections of users who aren't
   members any more ([pub/sub](./PUBSUB_ARCHITECTURE.md#background-jobs)). Not done from the
@@ -168,11 +167,11 @@ blocks are stored, and who counts as a member.
 
 ## Known issues and risks
 
-There are 22 open issues. Where each risk sits in the code: [architecture-overview.md](./architecture-overview.md#riskiest-areas).
+There are 15 open issues. Where each risk sits in the code: [architecture-overview.md](./architecture-overview.md#riskiest-areas).
 
 | Area | The problem, in short | Issues |
 |---|---|---|
-| Live connections | The server can leak resources or stall under load, missed live messages can't be detected, and open connections miss new chats, and a restart of a running hub doubles its loops | #21, #22, #43, #49, #79, #117 |
+| Live connections | The server can leak resources or stall under load, missed live messages can't be detected, and open connections miss new chats | #21, #22, #43, #49, #117 |
 | Groups | Members are never asked to accept, pending members get no live messages, and the participant count is maintained by hand | #5, #17, #110 |
 | Invite codes | Entries left by forged joins before #9 was fixed are still stored | #69 |
 | Accounts | Deleting an account leaves old references, emails are case-sensitive, and usernames aren't unique | #35, #36 |
@@ -180,7 +179,6 @@ There are 22 open issues. Where each risk sits in the code: [architecture-overvi
 | Online status and privacy | Online status is unreliable, and privacy settings aren't applied | #31, #32 |
 | Messages and data | Writes can half-finish, and some lists grow without limit | #37, #42 |
 | Limits and errors | WebSocket limits are per connection, not per user; no limits on login and signup | #40 |
-| WebSocket replies and events | Replies and events are inconsistent or leave out details, which affects the Android plan | #50 |
 
 ## Next task
 
