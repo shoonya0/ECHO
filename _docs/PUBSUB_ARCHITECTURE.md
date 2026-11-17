@@ -102,7 +102,8 @@ This runs on one goroutine, one connection at a time. That is why the server acc
 
 The list is only read at this moment. A chat gained later reaches the open connections
 through `internal.chat_added` on `user:<userID>` (#49). A connection registering in the
-same few milliseconds as the add can miss it until it reconnects. See
+same few milliseconds as the add can miss it until it reconnects, and a removal right
+after an add can be applied first; the membership re-check (#117) fixes that within 30 s. See
 [which chats you get live events for](./WEBSOCKET_PROTOCOL.md#which-chats-you-get-live-events-for).
 
 **When someone disconnects,** the hub takes the connection out of every room it is in and

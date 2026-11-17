@@ -16,14 +16,17 @@ and with a link to exactly one feature state.md. Updated by /close-increment and
   hub-internal `internal.chat_added` on `user:<id>`, the reverse of #14's removal
   (`internal/realtime/members_added.go`, `services.AddMembersToLiveChat`). Verified
   (`verify.mjs --full` with `TEST_DB_REQUIRED=1`; hub and service tests fail without the
-  fix). Known gap: a connection registering in the same ms as the add can miss it. Not reviewed yet
+  fix). Code review applied: a retried join that restores the chats entry follows the
+  chat; a failed publish subscribes in the background; chat IDs are checked. Not done: a
+  connection registering in the same ms as the add misses it; a removal racing an add is
+  undone only by the #117 re-check; `CreateDirectChat` ignores `MatchedCount` (issue proposed)
 - **#72 on Render (paused 2026-11-15):** `/health` answers `200`, but no chat with a message
   saved before PR #74 (`reactions: null`) is left to react to. Continue later, for example
   by setting `reactions: null` on a test message in Atlas first
-- **Next step:** `/code-review`, then the PR (`Fixes #49`). After it: #51
+- **Next step:** PR for #49; ask before merging. After it: #51
   (characters or bytes: needs a decision); the `users/suggestions` unbounded `page` issue
   waits for a yes. Split `rest-api.md`, `websocket-requests.md` (199 lines) before adding
-- **Updated:** 2026-11-17 on `fix/49-follow-new-chats` at `38c00de`
+- **Updated:** 2026-11-17 on `fix/49-follow-new-chats` at `3ee7b83`
 
 ## Where things stand
 
