@@ -81,3 +81,9 @@ trusted, because Render's proxy appends to what the client sent, and a header va
 isn't an IP is dropped. Per-IP limits are
 generous because mobile carriers put many users behind one address. Counts live in Redis.
 When Redis is down, requests go through: an outage shouldn't block every login.
+
+Accepted trade-off: only existing accounts reach the per-account limits, so after 10 tries a
+real email gets `429` and a made-up one keeps getting `401`. That shows which emails have
+accounts, but `signup` already answers `409` for a taken email, and an unknown email skips
+bcrypt, so it answers faster. Counting made-up emails would let them fill Redis. Hiding
+which emails exist would need `signup` and the bcrypt timing changed too: a separate issue.
