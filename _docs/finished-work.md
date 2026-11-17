@@ -4,6 +4,9 @@ Older entries moved here from
 [current-state.md](./current-state.md#recently-finished), newest first. Links point to
 the docs that describe each change today. Newer work is listed on that page.
 
+- **#38 (PR #95):** a contact request or direct chat with yourself gets `400`
+  (`INVALID_USER_ID` from `join_chat`) instead of storing broken data
+  ([app changes](../Android/_docs/08_SERVER_CHANGES/README.md)).
 - **#28 (PR #94):** only the owner can remove the owner (also when the owner is only
   stored as `ownerId`); a request naming the owner removes nobody. Listing yourself no
   longer drops the group from your chat list, `removedUsers` lists only the people removed,

@@ -11,17 +11,17 @@ on `main`. To learn what the product does, read
 and with a link to exactly one feature state.md. Updated by /close-increment and
 /feature-docs update. -->
 
-- **Feature:** none · **#54** on `fix/54-dead-client-registration`: a disconnect the
-  hub handles before the connection's registration closes its send queue, and the
-  registration skips a closed connection and drops the presence it stored. Verified
-  (`verify.mjs --full`) at `10ef17e`; code review applied (other findings are in #120's
-  code: issues proposed, not filed)
+- **Feature:** none · **#122** on `fix/122-join-before-registration`: the server reads a
+  connection's requests only after the hub has registered it (`Hub.WaitRegistered`), so
+  an early `join_chat` is no longer dropped. Verified (`verify.mjs --full`; contract test:
+  no differences from `main`); code review applied (registering before reading replaced
+  letting connections join before registration)
 - **#72 on Render (paused 2026-11-15):** `/health` answers `200`, but no chat with a message
   saved before PR #74 (`reactions: null`) is left to react to. Continue later, for example
   by setting `reactions: null` on a test message in Atlas first
-- **Next step:** push and open the PR (`Fixes #54`). Split `rest-api.md`, `websocket-requests.md`
+- **Next step:** code review, then push and open the PR (`Fixes #122`). Split `rest-api.md`, `websocket-requests.md`
   before adding to them
-- **Updated:** 2026-11-17 on `fix/54-dead-client-registration`
+- **Updated:** 2026-11-17 on `fix/122-join-before-registration`
 
 ## Where things stand
 
@@ -36,6 +36,10 @@ declining a group invite. The full list is in
 
 ## Recently finished
 
+- **#54 (PR #121):** a disconnect the hub handles before the connection's registration
+  closes its send queue and drops the presence it stored; the registration then skips the
+  closed connection ([pub/sub](./PUBSUB_ARCHITECTURE.md#connecting-and-disconnecting)).
+  From the code review: #122, #123, #124 and a comment on #22.
 - **#20 + #55 (PR #120):** rooms are tracked per connection (`ClientChats`). Every room
   removal (disconnect, `leave_chat`, `remove_user`) releases the chat channels left
   unused, a user's last connection releases `user:<id>`, and a join racing a release keeps
@@ -96,10 +100,7 @@ declining a group invite. The full list is in
   `set_typing`, `mark_read` and reactions; history still reads. Groups aren't affected
   ([requests](./websocket-requests.md), [app changes](../Android/_docs/08_SERVER_CHANGES/README.md)).
   Not done from the code review: contact requests still miss a half-written block.
-- **#38 (PR #95):** a contact request or direct chat with yourself gets `400`
-  (`INVALID_USER_ID` from `join_chat`) instead of storing broken data
-  ([app changes](../Android/_docs/08_SERVER_CHANGES/README.md)).
-Older work, from #28 (PR #94) back: [finished-work.md](./finished-work.md).
+Older work, from #38 (PR #95) back: [finished-work.md](./finished-work.md).
 
 ## How to build, run, test
 
@@ -138,11 +139,11 @@ blocks are stored, and who counts as a member.
 
 ## Known issues and risks
 
-There are 22 open issues once #54 closes. Where each risk sits in the code: [architecture-overview.md](./architecture-overview.md#riskiest-areas).
+There are 24 open issues once #122 closes. Where each risk sits in the code: [architecture-overview.md](./architecture-overview.md#riskiest-areas).
 
 | Area | The problem, in short | Issues |
 |---|---|---|
-| Live connections | The server can leak resources or stall under load, missed live messages can't be detected, and open connections miss new chats, and a restart of a running hub doubles its loops | #21, #22, #43, #49, #79, #117 |
+| Live connections | The server can leak resources or stall under load, missed live messages can't be detected, and open connections miss new chats, a restart of a running hub doubles its loops, a channel can stay subscribed after a racing removal, and a test hook can race | #21, #22, #43, #49, #79, #117, #123, #124 |
 | Groups | Members are never asked to accept, pending members get no live messages, and the participant count is maintained by hand | #5, #17, #110 |
 | Invite codes | Entries left by forged joins before #9 was fixed are still stored | #69 |
 | Accounts | Deleting an account leaves old references, emails are case-sensitive, and usernames aren't unique | #35, #36 |
