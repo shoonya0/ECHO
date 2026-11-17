@@ -2,6 +2,15 @@
 
 Part of [server changes the app must handle](./README.md).
 
+## Live events name the sender (#50)
+
+- A `message` event now has `data.sender` (`userId`, `username`, `displayName`, `avatar`,
+  the same object as REST messages) and `data.mentions` (user IDs). Show it directly;
+  no user lookup is needed for an unknown sender.
+- `join` and `leave` events now fill `data.username` and `data.avatar` (left out when
+  empty), as the user's profile was when that connection opened
+  ([details](../../../_docs/websocket-events.md)).
+
 ## The 4000 limit counts characters (#51)
 
 - `send_message` `content` may hold 4000 characters (Unicode code points), not 4000

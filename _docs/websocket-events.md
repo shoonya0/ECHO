@@ -40,7 +40,7 @@ The `response` comes in three shapes, so read them carefully.
 }
 ```
 
-**Reply to reactions, `invite_user` and `remove_user`:**
+**Reply to `join_chat` (`data.data.chatId`), reactions, `invite_user` and `remove_user`:**
 
 ```json
 {
@@ -79,21 +79,21 @@ couldn't read your message. All codes are listed in
   "type": "message",
   "chatId": "<chatId>",
   "userId": "<sender's userId>",
+  "username": "<sender's username>", "avatar": "<sender's avatar URL>",
   "data": {
     "id": "<messageId>",
     "chatId": "<chatId>",
     "senderId": "<sender's userId>",
-    "content": "Hello everyone!",
-    "messageType": "text",
+    "sender": { "userId": "...", "username": "...", "displayName": "...", "avatar": "..." },
+    "content": "Hello everyone!", "messageType": "text", "mentions": ["<mentioned userId>"],
     "createdAt": "2026-11-04T12:00:00Z"
   }
 }
 ```
 
-- This event has no sender name, avatar or mentions (#50). Find the sender by `senderId`.
-  Messages loaded [over REST](./rest-api.md#messages) include a `sender` object.
-- `attachments` appears only when the message has some.
-- You also get this event for your own messages.
+- `sender` is the object messages loaded [over REST](./rest-api.md#messages) have, as saved
+  with the message (#50). `attachments` and `mentions` (user IDs) appear only when there
+  are some, and so does the envelope `avatar`. You also get this event for your own messages.
 
 ## `typing`: someone is typing
 
@@ -157,11 +157,13 @@ app can add or take away one for `userId` without checking (#25).
   "type": "join",
   "chatId": "<chatId>",
   "userId": "<userId>",
-  "data": { "userId": "<userId>", "username": "", "action": "join", "timestamp": "..." }
+  "username": "<username>",
+  "data": { "userId": "<userId>", "username": "<username>", "avatar": "<URL>", "action": "join", "timestamp": "..." }
 }
 ```
 
-These are about live connections, not group membership. `username` is always empty today (#50).
+These are about live connections, not group membership. `username` and `avatar` are the
+profile as it was when that connection opened (#50); `avatar` is left out when empty.
 
 ## `presence`: someone's online status changed
 
