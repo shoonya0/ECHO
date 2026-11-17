@@ -21,26 +21,16 @@ import (
 // membershipBatchSize is how many chats one membership query reads.
 const membershipBatchSize = 200
 
-// MembersLoader returns the participants of each chat, keyed by chat ID. A chat
-// that doesn't exist has no entry. services.ChatMembers is the one used
-// outside tests.
-type MembersLoader func(ctx context.Context, chatIDs []string) (map[string]map[string]struct{}, error)
+// MembersLoader returns the participants of each chat, keyed by the chat's hex
+// ID. A chat that doesn't exist has no entry. services.ChatMembers is the one
+// used outside tests.
+type MembersLoader func(ctx context.Context, chatIDs []bson.ObjectID) (map[string]map[string]struct{}, error)
 
 func (eh *Hub) membersLoader() MembersLoader {
 	if eh.loadMembers != nil {
 		return eh.loadMembers
 	}
-	return loadChatMembers
-}
-
-func loadChatMembers(ctx context.Context, chatIDs []string) (map[string]map[string]struct{}, error) {
-	ids := make([]bson.ObjectID, 0, len(chatIDs))
-	for _, chatID := range chatIDs {
-		if id, err := bson.ObjectIDFromHex(chatID); err == nil {
-			ids = append(ids, id)
-		}
-	}
-	return services.ChatMembers(ctx, ids)
+	return services.ChatMembers
 }
 
 // roomMember is one connection in a room, as the snapshot saw it.
@@ -49,36 +39,40 @@ type roomMember struct {
 	userID   string
 }
 
+// room is a chat's room as the snapshot saw it, with the chat ID parsed once.
+type room struct {
+	chatID  string
+	id      bson.ObjectID
+	members []roomMember
+}
+
 // performMembershipRecheck takes connections out of the rooms of chats their
 // user isn't a participant of. Only connections seen in the snapshot taken
 // before the read are removed, so a connection that entered later waits for
 // the next pass. A read that fails ends the pass and removes nobody: an outage
-// must not empty every room.
+// must not empty every room, and the snapshot's random order checks other
+// rooms first next time.
 func (eh *Hub) performMembershipRecheck() {
 	rooms := eh.snapshotRooms()
-	if len(rooms) == 0 {
-		return
-	}
-
-	chatIDs := make([]string, 0, len(rooms))
-	for chatID := range rooms {
-		chatIDs = append(chatIDs, chatID)
-	}
 
 	load := eh.membersLoader()
 	var emptied []string
-	for start := 0; start < len(chatIDs); start += membershipBatchSize {
-		batch := chatIDs[start:min(start+membershipBatchSize, len(chatIDs))]
+	for start := 0; start < len(rooms); start += membershipBatchSize {
+		batch := rooms[start:min(start+membershipBatchSize, len(rooms))]
+		ids := make([]bson.ObjectID, len(batch))
+		for i, r := range batch {
+			ids[i] = r.id
+		}
 
 		ctx, cancel := context.WithTimeout(eh.Ctx, sessionCheckTimeout)
-		members, err := load(ctx, batch)
+		members, err := load(ctx, ids)
 		cancel()
 		if err != nil {
 			eh.logger.WithError(err).Warn("Membership re-check stopped: chat members couldn't be read; rooms are kept until the next pass")
 			break
 		}
 
-		emptied = append(emptied, eh.removeNonMembers(batch, rooms, members)...)
+		emptied = append(emptied, eh.removeNonMembers(batch, members)...)
 	}
 
 	if len(emptied) > 0 {
@@ -88,44 +82,45 @@ func (eh *Hub) performMembershipRecheck() {
 
 // snapshotRooms copies every room whose chat ID is an object ID, under the
 // hub's lock (#19). Other room names aren't chats and are left alone.
-func (eh *Hub) snapshotRooms() map[string][]roomMember {
+func (eh *Hub) snapshotRooms() []room {
 	eh.Mutex.RLock()
 	defer eh.Mutex.RUnlock()
 
-	rooms := make(map[string][]roomMember, len(eh.ChatClients))
+	rooms := make([]room, 0, len(eh.ChatClients))
 	for chatID, clients := range eh.ChatClients {
-		if _, err := bson.ObjectIDFromHex(chatID); err != nil {
+		id, err := bson.ObjectIDFromHex(chatID)
+		if err != nil {
 			continue
 		}
-		room := make([]roomMember, 0, len(clients))
+		r := room{chatID: chatID, id: id, members: make([]roomMember, 0, len(clients))}
 		for clientID, client := range clients {
-			room = append(room, roomMember{clientID: clientID, userID: client.UserID.Hex()})
+			r.members = append(r.members, roomMember{clientID: clientID, userID: client.UserID.Hex()})
 		}
-		rooms[chatID] = room
+		rooms = append(rooms, r)
 	}
 	return rooms
 }
 
 // removeNonMembers takes the snapshotted connections of non-members out of the
 // batch's rooms and returns the rooms that are now empty.
-func (eh *Hub) removeNonMembers(batch []string, rooms map[string][]roomMember, members map[string]map[string]struct{}) (emptied []string) {
+func (eh *Hub) removeNonMembers(batch []room, members map[string]map[string]struct{}) (emptied []string) {
 	eh.Mutex.Lock()
 	defer eh.Mutex.Unlock()
 
-	for _, chatID := range batch {
-		participants := members[chatID] // nil for a chat that doesn't exist
-		for _, member := range rooms[chatID] {
+	for _, r := range batch {
+		participants := members[r.chatID] // nil for a chat that doesn't exist
+		for _, member := range r.members {
 			if _, ok := participants[member.userID]; ok {
 				continue
 			}
-			client, inRoom := eh.ChatClients[chatID][member.clientID]
+			client, inRoom := eh.ChatClients[r.chatID][member.clientID]
 			if !inRoom {
 				continue
 			}
-			eh.logger.WithFields(logrus.Fields{"clientID": member.clientID, "chatID": chatID}).
+			eh.logger.WithFields(logrus.Fields{"clientID": member.clientID, "chatID": r.chatID}).
 				Info("Taking a connection out of a chat its user isn't a member of")
-			if removeClientFromRoom(eh.Hub, client, chatID) {
-				emptied = append(emptied, chatID)
+			if removeClientFromRoom(eh.Hub, client, r.chatID) {
+				emptied = append(emptied, r.chatID)
 			}
 		}
 	}

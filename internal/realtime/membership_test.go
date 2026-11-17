@@ -15,17 +15,17 @@ import (
 
 // membersOf is a loadMembers stub: chat ID -> member user IDs. A chat missing
 // from it doesn't exist.
-func membersOf(chats map[string][]bson.ObjectID) func(context.Context, []string) (map[string]map[string]struct{}, error) {
-	return func(_ context.Context, chatIDs []string) (map[string]map[string]struct{}, error) {
+func membersOf(chats map[string][]bson.ObjectID) func(context.Context, []bson.ObjectID) (map[string]map[string]struct{}, error) {
+	return func(_ context.Context, chatIDs []bson.ObjectID) (map[string]map[string]struct{}, error) {
 		result := make(map[string]map[string]struct{})
 		for _, chatID := range chatIDs {
-			users, ok := chats[chatID]
+			users, ok := chats[chatID.Hex()]
 			if !ok {
 				continue
 			}
-			result[chatID] = make(map[string]struct{})
+			result[chatID.Hex()] = make(map[string]struct{})
 			for _, userID := range users {
-				result[chatID][userID.Hex()] = struct{}{}
+				result[chatID.Hex()][userID.Hex()] = struct{}{}
 			}
 		}
 		return result, nil
@@ -85,7 +85,7 @@ func TestMembershipRecheck(t *testing.T) {
 	t.Run("a failed read removes nobody", func(t *testing.T) {
 		hub := newTestHub(t)
 		addClient(hub, bufferedClient("b1", gone), group)
-		hub.loadMembers = func(context.Context, []string) (map[string]map[string]struct{}, error) {
+		hub.loadMembers = func(context.Context, []bson.ObjectID) (map[string]map[string]struct{}, error) {
 			return nil, errors.New("mongo is down")
 		}
 
@@ -101,7 +101,7 @@ func TestMembershipRecheck(t *testing.T) {
 		b1, b2 := bufferedClient("b1", gone), bufferedClient("b2", gone)
 		addClient(hub, b1, group)
 		load := membersOf(map[string][]bson.ObjectID{group: {}})
-		hub.loadMembers = func(ctx context.Context, chatIDs []string) (map[string]map[string]struct{}, error) {
+		hub.loadMembers = func(ctx context.Context, chatIDs []bson.ObjectID) (map[string]map[string]struct{}, error) {
 			addClient(hub, b2, group) // registered while the chats were read
 			return load(ctx, chatIDs)
 		}
@@ -119,8 +119,8 @@ func TestMembershipRecheck(t *testing.T) {
 	t.Run("chat IDs that aren't object IDs are left alone", func(t *testing.T) {
 		hub := newTestHub(t)
 		addClient(hub, bufferedClient("b1", gone), "not-an-id")
-		var asked []string
-		hub.loadMembers = func(_ context.Context, chatIDs []string) (map[string]map[string]struct{}, error) {
+		var asked []bson.ObjectID
+		hub.loadMembers = func(_ context.Context, chatIDs []bson.ObjectID) (map[string]map[string]struct{}, error) {
 			asked = append(asked, chatIDs...)
 			return map[string]map[string]struct{}{}, nil
 		}
