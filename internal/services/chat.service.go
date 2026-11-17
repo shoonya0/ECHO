@@ -165,6 +165,36 @@ func findChatForMember(ctx context.Context, chatID, userID bson.ObjectID, projec
 	return chat, nil
 }
 
+// ChatMembers returns the participants of each chat, as hex IDs keyed by the
+// chat's hex ID, in one query. A chat that doesn't exist has no entry. The hub
+// uses it to take connections out of rooms their user is no longer a member
+// of (#117).
+func ChatMembers(ctx context.Context, chatIDs []bson.ObjectID) (map[string]map[string]struct{}, error) {
+	members := make(map[string]map[string]struct{}, len(chatIDs))
+	if len(chatIDs) == 0 {
+		return members, nil
+	}
+
+	opts := options.Find().SetProjection(bson.M{"participants": 1})
+	cursor, err := database.DB.Collection(string(constants.ChatColl)).Find(ctx, bson.M{"_id": bson.M{"$in": chatIDs}}, opts)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read chat members: %w", err)
+	}
+	var chats []models.Chat
+	if err := cursor.All(ctx, &chats); err != nil {
+		return nil, fmt.Errorf("failed to decode chat members: %w", err)
+	}
+
+	for _, chat := range chats {
+		users := make(map[string]struct{}, len(chat.Participants))
+		for userID := range chat.Participants {
+			users[userID.Hex()] = struct{}{}
+		}
+		members[chat.ChatID.Hex()] = users
+	}
+	return members, nil
+}
+
 // RequireChatAccess is RequireChatMember for actions the other members see:
 // typing, read receipts and reactions. In a direct chat, a block either way
 // returns ErrBlocked (#27). Reading history needs membership only.
