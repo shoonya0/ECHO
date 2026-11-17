@@ -75,7 +75,7 @@ go func() {
 }()
 ```
 
-`Start()` initializes pub/sub, then `startLoops()` launches `runHub`, `cleanupInactiveConnections`, `syncPresenceWithRedis` and `recheckSessions`. Each loop gets the context it was started on, not `eh.Ctx`.
+`Start()` initializes pub/sub, then `startLoops()` launches `runHub`, `cleanupInactiveConnections`, `syncPresenceWithRedis` and `recheckSessions`.
 
 ### 2. Client lifecycle
 
@@ -184,16 +184,11 @@ The hub maintains a `UserInfoCache` (5-minute TTL) to avoid database lookups for
 - The `Register` and `Unregister` channels serialize hub mutations — only `runHub()` processes them.
 - Client `Send` channel (buffered, capacity 10) is used with `select`/`default` to avoid blocking the hub on slow clients.
 
-### 11. Hub restart
+### 11. No hub restart
 
-If the hub's context is cancelled (e.g., Redis connection loss), the hub can be restarted:
-```go
-select {
-case <-hub.Ctx.Done():
-    hub.Restart()  // new context + startLoops; no-op while the context is live (#79)
-default:
-}
-```
+Nothing cancels the hub's context in production, so there is no `Restart` (removed in
+#79: it started duplicate loops and raced on `hub.Ctx`). If something ever needs to stop
+the hub, design restart together with the pub/sub manager instead of re-adding it.
 
 ### 12. Hub stats (for monitoring)
 

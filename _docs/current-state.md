@@ -11,17 +11,15 @@ on `main`. To learn what the product does, read
 and with a link to exactly one feature state.md. Updated by /close-increment and
 /feature-docs update. -->
 
-- **Feature:** none · **#79** on `fix/79-hub-restart-duplicate-loops`: `Restart` is
-  serialized and does nothing while the hub context is live; `startLoops` gives each
-  background loop the context it started on, so a swapped context can't keep an old loop
-  alive. Verified (`verify.mjs --full`; both new tests fail on the old code: 8 and 40 loops)
+- **Feature:** none · **#79** on `fix/79-hub-restart-duplicate-loops`: `Hub.Restart` and
+  the controller's cancelled-context check are removed (nothing cancels the hub in
+  production; the code review found it raced on `hub.Ctx` and could run two `runHub`
+  loops). `startLoops` gives each background loop its context. Verified (`verify.mjs --full`)
 - **#72 on Render (paused 2026-11-15):** `/health` answers `200`, but no chat with a message
   saved before PR #74 (`reactions: null`) is left to react to. Continue later, for example
   by setting `reactions: null` on a test message in Atlas first
-- **Next step:** PR for #79; ask before merging. Readers of `hub.Ctx` (controller,
-  `WaitRegistered`, re-check timeouts) still read it without a lock while `Restart` writes
-  it: propose an issue. Split `rest-api.md`, `websocket-requests.md`,
-  `websocket-events.md` (~199 lines) before adding to them
+- **Next step:** PR for #79; ask before merging. Split `rest-api.md`,
+  `websocket-requests.md`, `websocket-events.md` (~199 lines) before adding to them
 - **Updated:** 2026-11-17 on `fix/79-hub-restart-duplicate-loops` from `8fd32a6`
 
 ## Where things stand
