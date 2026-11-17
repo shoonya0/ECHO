@@ -11,17 +11,15 @@ on `main`. To learn what the product does, read
 and with a link to exactly one feature state.md. Updated by /close-increment and
 /feature-docs update. -->
 
-- **Feature:** none · **#122** on `fix/122-join-before-registration`: the server reads a
-  connection's requests only after the hub has registered it (`Hub.WaitRegistered`), so
-  an early `join_chat` is no longer dropped. Verified (`verify.mjs --full`; contract test:
-  no differences from `main`); code review applied (registering before reading replaced
-  letting connections join before registration)
+- **Feature:** none · **#40 (typing part)** on `fix/40-typing-without-mongo`: `set_typing`
+  only broadcasts the typing event; it no longer writes `typingUsers` to MongoDB or starts
+  a 10-second timer that clears a user who is still typing. In progress
 - **#72 on Render (paused 2026-11-15):** `/health` answers `200`, but no chat with a message
   saved before PR #74 (`reactions: null`) is left to react to. Continue later, for example
   by setting `reactions: null` on a test message in Atlas first
-- **Next step:** code review, then push and open the PR (`Fixes #122`). Split `rest-api.md`, `websocket-requests.md`
+- **Next step:** failing test, fix, verify, review, PR (`Refs #40`). Split `rest-api.md`, `websocket-requests.md`
   before adding to them
-- **Updated:** 2026-11-17 on `fix/122-join-before-registration`
+- **Updated:** 2026-11-17 on `fix/40-typing-without-mongo`
 
 ## Where things stand
 
@@ -36,6 +34,9 @@ declining a group invite. The full list is in
 
 ## Recently finished
 
+- **#122 (PR #125):** the server reads a connection's requests only after the hub has
+  registered it (at most 10 s), so a `join_chat` sent right after connecting is no longer
+  dropped ([pub/sub](./PUBSUB_ARCHITECTURE.md#connecting-and-disconnecting)).
 - **#54 (PR #121):** a disconnect the hub handles before the connection's registration
   closes its send queue and drops the presence it stored; the registration then skips the
   closed connection ([pub/sub](./PUBSUB_ARCHITECTURE.md#connecting-and-disconnecting)).
@@ -95,12 +96,7 @@ declining a group invite. The full list is in
   `changed: false` with no event, and `count` is set from `users`, healing drift
   ([requests](./websocket-requests.md#add_reaction-and-remove_reaction)). Not done from
   the review: odd old reaction shapes, a leftover `{count: 0}`, the no-op lookup.
-- **#27 (PR #96):** a block either way closes the direct chat to both people. Opening it
-  gets `403` / `PERMISSION_DENIED` `User is blocked`, and so do `send_message`,
-  `set_typing`, `mark_read` and reactions; history still reads. Groups aren't affected
-  ([requests](./websocket-requests.md), [app changes](../Android/_docs/08_SERVER_CHANGES/README.md)).
-  Not done from the code review: contact requests still miss a half-written block.
-Older work, from #38 (PR #95) back: [finished-work.md](./finished-work.md).
+Older work, from #27 (PR #96) back: [finished-work.md](./finished-work.md).
 
 ## How to build, run, test
 
@@ -139,7 +135,7 @@ blocks are stored, and who counts as a member.
 
 ## Known issues and risks
 
-There are 24 open issues once #122 closes. Where each risk sits in the code: [architecture-overview.md](./architecture-overview.md#riskiest-areas).
+There are 24 open issues. Where each risk sits in the code: [architecture-overview.md](./architecture-overview.md#riskiest-areas).
 
 | Area | The problem, in short | Issues |
 |---|---|---|
