@@ -111,7 +111,10 @@ offline; the offline part doesn't work properly yet (#31). `leave_chat` and `rem
 release a chat's channel the same way when they empty its room. A join always enters the
 room before it subscribes, and a release re-subscribes if someone joined while it was
 closing the channel, so a join is never left without a subscription (#55). Messages
-published in that short gap are missed (#43).
+published in that short gap are missed (#43). A connection that drops while its
+registration still waits in the queue can have its disconnect handled first; that closes
+its send queue, and the registration then skips it instead of adding a dead connection
+(#54).
 
 **When a connection is too slow,** its queue of 10 outgoing messages fills up and the server
 disconnects it.
@@ -155,7 +158,6 @@ stats token. See
 |---|---|
 | #21 | Each Redis channel uses its own connection, so connections grow with users and chats |
 | #22 | Slow MongoDB or Redis calls hold up all connects and disconnects |
-| #54 | A client that disconnects before it is registered stays registered until cleanup |
 | #17 | Pending group members don't get live messages |
 | #31 | Online status is unreliable |
 | #40 | No size limit or rate limit on incoming messages |

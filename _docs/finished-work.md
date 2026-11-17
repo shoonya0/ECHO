@@ -4,6 +4,12 @@ Older entries moved here from
 [current-state.md](./current-state.md#recently-finished), newest first. Links point to
 the docs that describe each change today. Newer work is listed on that page.
 
+- **#28 (PR #94):** only the owner can remove the owner (also when the owner is only
+  stored as `ownerId`); a request naming the owner removes nobody. Listing yourself no
+  longer drops the group from your chat list, `removedUsers` lists only the people removed,
+  and the role is re-checked in the write ([requests](./websocket-requests.md#remove_user),
+  [app changes](../Android/_docs/08_SERVER_CHANGES/README.md)). The code review's other points
+  (a race reported as `PERMISSION_DENIED`, the second write not checked, #37) were left.
 - **#15 (PR #90):** invite codes are 16 random bytes (32 hex characters) with nothing
   inside; the AES key that was in the repo is gone. The invite routes find the group by
   the stored code (indexed), so old codes work until they expire, and a code that isn't

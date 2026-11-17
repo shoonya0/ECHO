@@ -34,6 +34,8 @@ type Hub struct {
 	instanceID    string
 	// checkSession checks open connections; nil means services.CheckSession.
 	checkSession SessionChecker
+	// loadChats lists the chats a new connection joins; nil means getUserChats.
+	loadChats func(ctx context.Context, userID bson.ObjectID) ([]string, error)
 }
 
 // GetHubInstance returns the process-wide hub, creating it on first use.
@@ -138,13 +140,26 @@ func (eh *Hub) handleClientRegistration(client *models.Client) {
 
 	// Get user's chats from database BEFORE acquiring mutex (avoid deadlock!)
 	ctx := context.Background()
-	userChats, err := eh.getUserChats(ctx, client.UserID)
+	loadChats := eh.loadChats
+	if loadChats == nil {
+		loadChats = eh.getUserChats
+	}
+	userChats, err := loadChats(ctx, client.UserID)
 	if err != nil {
 		eh.logger.WithError(err).Error("Failed to get user chats")
 		userChats = []string{}
 	}
 
 	eh.Mutex.Lock()
+
+	// The disconnect can be handled first: Register and Unregister are separate
+	// channels, and select picks either. It closed Send, so a closed client is
+	// gone and must not be registered (#54).
+	if client.IsClosed() {
+		eh.Mutex.Unlock()
+		eh.logger.WithFields(logrus.Fields{"clientID": client.ID}).Info("Client closed before registration, not registering")
+		return
+	}
 
 	// Add client to hub
 	eh.Clients[client.ID] = client
@@ -207,7 +222,16 @@ func (eh *Hub) handleClientUnregistration(client *models.Client) {
 	eh.Mutex.Lock()
 
 	if _, ok := eh.Clients[client.ID]; !ok {
+		_, userConnected := eh.UserClients[client.UserID.Hex()]
 		eh.Mutex.Unlock()
+		// Not registered yet, or already removed. Closing Send marks it
+		// closed, so a registration still queued skips it (#54).
+		client.CloseSend()
+		// The controller stored presence for this connection before queueing
+		// it; with the registration skipped, nothing else removes it.
+		if !userConnected {
+			GetPresenceInstance().DeleteForClient(client.UserID, client.ID)
+		}
 		return
 	}
 
