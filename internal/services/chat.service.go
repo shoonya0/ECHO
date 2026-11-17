@@ -382,6 +382,7 @@ func CreateDirectChat(ctx context.Context, targetUserID bson.ObjectID) (*models.
 				return nil, fmt.Errorf("failed to update user: %w", err)
 			}
 
+			AddMembersToLiveChat(ctx, chat.ChatID, user.ID, targetUserID) // #49
 			return &chat, nil
 		}
 		return nil, fmt.Errorf("failed to fetch existing chat: %w", err)
@@ -468,6 +469,8 @@ func CreateGroupChat(ctx context.Context, chatName, description string, particip
 		}
 		return nil, fmt.Errorf("failed to add group chat to creator: %w", err)
 	}
+	// The group stays even if an invitation below fails, so follow it now (#49).
+	AddMembersToLiveChat(ctx, chat.ChatID, creator.ID)
 
 	// Give each invitee an invitation for the new code. The group is already
 	// saved, so an invitee whose account was deleted since the lookup is skipped
@@ -684,6 +687,30 @@ func RemoveMembersFromLiveChat(chatID string, userIDs []string) error {
 		return fmt.Errorf("websocket hub not initialized")
 	}
 	return remover.RemoveMembersFromChat(chatID, userIDs)
+}
+
+// LiveMemberAdder puts users' open connections in a chat's room on every
+// instance. The realtime hub implements it next to Broadcaster.
+type LiveMemberAdder interface {
+	AddMembersToChat(chatID string, userIDs []string) error
+}
+
+// AddMembersToLiveChat makes the users' open connections follow a chat they just
+// gained, so its live events reach them without a reconnect (#49). Call it after
+// the write that made them members succeeded. A failure is only logged: the
+// chat exists, and a reconnect follows it.
+func AddMembersToLiveChat(ctx context.Context, chatID bson.ObjectID, userIDs ...bson.ObjectID) {
+	adder, ok := broadcaster.(LiveMemberAdder)
+	if !ok {
+		return // no hub in this process, as in tests without one
+	}
+	ids := make([]string, len(userIDs))
+	for i, id := range userIDs {
+		ids[i] = id.Hex()
+	}
+	if err := adder.AddMembersToChat(chatID.Hex(), ids); err != nil {
+		logger.WithContext(ctx).WithError(err).Warn("Open connections may not follow a new chat until they reconnect")
+	}
 }
 
 // ============ HELPER FUNCTIONS ============
@@ -1529,6 +1556,7 @@ func JoinGroupByInvite(ctx context.Context, userID bson.ObjectID, inviteID strin
 		return fmt.Errorf("add chat to user: %w", ErrUserNotFound)
 	}
 
+	AddMembersToLiveChat(ctx, chatObjectID, userID) // #49
 	return nil
 }
 
@@ -1611,12 +1639,16 @@ func resolveMissedJoin(ctx context.Context, chatID, userID bson.ObjectID, invite
 		return nil
 	case member:
 		chatRef := "chats." + chatID.Hex()
-		_, err := database.DB.Collection(string(constants.UserColl)).UpdateOne(ctx,
+		res, err := database.DB.Collection(string(constants.UserColl)).UpdateOne(ctx,
 			bson.M{"_id": userID, chatRef: bson.M{"$exists": false}},
 			bson.M{"$set": bson.M{chatRef: 0}},
 		)
 		if err != nil {
 			return fmt.Errorf("failed to restore chat ref of user: %w", err)
+		}
+		if res.ModifiedCount > 0 {
+			// Their connections read the chats without this one (#49).
+			AddMembersToLiveChat(ctx, chatID, userID)
 		}
 		return fmt.Errorf("%w", ErrAlreadyParticipant)
 	case !usable:

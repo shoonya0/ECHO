@@ -159,7 +159,7 @@ sending codes, and `joined`, are for owners and admins (#30): members `403`, oth
 - People added when the group is created, or later with `add-members` or `invite_user`,
   become `member` with status `pending` and can read and write.
 - Pending members have full access (#5) but no live messages (#17) until they accept by
-  joining with any usable code (#103; `send` works for them) and reconnect. No decline yet.
+  joining with any usable code (#103; `send` works for them). No decline yet.
 - `add-members` returns `403` for members who aren't an owner or admin, `404` if you aren't
   in the group (#59). People already in are skipped; if everyone is already in, `409`.
 - An invite code is 32 random hex characters (#15); codes made before 2026-11-14 are

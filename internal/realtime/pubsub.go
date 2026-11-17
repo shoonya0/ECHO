@@ -334,6 +334,12 @@ func (pm *PubSubManager) handleChatMessage(chatID string, message *models.WebSoc
 
 // handleUserMessage handles direct messages for specific users
 func (pm *PubSubManager) handleUserMessage(userID string, message *models.WebSocketMessage) {
+	// Hub-internal, never forwarded to clients (#49).
+	if message.Type == chatAddedType {
+		pm.handleChatAdded(userID, message)
+		return
+	}
+
 	// Send to all connections of this user on this instance
 	pm.hub.Mutex.RLock()
 	clients := slices.Collect(maps.Values(pm.hub.UserClients[userID]))

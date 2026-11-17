@@ -184,7 +184,7 @@ Removes people from a group. You must be the group's `owner` or an `admin`.
   `PERMISSION_DENIED` and nobody is removed. It also gets `PERMISSION_DENIED` if your role
   or the group changed while it ran; read the group again before retrying.
 - Removed people lose their place in the group and the chat is taken off their chat list.
-- Removed people keep getting live events until they reconnect (#14).
+- Removed people stop getting live events at once (#14).
 
 **You get:** a `response` with `action: "users_removed"`, `chatId` and `removedUsers`. That
 list holds only the people who were removed, not those who were skipped (#28). A `chat_updated`

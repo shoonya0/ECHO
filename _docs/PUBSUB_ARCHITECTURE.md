@@ -78,7 +78,7 @@ call `BroadcastToChat`, which calls the hub's `PublishToChat`.
 |---|---|---|
 | `chat:<chatID>` | All events of one chat | **Yes.** This is the main path. It also carries `internal.members_removed` after `remove_user`: each server takes those users' connections out of the room, and never forwards it. Being on the same channel keeps its place after the `chat_updated` (#14). |
 | `presence:global` | Online and offline updates | Yes, but unreliable (#31) |
-| `user:<userID>` | Messages for one person | No. Servers listen, but nothing publishes to it. |
+| `user:<userID>` | Messages for one person | Only `internal.chat_added`: when the person gains a chat (a new direct chat, a group they created or joined with a code), each server puts their connections in its room and subscribes to it, and never forwards it (#49). |
 | `system:global` | Announcements to everyone | No. Servers listen, but nothing publishes to it. |
 | `instance:<instanceID>` | Messages for one server | No. Servers listen, but nothing publishes to it. |
 | `control:sessions` | Close a user's connections on every server (logout, deleted profile) | **Yes** (#76). Never forwarded to clients. |
@@ -100,8 +100,10 @@ after 2 minutes, and nothing reads it yet (#31).
 This runs on one goroutine, one connection at a time. That is why the server accepts about
 1,750 new connections per second, and why one slow call delays everyone else (#22).
 
-The list is only read at this moment. Chats added later aren't picked up until the person
-reconnects. See
+The list is only read at this moment. A chat gained later reaches the open connections
+through `internal.chat_added` on `user:<userID>` (#49). A connection registering in the
+same few milliseconds as the add can miss it until it reconnects, and a removal right
+after an add can be applied first; the membership re-check (#117) fixes that within 30 s. See
 [which chats you get live events for](./WEBSOCKET_PROTOCOL.md#which-chats-you-get-live-events-for).
 
 **When someone disconnects,** the hub takes the connection out of every room it is in and
@@ -148,7 +150,7 @@ its connections live, though it is still in the chat history (#43).
 
 | What you see | What to check |
 |---|---|
-| A message is saved but doesn't arrive live | Does the person's connection follow the chat? They may need to reconnect. Also check #14 and #17. |
+| A message is saved but doesn't arrive live | Does the person's connection follow the chat? A pending member gets nothing live (#17). Look for "may not follow a new chat" in the server log (#49). |
 | Nobody gets live messages | Is Redis up? Look for publish errors in the server log. |
 | Memory or Redis connections keep growing | Known problem: #21 |
 | Online status is wrong | Known problem: #31 |
