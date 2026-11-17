@@ -73,7 +73,8 @@ A connection follows:
 - Chats you gain while connected, on every connection: a new direct chat (yours or
   someone else's with you), a group you create, and a group you join with an invite code
   (#49). No event announces them; load the chat over REST when its first event arrives.
-- Direct chats you open with `join_chat` on that connection.
+- Chats you follow with `join_chat` on that connection: any chat you are in, by `chatId`
+  (#48), or a direct chat you open by `senderId`.
 
 Two more cases to know about:
 
@@ -111,7 +112,7 @@ point, such as a failed live broadcast, may not be reported at all.
 | Request | What it does | On success you get |
 |---|---|---|
 | `send_message` | Sends a message | `response`, and a `message` event |
-| `join_chat` | Opens a direct chat with someone | A `join` event, no `response` |
+| `join_chat` | Follows a chat you are in, or opens a direct chat with someone | `response` with `chatId`, and a `join` event |
 | `leave_chat` | Stops live events for a chat on this connection | A `leave` event, no `response` |
 | `set_typing` | Says you are typing or stopped | A `typing` event, no `response` |
 | `mark_read` | Marks messages as read | A `delivery` event, no `response` |
@@ -169,6 +170,7 @@ An `error` event has a `code` and a readable `message`.
 | `INVALID_CONTENT` | The message broke a content rule, such as being too long |
 | `MESSAGE_FAILED` | The message couldn't be sent |
 | `REACTION_FAILED` | The reaction couldn't be added or removed |
+| `JOIN_FAILED` | The chat couldn't be followed |
 | `LEAVE_FAILED` | The chat couldn't be left |
 | `READ_FAILED` | Messages couldn't be marked as read |
 | `TYPING_FAILED` | Typing status couldn't be updated |

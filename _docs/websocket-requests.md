@@ -45,23 +45,23 @@ Sends a message to a chat you are in.
 
 ## `join_chat`
 
-Despite the name, this opens a **direct chat** with another person. It finds your chat with
-them, or creates one, and starts following it on this connection.
+Starts following a chat on this connection: any chat you are in by `chatId` (#48), or the
+**direct chat** with another person by `senderId`, created if you have none.
 
 ```json
-{ "type": "join_chat", "senderId": "<the other person's user ID>", "requestId": "r2" }
+{ "type": "join_chat", "chatId": "<chat ID>", "requestId": "r2" }
 ```
 
-- `senderId` is required. It is the *other* person, not you: your own ID gets
-  `INVALID_USER_ID` (#38). If either of you has blocked the other, you get
-  `PERMISSION_DENIED` (`User is blocked`), even when the chat already exists (#27).
-- `chatId` is ignored, so you can't use this request to follow a group (#48).
+- With `chatId` (it wins if both are sent), a chat you aren't in, or that doesn't exist,
+  gets `PERMISSION_DENIED`.
+- `senderId` is the *other* person: your own ID gets `INVALID_USER_ID` (#38), and so does
+  a deleted account. A block either way gets `PERMISSION_DENIED` (`User is blocked`) (#27).
 
-**You get:** a `join` event, and no `response`. Read the chat's ID from the event's
-`chatId`.
+**You get:** a `response` with `data.chatId`, and a `join` event. These two can arrive in
+either order.
 
-**Errors:** `INVALID_USER_ID`, `PERMISSION_DENIED`, `CHAT_CREATION_FAILED`,
-`USER_NOT_AUTHENTICATED`.
+**Errors:** `INVALID_REQUEST` (neither field), `INVALID_CHAT_ID`, `INVALID_USER_ID`,
+`PERMISSION_DENIED`, `JOIN_FAILED`, `CHAT_CREATION_FAILED`, `USER_NOT_AUTHENTICATED`.
 
 ## `leave_chat`
 
