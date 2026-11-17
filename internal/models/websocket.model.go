@@ -30,6 +30,7 @@ type ChatMessage struct {
 	ID          string                 `json:"id"`
 	ChatID      string                 `json:"chatId"`
 	SenderID    string                 `json:"senderId"`
+	Sender      *MessageSenderEmbed    `json:"sender,omitempty"`
 	Content     string                 `json:"content"`
 	MessageType string                 `json:"messageType"` // "text", "image", "file", "audio", "video"
 	Attachments []AttachmentEmbed      `json:"attachments,omitempty"`
@@ -163,6 +164,10 @@ type Client struct {
 	TokenID string `json:"-"`
 	// TokenExpiresAt is when that token expires; the connection closes then (#76).
 	TokenExpiresAt time.Time `json:"-"`
+	// Username and Avatar are the profile as it was when the connection
+	// opened; join and leave events show them (#50).
+	Username string `json:"-"`
+	Avatar   string `json:"-"`
 
 	lastActivity atomic.Pointer[time.Time] // see Touch and LastActivity
 	sendMu       sync.Mutex                // guards the fields below and every send/close on Send

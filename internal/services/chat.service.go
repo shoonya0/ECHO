@@ -777,17 +777,28 @@ func updateChatReadReceipts(chatID, userID bson.ObjectID, timestamp time.Time) {
 
 // broadcastNewMessage broadcasts a new message to chat participants
 func broadcastNewMessage(chatID bson.ObjectID, message models.Message) {
+	// The sender and mentions saved with the message, so clients can show it
+	// without looking the sender up (#50).
+	sender := message.Sender
+	mentions := make([]string, len(message.Mentions.UserIDs))
+	for i, id := range message.Mentions.UserIDs {
+		mentions[i] = id.Hex()
+	}
 	wsMessage := models.WebSocketMessage{
-		Type:   models.WSMessageTypeChat,
-		ChatID: chatID.Hex(),
-		UserID: message.SenderID.Hex(),
+		Type:     models.WSMessageTypeChat,
+		ChatID:   chatID.Hex(),
+		UserID:   message.SenderID.Hex(),
+		Username: sender.Username,
+		Avatar:   sender.Avatar,
 		Data: models.ChatMessage{
 			ID:          message.ID.Hex(),
 			ChatID:      chatID.Hex(),
 			SenderID:    message.SenderID.Hex(),
+			Sender:      &sender,
 			Content:     message.Content,
 			MessageType: message.MessageType,
 			Attachments: message.Attachments,
+			Mentions:    mentions,
 			CreatedAt:   message.CreatedAt,
 		},
 		Timestamp: message.CreatedAt,

@@ -339,11 +339,15 @@ func (eh *Hub) JoinChat(ctx context.Context, client *models.Client, chatID strin
 
 	// Publish join event to chat
 	joinMsg := &models.WebSocketMessage{
-		Type:   models.WSMessageTypeJoin,
-		ChatID: chatID,
-		UserID: client.UserID.Hex(),
+		Type:     models.WSMessageTypeJoin,
+		ChatID:   chatID,
+		UserID:   client.UserID.Hex(),
+		Username: client.Username,
+		Avatar:   client.Avatar,
 		Data: models.UserJoinLeave{
 			UserID:    client.UserID.Hex(),
+			Username:  client.Username,
+			Avatar:    client.Avatar,
 			Action:    "join",
 			Timestamp: time.Now(),
 		},
@@ -372,11 +376,15 @@ func (eh *Hub) LeaveChat(client *models.Client, chatID string) error {
 
 	// Publish leave event
 	leaveMsg := &models.WebSocketMessage{
-		Type:   models.WSMessageTypeLeave,
-		ChatID: chatID,
-		UserID: client.UserID.Hex(),
+		Type:     models.WSMessageTypeLeave,
+		ChatID:   chatID,
+		UserID:   client.UserID.Hex(),
+		Username: client.Username,
+		Avatar:   client.Avatar,
 		Data: models.UserJoinLeave{
 			UserID:    client.UserID.Hex(),
+			Username:  client.Username,
+			Avatar:    client.Avatar,
 			Action:    "leave",
 			Timestamp: time.Now(),
 		},

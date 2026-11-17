@@ -100,7 +100,9 @@ func HandleWebSocketChat(ctx *gin.Context) {
 	client := &models.Client{ // Create new client with unique ID for each connection
 		ID:         uuid.New().String(), // Generate unique ID for each WebSocket connection
 		UserID:     user.ID,
-		TokenID:    claims.ID, // a logout closes only this token's connections (#76)
+		TokenID:    claims.ID,     // a logout closes only this token's connections (#76)
+		Username:   user.Username, // shown on join and leave events (#50)
+		Avatar:     user.Profile.Avatar,
 		Connection: conn,
 		Send:       make(chan models.WebSocketMessage, 10),
 	}
