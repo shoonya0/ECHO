@@ -1,8 +1,11 @@
 package utils
 
 import (
+	"math"
 	"net/http"
+	"strconv"
 	"strings"
+	"time"
 
 	"github.com/gin-gonic/gin"
 )
@@ -72,4 +75,11 @@ func SplitAndTrim(s, delimiter string) []string {
 	}
 
 	return result
+}
+
+// RateLimitedResponse answers 429 with Retry-After in whole seconds (at least 1)
+// and error RATE_LIMITED (#40).
+func RateLimitedResponse(c *gin.Context, retryAfter time.Duration) {
+	c.Header("Retry-After", strconv.Itoa(max(1, int(math.Ceil(retryAfter.Seconds())))))
+	ErrorResponse(c, http.StatusTooManyRequests, "too many attempts; try again later", "RATE_LIMITED")
 }

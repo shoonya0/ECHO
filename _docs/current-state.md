@@ -11,16 +11,25 @@ on `main`. To learn what the product does, read
 and with a link to exactly one feature state.md. Updated by /close-increment and
 /feature-docs update. -->
 
-- **Feature:** none · **#79** on `fix/79-hub-restart-duplicate-loops`: `Hub.Restart` and
-  the controller's cancelled-context check are removed (nothing cancels the hub in
-  production; the code review found it raced on `hub.Ctx` and could run two `runHub`
-  loops). `startLoops` gives each background loop its context. Verified (`verify.mjs --full`)
+- **Feature:** none · **#40, login and signup limits** on `fix/40-auth-rate-limit`: login
+  attempts per IP + account (10 in 15 min) and per account (100 an hour), counted before
+  bcrypt and cleared on success; 50 logins per IP in 10 min, 10 signups per IP an hour; `429` `RATE_LIMITED` with `Retry-After`
+  ([REST](./rest-api/users.md#accounts), [decided](./decisions.md#how-login-and-signup-limits-find-the-client-40)).
+  IP from `CLIENT_IP_HEADER` (Render: `True-Client-IP`). Verified: `verify.mjs --full`,
+  `TEST_DB_REQUIRED=1 go test ./...`, local server (11th login and signup get `429`)
 - **#72 on Render (paused 2026-11-15):** `/health` answers `200`, but no chat with a message
   saved before PR #74 (`reactions: null`) is left to react to. Continue later, for example
   by setting `reactions: null` on a test message in Atlas first
-- **Next step:** PR for #79; ask before merging. Split `rest-api.md`,
-  `websocket-requests.md`, `websocket-events.md` (~199 lines) before adding to them
-- **Updated:** 2026-11-17 on `fix/79-hub-restart-duplicate-loops` from `8fd32a6`
+- **Code review fixed:** concurrent guesses, the lockout of other users, typos adding up,
+  Redis filling with made-up emails, non-IP header values, Redis < 7. Security review fixed:
+  counts are keyed by account ID, so a lookalike account (case differs) can't clear them.
+  Left: emails that
+  differ only in case are separate accounts (#36); a fixed window allows ~2x at its edge
+- **Next step:** PR; ask before merging. After
+  deploy: on Render, a login loop with a forged `X-Forwarded-For` must still get `429`, and
+  two real clients mustn't share a bucket (else unset `CLIENT_IP_HEADER`, note it on #40).
+  Split `websocket-requests.md` and `websocket-events.md` (~199 lines) before adding to them
+- **Updated:** 2026-11-17 on `fix/40-auth-rate-limit` from `77fc8f5`
 
 ## Where things stand
 
@@ -35,6 +44,9 @@ declining a group invite. The full list is in
 
 ## Recently finished
 
+- **#79 (PR #138):** `Hub.Restart` and the WebSocket controller's cancelled-context check
+  are removed: nothing cancels the hub in production, and the path started duplicate loops
+  and raced on `hub.Ctx`. Each background loop gets its context from `startLoops`.
 - **#50 (PR #137):** `message` events carry `data.sender` and `data.mentions` from the
   saved message; `join` and `leave` carry the username and avatar the connection loaded
   at connect ([events](./websocket-events.md)). A rename shows on the next connect.
@@ -44,10 +56,10 @@ declining a group invite. The full list is in
   ([requests](./websocket-requests.md#join_chat)).
 - **#132 (PR #135):** a new direct chat is kept only when both users got their `chats`
   entry (else `404` / `INVALID_USER_ID`, chat and entries removed), and opening an existing
-  one writes back a missing entry ([REST](./rest-api.md#chats)).
+  one writes back a missing entry ([REST](./rest-api/chats.md#chats)).
 - **#131 (PR #134):** `GET users/suggestions` takes `page` 1 to 10000 (clamped, shared
   `services.MaxPage` with the contact lists), so a huge page no longer overflows the skip
-  into a `500` ([REST](./rest-api.md#finding-people)).
+  into a `500` ([REST](./rest-api/users.md#finding-people)).
 - **#51 (PR #133):** a message `content` is limited to 4000 characters (code points), not
   bytes, so Hindi or emoji text is no longer cut at about a third
   ([decided](./decisions.md#how-the-message-length-limit-counts-51),
@@ -59,11 +71,6 @@ declining a group invite. The full list is in
   [app changes](../Android/_docs/08_SERVER_CHANGES/groups-and-invites.md)). Not done from
   the review: a connection registering in the same ms misses the add; a removal racing an
   add is undone by the #117 re-check within 30 s.
-- **#39 (PR #129):** the five contact lists come in pages: `page` 1 to 10000, cut to
-  `limit`, sorted by username ignoring case, with the real `total`
-  ([REST](./rest-api.md#contacts), [app changes](../Android/_docs/08_SERVER_CHANGES/contacts-and-blocking.md)).
-  Not done from the review: offset pages can shift when the list changes; `users/suggestions`
-  has the same unbounded `page`.
 - **#117 (PR #128):** every 30 s each server reads the participants of its rooms' chats
   (`services.ChatMembers`, keys only) and takes out connections of users who aren't
   members any more ([pub/sub](./PUBSUB_ARCHITECTURE.md#background-jobs)). Not done from the
@@ -104,21 +111,21 @@ declining a group invite. The full list is in
   fails (`404` or `500`) before any invitation goes out.
 - **#103 (PR #113):** a `pending` group member accepts by joining with any usable code of
   the group; `send` works for pending members, and joining clears every invitation to the
-  group. Live messages start at the next connection ([REST](./rest-api.md#groups),
+  group. Live messages start at the next connection ([REST](./rest-api/groups.md#groups),
   [app changes](../Android/_docs/08_SERVER_CHANGES/README.md)). A dedicated accept and decline
   action is left to #5 ([decisions](./decisions.md#how-a-pending-member-accepts-103-5)).
 - **#68 (PR #111):** a group holds at most `settings.maxParticipants` (default 100). Create,
   add and join past it add nobody: REST `409`, WebSocket `GROUP_FULL`, checked in the
-  update filter ([REST](./rest-api.md#groups), [app changes](../Android/_docs/08_SERVER_CHANGES/README.md)).
+  update filter ([REST](./rest-api/groups.md#groups), [app changes](../Android/_docs/08_SERVER_CHANGES/README.md)).
   From the code review: #112.
 - **#16 (PR #109):** a group's `stats.participantCount` follows every add, join and
   removal, and a startup backfill resets drifted groups (skipping malformed ones). It
   counts pending members and deleted accounts ([app changes](../Android/_docs/08_SERVER_CHANGES/README.md)).
   From the code review: #110 (derive the count instead of maintaining it).
 - **#62 (PR #108):** `GET users/contacts` leaves out people you blocked; `GET /blocked`
-  lists them ([REST](./rest-api.md#contacts), [app changes](../Android/_docs/08_SERVER_CHANGES/README.md)).
+  lists them ([REST](./rest-api/users.md#contacts), [app changes](../Android/_docs/08_SERVER_CHANGES/README.md)).
 - **#104 (PR #107):** creating an invite code returns it in `data`, shaped like an entry
-  of the group's list ([REST](./rest-api.md#groups),
+  of the group's list ([REST](./rest-api/groups.md#groups),
   [app changes](../Android/_docs/08_SERVER_CHANGES/README.md)).
 - **#59 (PR #105):** a non-member gets the same answer whether or not a chat exists:
   `PERMISSION_DENIED` from `send_message`, `invite_user` and `remove_user`, `404` from
@@ -127,7 +134,7 @@ declining a group invite. The full list is in
   From the code review: #106.
 - **#30 (PR #102):** only owners and admins create, list, delete or send invite codes or
   see who joined: other members get `403`, anyone not in the group `404`
-  ([REST](./rest-api.md#groups), [app changes](../Android/_docs/08_SERVER_CHANGES/README.md)).
+  ([REST](./rest-api/groups.md#groups), [app changes](../Android/_docs/08_SERVER_CHANGES/README.md)).
   Security review: nothing found. From the code review: #103, #104.
 Older work, from #67 (PR #101) back: [finished-work.md](./finished-work.md).
 
@@ -168,19 +175,18 @@ blocks are stored, and who counts as a member.
 
 ## Known issues and risks
 
-There are 22 open issues. Where each risk sits in the code: [architecture-overview.md](./architecture-overview.md#riskiest-areas).
+There are 15 open issues. Where each risk sits in the code: [architecture-overview.md](./architecture-overview.md#riskiest-areas).
 
 | Area | The problem, in short | Issues |
 |---|---|---|
-| Live connections | The server can leak resources or stall under load, missed live messages can't be detected, and open connections miss new chats, and a restart of a running hub doubles its loops | #21, #22, #43, #49, #79, #117 |
+| Live connections | The server can leak resources or stall under load, missed live messages can't be detected, and open connections miss new chats | #21, #22, #43, #49, #117 |
 | Groups | Members are never asked to accept, pending members get no live messages, and the participant count is maintained by hand | #5, #17, #110 |
 | Invite codes | Entries left by forged joins before #9 was fixed are still stored | #69 |
 | Accounts | Deleting an account leaves old references, emails are case-sensitive, and usernames aren't unique | #35, #36 |
 | Contacts and blocking | Contact lists aren't cut to `limit`, and blocks written during a deploy can be missed | #39, #63 |
 | Online status and privacy | Online status is unreliable, and privacy settings aren't applied | #31, #32 |
 | Messages and data | Writes can half-finish, and some lists grow without limit | #37, #42 |
-| Limits and errors | WebSocket limits are per connection, not per user; no limits on login and signup | #40 |
-| WebSocket replies and events | Replies and events are inconsistent or leave out details, which affects the Android plan | #50 |
+| Limits and errors | WebSocket limits are per connection, not per user; mention lookups are one read each; `CheckOrigin` allows any origin | #40 |
 
 ## Next task
 

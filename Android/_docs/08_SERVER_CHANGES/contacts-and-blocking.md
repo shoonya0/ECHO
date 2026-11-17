@@ -10,13 +10,13 @@ Part of [server changes the app must handle](./README.md).
 - Ask for more with `page` (from 1). `pagination.total` is the real count and
   `total_pages` the number of pages. Load pages until `page` reaches `total_pages`, or a
   user with more than `limit` contacts sees only the first ones
-  ([details](../../../_docs/rest-api.md#contacts)).
+  ([details](../../../_docs/rest-api/users.md#contacts)).
 
 ## Blocked people aren't in the contacts list (#62)
 
 - `GET users/contacts` no longer lists people you blocked: show them from
   `GET users/contacts/blocked`, and drop them from cached contacts after a block
-  ([details](../../../_docs/rest-api.md#contacts)).
+  ([details](../../../_docs/rest-api/users.md#contacts)).
 
 ## Yourself as a target (#38)
 
@@ -24,7 +24,7 @@ Part of [server changes the app must handle](./README.md).
   it went through and stored broken data. `join_chat` with your own `senderId` gets
   `INVALID_USER_ID`. Don't offer "Add contact" or "Message" on your own profile.
 
-Details: [rest-api.md](../../../_docs/rest-api.md#contacts).
+Details: [rest-api/](../../../_docs/rest-api/users.md#contacts).
 
 ## Blocks apply in direct chats (#27)
 

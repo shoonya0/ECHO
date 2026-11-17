@@ -26,6 +26,16 @@ Details: [WEBSOCKET_PROTOCOL.md](../../../_docs/WEBSOCKET_PROTOCOL.md#error-code
 
 Details: [websocket-requests.md](../../../_docs/websocket-requests.md#join_chat).
 
+## Login and signup limits (#40, not deployed yet)
+
+- `login` and `signup` can answer `429` with `error` `RATE_LIMITED` and a `Retry-After`
+  header (seconds). After 10 attempts on one account from the same network in 15
+  minutes, even the right password gets `429` until the wait ends.
+- Show "too many attempts, try again in N minutes" using `Retry-After`. Don't retry
+  automatically, and don't treat it as a wrong password.
+
+Details: [users.md](../../../_docs/rest-api/users.md#accounts).
+
 ## Auth replies (#33, PR #77, live on Render since 2026-11-11)
 
 Every request now checks the account itself, not only the token. A token stops working
@@ -47,7 +57,7 @@ when its account is banned, deactivated or deleted after login.
   applies at once.
 - The WebSocket closes when the session ends; see below.
 
-Details: [rest-api.md](../../../_docs/rest-api.md).
+Details: [rest-api/](../../../_docs/rest-api/README.md).
 
 ## WebSocket close codes (#76)
 
@@ -80,7 +90,7 @@ Details: [WEBSOCKET_PROTOCOL.md](../../../_docs/WEBSOCKET_PROTOCOL.md#stay-conne
   a conflict with another change to the chat: retry it. `INVALID_CONTENT` for a bad
   `messageType` no longer repeats the value. Branch on `code`.
 
-Details: [rest-api.md](../../../_docs/rest-api.md#the-basics),
+Details: [rest-api/](../../../_docs/rest-api/basics.md#the-basics),
 [WEBSOCKET_PROTOCOL.md](../../../_docs/WEBSOCKET_PROTOCOL.md#error-codes).
 
 ## WebSocket limits (#40)

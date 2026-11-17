@@ -66,3 +66,24 @@ except the creator and people who join by invite code, and nobody can accept yet
 enforcing it now would lock those members out. The order is: build accept and decline,
 backfill existing members, then enforce it in `chatMemberFilter`. Direct-chat participants
 have no status, so the check must allow for that.
+
+## How login and signup limits find the client (#40)
+
+Decided on 2026-11-17. Login attempts on an account are counted per IP and account (10
+in 15 minutes) and per account from all IPs (100 an hour). The first stops one address from
+guessing without locking the owner out; locking an account takes several addresses at that
+limit. The second caps guessing spread over many addresses. Both are counted before bcrypt,
+only for accounts that exist, and a successful login clears them. Logins and signups are
+also counted per client IP.
+The IP comes from the header named in `CLIENT_IP_HEADER` (`True-Client-IP` on Render, set
+by Cloudflare in front of it), or else the socket address. `X-Forwarded-For` is never
+trusted, because Render's proxy appends to what the client sent, and a header value that
+isn't an IP is dropped. Per-IP limits are
+generous because mobile carriers put many users behind one address. Counts live in Redis.
+When Redis is down, requests go through: an outage shouldn't block every login.
+
+Accepted trade-off: only existing accounts reach the per-account limits, so after 10 tries a
+real email gets `429` and a made-up one keeps getting `401`. That shows which emails have
+accounts, but `signup` already answers `409` for a taken email, and an unknown email skips
+bcrypt, so it answers faster. Counting made-up emails would let them fill Redis. Hiding
+which emails exist would need `signup` and the bcrypt timing changed too: a separate issue.

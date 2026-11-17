@@ -91,7 +91,7 @@ couldn't read your message. All codes are listed in
 }
 ```
 
-- `sender` is the object messages loaded [over REST](./rest-api.md#messages) have, as saved
+- `sender` is the object messages loaded [over REST](./rest-api/chats.md#messages) have, as saved
   with the message (#50). `attachments` and `mentions` (user IDs) appear only when there
   are some, and so does the envelope `avatar`. You also get this event for your own messages.
 

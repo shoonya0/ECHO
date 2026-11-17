@@ -157,7 +157,7 @@ its connections live, though it is still in the chat history (#43).
 
 `GET /echo/v1/chats/hub/stats` shows the counts for one server, to operators who send the
 stats token. See
-[rest-api.md](./rest-api.md#hub-statistics).
+[rest-api/](./rest-api/chats.md#hub-statistics).
 
 ## Known problems
 
@@ -167,7 +167,7 @@ stats token. See
 | #22 | Slow MongoDB or Redis calls hold up all connects and disconnects |
 | #17 | Pending group members don't get live messages |
 | #31 | Online status is unreliable |
-| #40 | No size limit or rate limit on incoming messages |
+| #40 | Rate limits are per socket, not per account |
 | #43 | Apps can't detect or recover missed live messages |
 
 Not built, and only ideas so far: delivery to offline users, message encryption, compression,

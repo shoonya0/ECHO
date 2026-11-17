@@ -22,7 +22,7 @@ flowchart LR
 ```
 
 - **REST API:** normal web requests for things that happen once, such as logging in or
-  loading old messages. See [rest-api.md](./rest-api.md).
+  loading old messages. See [rest-api/](./rest-api/README.md).
 - **WebSocket:** a connection that stays open, so messages arrive the moment they are
   sent. See [WEBSOCKET_PROTOCOL.md](./WEBSOCKET_PROTOCOL.md).
 - **MongoDB:** stores everything that must last: users, chats and messages.
@@ -58,7 +58,8 @@ Checked against the code at `17ec08b`. Issue numbers were last updated on 2026-1
 - Broadcast channels. The `channel` chat type exists in the code, but nothing creates one.
 - File upload, message search and push notifications.
 - Setting your status over the WebSocket. `set_presence` answers `UNKNOWN_REQUEST`.
-- Rate limiting (#40).
+- A per-account WebSocket limit: one account can open many sockets, each with its own
+  limit (#40). Login, signup and each socket are limited already.
 
 ## Security in short
 

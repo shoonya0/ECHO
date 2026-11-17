@@ -145,4 +145,4 @@ node diff.mjs before.json after.json
 - `GET /health`: is the server alive? No login needed.
 - `GET /echo/v1/chats/hub/stats`: how many connections, chats and users are live. It needs
   the `X-Stats-Token` header set to the server's `STATS_TOKEN`. See
-  [rest-api.md](./rest-api.md#hub-statistics).
+  [rest-api/](./rest-api/chats.md#hub-statistics).
