@@ -15,14 +15,17 @@ and with a link to exactly one feature state.md. Updated by /close-increment and
   `page` and are really cut to `limit`, sorted by username; `pagination.total` is the real
   count (decided 2026-11-17: page-based, like `users/suggestions`). Verified
   (`verify.mjs --full` with `TEST_DB_REQUIRED=1`; the paging test fails without skip and
-  limit); the app must load more pages ([app changes](../Android/_docs/08_SERVER_CHANGES/contacts-and-blocking.md))
+  limit); the app must load more pages ([app changes](../Android/_docs/08_SERVER_CHANGES/contacts-and-blocking.md)).
+  Code review applied: case-insensitive order, `page` capped at 10000. Not done: offset
+  pages can skip or repeat an entry when the list changes between requests (accepted with
+  page-based paging); `users/suggestions` has the same unbounded `page` (issue proposed)
 - **#72 on Render (paused 2026-11-15):** `/health` answers `200`, but no chat with a message
   saved before PR #74 (`reactions: null`) is left to react to. Continue later, for example
   by setting `reactions: null` on a test message in Atlas first
 - **Next step:** PR for #39; ask before merging. After it: #51
   (characters or bytes: needs a decision). Split `rest-api.md`, `websocket-requests.md`
   (199 lines) before adding to them
-- **Updated:** 2026-11-17 on `fix/39-contact-list-paging` at `0254409`
+- **Updated:** 2026-11-17 on `fix/39-contact-list-paging` at `447c714`
 
 ## Where things stand
 

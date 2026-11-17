@@ -6,7 +6,7 @@ Part of [server changes the app must handle](./README.md).
 
 - The five lists (`users/contacts`, `/requests`, `/sent-requests`, `/blocked`,
   `/favorites`) now return at most `limit` entries (1 to 100, default 10), sorted by
-  username. Before, they returned every entry whatever `limit` said.
+  username ignoring case. Before, they returned every entry whatever `limit` said.
 - Ask for more with `page` (from 1). `pagination.total` is the real count and
   `total_pages` the number of pages. Load pages until `page` reaches `total_pages`, or a
   user with more than `limit` contacts sees only the first ones
