@@ -75,7 +75,7 @@ the server can't check the token or the account, it returns `503` with
 
 | Route | What it does |
 |---|---|
-| `GET users/suggestions` | People you might add. Options: `page` (default 1), `limit` (default 20, max 50), `excludeIds` (comma-separated IDs). The reply has `data.items` and `data.pagination` (`limit`, `total`, `total_pages`). |
+| `GET users/suggestions` | People you might add. Options: `page` (1 to 10000, default 1, clamped; #131), `limit` (default 20, max 50), `excludeIds` (comma-separated IDs). The reply has `data.items` and `data.pagination` (`limit`, `total`, `total_pages`). |
 | `GET users/:id` | One person's public profile |
 | `GET users/nearby` | Placeholder: returns success with no data |
 | `GET users/popular` | Placeholder: returns success with no data |

@@ -1,6 +1,6 @@
 # ECHO: current state
 
-A one-page snapshot of where the project stands. Last checked on 2026-11-17 at `c083ad6`
+A one-page snapshot of where the project stands. Last checked on 2026-11-17 at `5e8a1cb`
 on `main`. To learn what the product does, read
 [product-overview.md](./product-overview.md). For the code, read
 [architecture-overview.md](./architecture-overview.md).
@@ -11,18 +11,17 @@ on `main`. To learn what the product does, read
 and with a link to exactly one feature state.md. Updated by /close-increment and
 /feature-docs update. -->
 
-- **Feature:** none · **#51** on `fix/51-message-length-characters`: `content` is limited to
-  4000 characters (code points), not bytes ([decided](./decisions.md#how-the-message-length-limit-counts-51)).
-  Verified (`verify.mjs --full` with `TEST_DB_REQUIRED=1`; the Hindi and emoji cases fail
-  on the old byte check). Merged today before it: #117, #39, #49 and the realtime fixes
+- **Feature:** none · **#131** on `fix/131-suggestions-page-overflow`: `GET users/suggestions`
+  takes `page` through the shared `parsePage` (1 to `services.MaxPage` = 10000, clamped), and
+  the service refuses an out-of-range page and multiplies the skip in `int64`. Verified
+  (`verify.mjs --full` with `TEST_DB_REQUIRED=1`; `page=MaxInt64` returned `500` before)
 - **#72 on Render (paused 2026-11-15):** `/health` answers `200`, but no chat with a message
   saved before PR #74 (`reactions: null`) is left to react to. Continue later, for example
   by setting `reactions: null` on a test message in Atlas first
-- **Next step:** PR for #51; ask before merging. After it: #131 (`users/suggestions`
-  unbounded `page`), #132 (`CreateDirectChat` ignores `MatchedCount`), #48 (`join_chat`
+- **Next step:** PR for #131; ask before merging. After it: #132 (`CreateDirectChat` ignores `MatchedCount`), #48 (`join_chat`
   ignores `chatId`), #50 (live events lack sender details). Split `rest-api.md`,
   `websocket-requests.md` (199 lines) before adding to them
-- **Updated:** 2026-11-17 on `fix/51-message-length-characters` at `240a462`
+- **Updated:** 2026-11-17 on `fix/131-suggestions-page-overflow` from `5e8a1cb`
 
 ## Where things stand
 
@@ -37,6 +36,10 @@ declining a group invite. The full list is in
 
 ## Recently finished
 
+- **#51 (PR #133):** a message `content` is limited to 4000 characters (code points), not
+  bytes, so Hindi or emoji text is no longer cut at about a third
+  ([decided](./decisions.md#how-the-message-length-limit-counts-51),
+  [app changes](../Android/_docs/08_SERVER_CHANGES/messages.md)).
 - **#49 (PR #130):** a chat a user gains while connected (a new direct chat, either side; a
   group they create; a code join, also a retry or a pending accept) reaches their open
   connections at once, through a hub-internal `internal.chat_added` on `user:<id>`
