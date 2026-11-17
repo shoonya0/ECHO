@@ -4,13 +4,14 @@ import (
 	"github.com/shoonya0/ECHO/internal/constants"
 	"github.com/shoonya0/ECHO/internal/controller"
 	"github.com/shoonya0/ECHO/internal/middleware"
+	"github.com/shoonya0/ECHO/internal/services"
 
 	"github.com/gin-gonic/gin"
 )
 
 func RegisterAPIRoutes(r *gin.Engine) {
-	r.POST(constants.ApiBasePath+"login", controller.Login)
-	r.POST(constants.ApiBasePath+"signup", controller.Signup)
+	r.POST(constants.ApiBasePath+"login", middleware.RateLimitByIP("login", services.LoginIPLimit), controller.Login)
+	r.POST(constants.ApiBasePath+"signup", middleware.RateLimitByIP("signup", services.SignupIPLimit), controller.Signup)
 
 	// Register WebSocket routes BEFORE auth middleware (they handle auth internally)
 	RegisterWebSocketRoutes(r)
