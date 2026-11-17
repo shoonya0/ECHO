@@ -22,8 +22,8 @@ func (b *countingBroadcaster) PublishToChat(string, *models.WebSocketMessage) er
 }
 
 // TestChatRequestsFromNonMemberAreDenied sends every request that takes a
-// chatId as a user who isn't in the chat. join_chat isn't listed: it ignores
-// chatId (#48). edit_message, delete_message and update_chat aren't built yet.
+// chatId as a user who isn't in the chat, join_chat included (#48).
+// edit_message, delete_message and update_chat aren't built yet.
 func TestChatRequestsFromNonMemberAreDenied(t *testing.T) {
 	ctx := testutil.UseTestDB(t)
 
@@ -58,6 +58,7 @@ func TestChatRequestsFromNonMemberAreDenied(t *testing.T) {
 
 	requests := []models.MessageRequest{
 		{Type: models.WSRequestTypeSendMessage, Content: "hello"},
+		{Type: models.WSRequestTypeJoinChat},
 		{Type: models.WSRequestTypeLeaveChat},
 		{Type: models.WSRequestTypeSetTyping, Metadata: map[string]interface{}{"isTyping": true}},
 		{Type: models.WSRequestTypeMarkRead, Metadata: map[string]interface{}{"messageIds": []interface{}{messageID.Hex()}}},

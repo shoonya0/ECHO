@@ -427,12 +427,61 @@ func handleSendMessage(ctx context.Context, client *models.Client, request model
 	wsLog().Printf("Message sent by client %s in chat %s", client.ID, request.ChatID)
 }
 
-// handleJoinChat processes chat joining requests
-func handleJoinChat(ctx context.Context, client *models.Client, request models.MessageRequest) {
-	log := logger.WithContext(ctx)
-	userInterface := ctx.Value(constants.UserDataKey) // Get user from context
+// joinChatRoom adds the connection to the chat's room. Tests replace it so they
+// don't need a hub with Redis.
+var joinChatRoom = func(ctx context.Context, client *models.Client, chatID string) error {
+	return realtime.GetHubInstance().JoinChat(ctx, client, chatID)
+}
 
-	if userInterface == nil {
+// handleJoinChat starts following a chat on this connection: the chat named by
+// chatId, if the caller is a participant (#48), or else the direct chat with
+// the user named by senderId, created if it doesn't exist. Both answer with a
+// response that names the chat.
+func handleJoinChat(ctx context.Context, client *models.Client, request models.MessageRequest) {
+	switch {
+	case request.ChatID != "":
+		joinChatByID(ctx, client, request)
+	case request.SenderID != "":
+		joinDirectChat(ctx, client, request)
+	default:
+		sendErrorResponse(client, request.RequestID, "INVALID_REQUEST", "chatId or senderId is required")
+	}
+}
+
+// joinChatByID follows a chat the caller is a participant of. Membership is
+// checked first, and an unknown chat gets the same answer as someone else's
+// (#23, #59).
+func joinChatByID(ctx context.Context, client *models.Client, request models.MessageRequest) {
+	chatID, err := bson.ObjectIDFromHex(request.ChatID)
+	if err != nil {
+		sendErrorResponse(client, request.RequestID, "INVALID_CHAT_ID", "Invalid chat ID format")
+		return
+	}
+	if err := services.RequireChatMember(ctx, chatID, client.UserID); err != nil {
+		if !errors.Is(err, services.ErrNotParticipant) {
+			wsLog().Printf("Failed to check chat membership for join: %v", err)
+		}
+		sendChatError(client, request.RequestID, err, "JOIN_FAILED", "Failed to join chat")
+		return
+	}
+	followChat(ctx, client, request.RequestID, chatID.Hex())
+}
+
+// followChat joins the room and answers the request. A failure to announce the
+// join to the chat doesn't undo it, so it is logged and the join still succeeds.
+func followChat(ctx context.Context, client *models.Client, requestID, chatID string) {
+	if err := joinChatRoom(ctx, client, chatID); err != nil {
+		wsLog().Printf("Joined chat %s but announcing it failed: %v", chatID, err)
+	}
+	sendSuccessResponse(client, requestID, map[string]any{"chatId": chatID})
+	wsLog().Printf("Client %s joined chat %s", client.ID, chatID)
+}
+
+// joinDirectChat opens the direct chat with the user named by senderId and
+// follows it.
+func joinDirectChat(ctx context.Context, client *models.Client, request models.MessageRequest) {
+	log := logger.WithContext(ctx)
+	if ctx.Value(constants.UserDataKey) == nil {
 		log.WithError(errors.New("user not Found")).Error("User not authenticated")
 		sendErrorResponse(client, request.RequestID, "USER_NOT_AUTHENTICATED", "User not authenticated")
 		return
@@ -454,17 +503,17 @@ func handleJoinChat(ctx context.Context, client *models.Client, request models.M
 		sendErrorResponse(client, request.RequestID, "PERMISSION_DENIED", "User is blocked")
 		return
 	}
+	if errors.Is(err, services.ErrUserNotFound) {
+		sendErrorResponse(client, request.RequestID, "INVALID_USER_ID", "User not found")
+		return
+	}
 	if err != nil {
 		log.WithError(err).Error("Failed to create chat")
 		sendErrorResponse(client, request.RequestID, "CHAT_CREATION_FAILED", "Failed to create chat")
 		return
 	}
 
-	chatID := chat.ChatID.Hex()
-
-	realtime.GetHubInstance().JoinChat(ctx, client, chatID) // Join the chat room
-
-	wsLog().Printf("Client %s joined chat %s", client.ID, chatID)
+	followChat(ctx, client, request.RequestID, chat.ChatID.Hex())
 }
 
 // handleLeaveChat processes chat leaving requests
