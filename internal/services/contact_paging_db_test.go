@@ -66,8 +66,8 @@ func TestGetContactsPages(t *testing.T) {
 		}
 	}
 
-	// A page past MaxContactPage is refused instead of overflowing the skip.
-	if _, _, err := GetContacts(ctx, owner, constants.StatusAccepted, MaxContactPage+1, 100); err == nil {
-		t.Error("a page past MaxContactPage was accepted")
+	// A page past MaxPage is refused instead of overflowing the skip.
+	if _, _, err := GetContacts(ctx, owner, constants.StatusAccepted, MaxPage+1, 100); err == nil {
+		t.Error("a page past MaxPage was accepted")
 	}
 }
