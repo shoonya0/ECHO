@@ -2,12 +2,20 @@
 
 Part of [server changes the app must handle](./README.md).
 
+## New chats are live without reconnecting (#49)
+
+- A new direct chat (either side), a group you create and a group you join with a code
+  now send their live events to your open connection at once. Drop any reconnect done
+  only to pick up a new chat.
+- No event announces the new chat: when an event arrives for a chat the app doesn't know,
+  load it over REST ([details](../../../_docs/WEBSOCKET_PROTOCOL.md#which-chats-you-get-live-events-for)).
+
 ## Groups: size limit, count, accepting (#68, #16, #103)
 
 - A group holds at most 100 people. A create, add or join by code past that adds nobody:
   REST `409` `Group is full`, WebSocket `GROUP_FULL`. Show "group is full"; don't retry.
 - `stats.participantCount` is now correct, but counts pending members (#5) and deleted accounts (#35).
-- A `pending` member accepts by joining with a code (`200`, invites cleared); then reconnect for live messages.
+- A `pending` member accepts by joining with a code (`200`, invites cleared). Live messages start at once (#49).
 
 Details: [rest-api.md](../../../_docs/rest-api.md#groups).
 

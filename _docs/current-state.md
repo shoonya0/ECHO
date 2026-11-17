@@ -14,13 +14,16 @@ and with a link to exactly one feature state.md. Updated by /close-increment and
 - **Feature:** none · **#49** on `fix/49-follow-new-chats`: a chat a user gains (new
   direct chat, new group, invite join) is followed by their open connections through a
   hub-internal `internal.chat_added` on `user:<id>`, the reverse of #14's removal
+  (`internal/realtime/members_added.go`, `services.AddMembersToLiveChat`). Verified
+  (`verify.mjs --full` with `TEST_DB_REQUIRED=1`; hub and service tests fail without the
+  fix). Known gap: a connection registering in the same ms as the add can miss it. Not reviewed yet
 - **#72 on Render (paused 2026-11-15):** `/health` answers `200`, but no chat with a message
   saved before PR #74 (`reactions: null`) is left to react to. Continue later, for example
   by setting `reactions: null` on a test message in Atlas first
-- **Next step:** hub tests and `members_added.go`, then the service calls. After it: #51
+- **Next step:** `/code-review`, then the PR (`Fixes #49`). After it: #51
   (characters or bytes: needs a decision); the `users/suggestions` unbounded `page` issue
   waits for a yes. Split `rest-api.md`, `websocket-requests.md` (199 lines) before adding
-- **Updated:** 2026-11-17 on `fix/49-follow-new-chats`, from `main` at `fbe563e`
+- **Updated:** 2026-11-17 on `fix/49-follow-new-chats` at `38c00de`
 
 ## Where things stand
 
