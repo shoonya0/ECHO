@@ -105,3 +105,15 @@ func TestRateLimitByIPUsesConfiguredHeader(t *testing.T) {
 		t.Fatalf("other True-Client-IP behind the same proxy: status %d, want 200", w.Code)
 	}
 }
+
+// A header value that isn't an IP can't name a bucket: the socket address counts.
+func TestRateLimitByIPDropsNonIPHeader(t *testing.T) {
+	testutil.UseTestRedis(t)
+	r := limitedEngine(t, "True-Client-IP", 1)
+
+	post(r, "192.0.2.1:1000", map[string]string{"True-Client-IP": "random-1"})
+	w := post(r, "192.0.2.1:1000", map[string]string{"True-Client-IP": "random-2"})
+	if w.Code != http.StatusTooManyRequests {
+		t.Fatalf("status %d with a new non-IP header, want 429", w.Code)
+	}
+}

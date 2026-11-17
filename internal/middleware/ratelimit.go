@@ -1,6 +1,9 @@
 package middleware
 
 import (
+	"net"
+	"strings"
+
 	"github.com/gin-gonic/gin"
 
 	"github.com/shoonya0/ECHO/internal/logger"
@@ -13,8 +16,18 @@ import (
 // that header, which the platform's edge sets. With no header, or when it's
 // missing, it is the socket address. X-Forwarded-For is never trusted: on Render
 // the proxy appends to what the client sent, so its first entry is forgeable (#40).
+// A header value that isn't an IP is dropped, so it can't name a bucket. Call it
+// before registering routes: it adds the middleware that does that.
 func ConfigureClientIP(r *gin.Engine, header string) error {
 	r.TrustedPlatform = header
+	if header != "" {
+		r.Use(func(c *gin.Context) {
+			if v := c.Request.Header.Get(header); v != "" && net.ParseIP(strings.TrimSpace(v)) == nil {
+				c.Request.Header.Del(header)
+			}
+			c.Next()
+		})
+	}
 	return r.SetTrustedProxies(nil)
 }
 
