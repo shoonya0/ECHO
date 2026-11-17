@@ -58,7 +58,8 @@ Checked against the code at `17ec08b`. Issue numbers were last updated on 2026-1
 - Broadcast channels. The `channel` chat type exists in the code, but nothing creates one.
 - File upload, message search and push notifications.
 - Setting your status over the WebSocket. `set_presence` answers `UNKNOWN_REQUEST`.
-- Rate limiting (#40).
+- A per-account WebSocket limit: one account can open many sockets, each with its own
+  limit (#40). Login, signup and each socket are limited already.
 
 ## Security in short
 

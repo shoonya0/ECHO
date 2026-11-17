@@ -11,16 +11,19 @@ on `main`. To learn what the product does, read
 and with a link to exactly one feature state.md. Updated by /close-increment and
 /feature-docs update. -->
 
-- **Feature:** none · **#40, login and signup limits** on `fix/40-auth-rate-limit`:
-  per-email failed-login limit plus per-IP limits on `login` and `signup`, IP from the
-  `CLIENT_IP_HEADER` header (Render: `True-Client-IP`). Plan:
-  `~/.claude/plans/fuzzy-percolating-stardust.md`. Not started in code yet
+- **Feature:** none · **#40, login and signup limits** on `fix/40-auth-rate-limit`: 10
+  failed logins per email in 15 min (any IP, checked before bcrypt), 50 logins per IP in
+  10 min, 10 signups per IP an hour; `429` `RATE_LIMITED` with `Retry-After`
+  ([REST](./rest-api/users.md#accounts), [decided](./decisions.md#how-login-and-signup-limits-find-the-client-40)).
+  IP from `CLIENT_IP_HEADER` (Render: `True-Client-IP`). Verified: `verify.mjs --full`,
+  `TEST_DB_REQUIRED=1 go test ./...`, local server (11th login and signup get `429`)
 - **#72 on Render (paused 2026-11-15):** `/health` answers `200`, but no chat with a message
   saved before PR #74 (`reactions: null`) is left to react to. Continue later, for example
   by setting `reactions: null` on a test message in Atlas first
-- **Next step:** split `rest-api.md` (199 lines), then the counters in
-  `services/ratelimit.go`, tests first. Split `websocket-requests.md` and
-  `websocket-events.md` (~199 lines) before adding to them
+- **Next step:** `/code-review` and `/security-review`, then PR; ask before merging. After
+  deploy: on Render, a login loop with a forged `X-Forwarded-For` must still get `429`, and
+  two real clients mustn't share a bucket (else unset `CLIENT_IP_HEADER`, note it on #40).
+  Split `websocket-requests.md` and `websocket-events.md` (~199 lines) before adding to them
 - **Updated:** 2026-11-17 on `fix/40-auth-rate-limit` from `77fc8f5`
 
 ## Where things stand
@@ -178,7 +181,7 @@ There are 15 open issues. Where each risk sits in the code: [architecture-overvi
 | Contacts and blocking | Contact lists aren't cut to `limit`, and blocks written during a deploy can be missed | #39, #63 |
 | Online status and privacy | Online status is unreliable, and privacy settings aren't applied | #31, #32 |
 | Messages and data | Writes can half-finish, and some lists grow without limit | #37, #42 |
-| Limits and errors | WebSocket limits are per connection, not per user; no limits on login and signup | #40 |
+| Limits and errors | WebSocket limits are per connection, not per user; mention lookups are one read each; `CheckOrigin` allows any origin | #40 |
 
 ## Next task
 
