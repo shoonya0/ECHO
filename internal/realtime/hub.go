@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"sync"
-	"sync/atomic"
 	"time"
 
 	"github.com/shoonya0/ECHO/internal/constants"
@@ -40,13 +39,6 @@ type Hub struct {
 	// loadMembers reads chat participants for the membership re-check; nil
 	// means services.ChatMembers.
 	loadMembers MembersLoader
-
-	// restartMu serializes Restart, so connections that all find the context
-	// cancelled start the background loops once (#79).
-	restartMu sync.Mutex
-	// loopsRunning counts the background loops startLoops started that
-	// haven't returned; tests read it.
-	loopsRunning atomic.Int32
 }
 
 // GetHubInstance returns the process-wide hub, creating it on first use.
@@ -98,31 +90,8 @@ func (eh *Hub) Start() error {
 	return nil
 }
 
-// Restart starts the background loops again on a new context once the hub's
-// context has been cancelled. While the context is live the loops are still
-// running, so it does nothing (#79).
-func (eh *Hub) Restart() error {
-	eh.restartMu.Lock()
-	defer eh.restartMu.Unlock()
-
-	select {
-	case <-eh.Ctx.Done():
-	default:
-		eh.logger.Info("Hub context is still active, not restarting")
-		return nil
-	}
-
-	eh.logger.Warn("Hub context is cancelled, restarting with a new context")
-	eh.Ctx, eh.Cancel = context.WithCancel(context.Background())
-	eh.startLoops()
-
-	eh.logger.Info("Hub restarted successfully")
-	return nil
-}
-
-// startLoops starts the hub's background loops on the current context. Each
-// loop keeps that context, so a Restart that swaps in a new one can't keep an
-// old loop running.
+// startLoops starts the hub's background loops. They stop when the hub's
+// context is cancelled; nothing restarts them (#79).
 func (eh *Hub) startLoops() {
 	ctx := eh.Ctx
 	loops := []func(context.Context){
@@ -132,11 +101,7 @@ func (eh *Hub) startLoops() {
 		eh.recheckSessions,
 	}
 	for _, loop := range loops {
-		eh.loopsRunning.Add(1)
-		go func() {
-			defer eh.loopsRunning.Add(-1)
-			loop(ctx)
-		}()
+		go loop(ctx)
 	}
 }
 

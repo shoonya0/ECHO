@@ -110,19 +110,7 @@ func HandleWebSocketChat(ctx *gin.Context) {
 		client.TokenExpiresAt = claims.ExpiresAt.Time // the re-check closes the connection then (#76)
 	}
 
-	// Check if hub is still running, restart if needed
 	hub := realtime.GetHubInstance()
-	select {
-	case <-hub.Ctx.Done():
-		log.Warn("websocket.controller.go: Hub context cancelled, attempting restart")
-		if err := hub.Restart(); err != nil {
-			log.WithError(err).Error("websocket.controller.go: Failed to restart hub")
-			utils.ErrorResponse(ctx, http.StatusInternalServerError, "WebSocket service temporarily unavailable", nil)
-			return
-		}
-	default:
-		// Hub is running normally
-	}
 
 	hub.UpdateUserInfoCache(user.ID.Hex(), models.UserDisplayInfo{
 		Email:       user.Email,
