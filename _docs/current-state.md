@@ -15,14 +15,17 @@ and with a link to exactly one feature state.md. Updated by /close-increment and
   server reads the participants of its rooms' chats (`services.ChatMembers`) and takes out
   connections of users who aren't members any more (`internal/realtime/membership.go`,
   [pub/sub](./PUBSUB_ARCHITECTURE.md#background-jobs)). Verified (`verify.mjs --full` with
-  `TEST_DB_REQUIRED=1`; the new tests fail with the removal turned off). Not reviewed yet
+  `TEST_DB_REQUIRED=1`; the new tests fail with the removal turned off). Code review applied:
+  only participant keys are read, parsed IDs go to the loader, no membership pass after a
+  session outage. Not done: a member removed and re-added within one pass is taken out
+  until they reconnect (as any new member is, #49); evicted connections get no event
 - **#72 on Render (paused 2026-11-15):** `/health` answers `200`, but no chat with a message
   saved before PR #74 (`reactions: null`) is left to react to. Continue later, for example
   by setting `reactions: null` on a test message in Atlas first
-- **Next step:** `/code-review`, then push and open the PR (`Fixes #117`). After it:
+- **Next step:** PR open for #117; ask before merging. After it:
   #39 (cut contact lists to `limit`), #51 (characters or bytes: needs a decision). Split
   `rest-api.md`, `websocket-requests.md` (199 lines) before adding to them
-- **Updated:** 2026-11-17 on `fix/117-recheck-room-membership` at `9f4b72d`
+- **Updated:** 2026-11-17 on `fix/117-recheck-room-membership` at `82cfa15`
 
 ## Where things stand
 
