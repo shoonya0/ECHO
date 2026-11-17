@@ -365,21 +365,10 @@ func CreateDirectChat(ctx context.Context, targetUserID bson.ObjectID) (*models.
 				return nil, fmt.Errorf("failed to insert chat: %w", err)
 			}
 
-			userUpdateFilter := bson.M{
-				"_id": bson.M{
-					"$in": []bson.ObjectID{user.ID, targetUserID},
-				},
-			}
-
-			userUpdate := bson.M{
-				"$set": bson.M{
-					"chats." + chat.ChatID.Hex(): 0,
-				},
-			}
-
-			_, err = database.DB.Collection(string(constants.UserColl)).UpdateMany(ctx, userUpdateFilter, userUpdate)
-			if err != nil {
-				return nil, fmt.Errorf("failed to update user: %w", err)
+			// The hub follows chats from these entries, so the chat is kept only
+			// when both users got theirs (#132).
+			if err := addDirectChatEntries(ctx, chat.ChatID, user.ID, targetUserID); err != nil {
+				return nil, err
 			}
 
 			AddMembersToLiveChat(ctx, chat.ChatID, user.ID, targetUserID) // #49
@@ -388,7 +377,46 @@ func CreateDirectChat(ctx context.Context, targetUserID bson.ObjectID) (*models.
 		return nil, fmt.Errorf("failed to fetch existing chat: %w", err)
 	}
 
+	// Write back an entry a failed or partial earlier write left out (#132).
+	repaired, err := database.DB.Collection(string(constants.UserColl)).UpdateMany(ctx,
+		bson.M{
+			"_id":                                bson.M{"$in": []bson.ObjectID{user.ID, targetUserID}},
+			"chats." + existingChat.ChatID.Hex(): bson.M{"$exists": false},
+		},
+		bson.M{"$set": bson.M{"chats." + existingChat.ChatID.Hex(): 0}},
+	)
+	if err != nil {
+		return nil, fmt.Errorf("failed to repair chat entries: %w", err)
+	}
+	if repaired.ModifiedCount > 0 {
+		AddMembersToLiveChat(ctx, existingChat.ChatID, user.ID, targetUserID)
+	}
+
 	return &existingChat, nil
+}
+
+// addDirectChatEntries sets chats.<chatID> on both users. If either user
+// document doesn't match, or the write fails, it removes the chat and any entry
+// already written, and returns the error (ErrUserNotFound for a missing user).
+func addDirectChatEntries(ctx context.Context, chatID, a, b bson.ObjectID) error {
+	users := database.DB.Collection(string(constants.UserColl))
+	ids := bson.M{"_id": bson.M{"$in": []bson.ObjectID{a, b}}}
+	key := "chats." + chatID.Hex()
+
+	res, err := users.UpdateMany(ctx, ids, bson.M{"$set": bson.M{key: 0}})
+	if err == nil && res.MatchedCount < 2 {
+		err = ErrUserNotFound
+	}
+	if err == nil {
+		return nil
+	}
+	if _, undoErr := users.UpdateMany(ctx, ids, bson.M{"$unset": bson.M{key: ""}}); undoErr != nil {
+		return fmt.Errorf("failed to add direct chat to users: %w (and removing the entries failed: %v)", err, undoErr)
+	}
+	if _, delErr := database.DB.Collection(string(constants.ChatColl)).DeleteOne(ctx, bson.M{"_id": chatID}); delErr != nil {
+		return fmt.Errorf("failed to add direct chat to users: %w (and removing the chat failed: %v)", err, delErr)
+	}
+	return fmt.Errorf("failed to add direct chat to users: %w", err)
 }
 
 // newGroupParticipants builds the participants of a new group: the creator as the
