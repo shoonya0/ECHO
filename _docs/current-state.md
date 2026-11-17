@@ -11,15 +11,17 @@ on `main`. To learn what the product does, read
 and with a link to exactly one feature state.md. Updated by /close-increment and
 /feature-docs update. -->
 
-- **Feature:** none · **#40 (typing part)** on `fix/40-typing-without-mongo`: `set_typing`
-  only broadcasts the typing event; it no longer writes `typingUsers` to MongoDB or starts
-  a 10-second timer that clears a user who is still typing. Verified (`verify.mjs --full`)
+- **Feature:** none · **#123 + #124** on `fix/123-subscribe-after-removal`: a join or
+  registration checks the room again after subscribing, so a removal racing it can't leave
+  the channel subscribed; the release test hook becomes a `PubSubManager` field. Verified
+  (`verify.mjs --full`; the new tests fail without the fix); code review applied: one
+  `subscribeChats` helper, no join event for a member removed during the join
 - **#72 on Render (paused 2026-11-15):** `/health` answers `200`, but no chat with a message
   saved before PR #74 (`reactions: null`) is left to react to. Continue later, for example
   by setting `reactions: null` on a test message in Atlas first
-- **Next step:** push and open the PR (`Refs #40`). Split `rest-api.md`, `websocket-requests.md`
+- **Next step:** push and open the PR (`Fixes #123`, `Fixes #124`). Split `rest-api.md`, `websocket-requests.md`
   before adding to them
-- **Updated:** 2026-11-17 on `fix/40-typing-without-mongo`
+- **Updated:** 2026-11-17 on `fix/123-subscribe-after-removal`
 
 ## Where things stand
 
@@ -34,6 +36,10 @@ declining a group invite. The full list is in
 
 ## Recently finished
 
+- **#40, typing part (PR #126):** `set_typing` only broadcasts the `typing` event; it no
+  longer writes `typingUsers` to MongoDB or starts a timer that cleared users still typing
+  ([requests](./websocket-requests.md#set_typing),
+  [app changes](../Android/_docs/08_SERVER_CHANGES/auth-and-connection.md)).
 - **#122 (PR #125):** the server reads a connection's requests only after the hub has
   registered it (at most 10 s), so a `join_chat` sent right after connecting is no longer
   dropped ([pub/sub](./PUBSUB_ARCHITECTURE.md#connecting-and-disconnecting)).
@@ -92,11 +98,7 @@ declining a group invite. The full list is in
 - **#47 (PR #99):** `send_message` replies have a top-level `requestId` ([events](./websocket-events.md)).
 - **#75 (PR #98):** reaction `details` hold usernames; older entries keep `""`
   ([REST](./rest-api.md#messages), [app changes](../Android/_docs/08_SERVER_CHANGES/README.md)).
-- **#25 (PR #97):** each user counts once per emoji; a no-op add or remove replies
-  `changed: false` with no event, and `count` is set from `users`, healing drift
-  ([requests](./websocket-requests.md#add_reaction-and-remove_reaction)). Not done from
-  the review: odd old reaction shapes, a leftover `{count: 0}`, the no-op lookup.
-Older work, from #27 (PR #96) back: [finished-work.md](./finished-work.md).
+Older work, from #25 (PR #97) back: [finished-work.md](./finished-work.md).
 
 ## How to build, run, test
 
@@ -135,11 +137,11 @@ blocks are stored, and who counts as a member.
 
 ## Known issues and risks
 
-There are 24 open issues. Where each risk sits in the code: [architecture-overview.md](./architecture-overview.md#riskiest-areas).
+There are 22 open issues once #123 and #124 close. Where each risk sits in the code: [architecture-overview.md](./architecture-overview.md#riskiest-areas).
 
 | Area | The problem, in short | Issues |
 |---|---|---|
-| Live connections | The server can leak resources or stall under load, missed live messages can't be detected, and open connections miss new chats, a restart of a running hub doubles its loops, a channel can stay subscribed after a racing removal, and a test hook can race | #21, #22, #43, #49, #79, #117, #123, #124 |
+| Live connections | The server can leak resources or stall under load, missed live messages can't be detected, and open connections miss new chats, and a restart of a running hub doubles its loops | #21, #22, #43, #49, #79, #117 |
 | Groups | Members are never asked to accept, pending members get no live messages, and the participant count is maintained by hand | #5, #17, #110 |
 | Invite codes | Entries left by forged joins before #9 was fixed are still stored | #69 |
 | Accounts | Deleting an account leaves old references, emails are case-sensitive, and usernames aren't unique | #35, #36 |

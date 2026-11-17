@@ -4,6 +4,10 @@ Older entries moved here from
 [current-state.md](./current-state.md#recently-finished), newest first. Links point to
 the docs that describe each change today. Newer work is listed on that page.
 
+- **#25 (PR #97):** each user counts once per emoji; a no-op add or remove replies
+  `changed: false` with no event, and `count` is set from `users`, healing drift
+  ([requests](./websocket-requests.md#add_reaction-and-remove_reaction)). Not done from
+  the review: odd old reaction shapes, a leftover `{count: 0}`, the no-op lookup.
 - **#27 (PR #96):** a block either way closes the direct chat to both people. Opening it
   gets `403` / `PERMISSION_DENIED` `User is blocked`, and so do `send_message`,
   `set_typing`, `mark_read` and reactions; history still reads. Groups aren't affected

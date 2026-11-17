@@ -26,6 +26,16 @@ type PubSubManager struct {
 	ctx           context.Context
 	cancel        context.CancelFunc
 	instanceID    string // Unique identifier for this server instance
+
+	// Test hooks, always nil in production. Fields, not package variables, so
+	// a goroutine left over from one test can't race the next test (#124).
+	// Tests set them before anything runs and never change them.
+	//
+	// afterEmptyCheck runs between a release's "room is empty" check and its
+	// unsubscribe; afterRoomJoin runs between a join's room entry and its
+	// subscribe.
+	afterEmptyCheck func(chatID string)
+	afterRoomJoin   func(chatID string)
 }
 
 // Channel naming conventions for pub/sub
@@ -93,15 +103,24 @@ func (pm *PubSubManager) SubscribeUserToChannels(userID bson.ObjectID, chatIDs [
 		return fmt.Errorf("failed to subscribe to user channel: %w", err)
 	}
 
-	// Subscribe to all chat channels the user is part of
+	pm.subscribeChats(chatIDs)
+	return nil
+}
+
+// subscribeChats subscribes the channels of chats a connection has just
+// entered the rooms of. Call it after the room entry, never before (#55). A
+// removal that emptied a room before the subscribe had nothing to release, so
+// the channels are checked again afterwards and released if unused (#123).
+func (pm *PubSubManager) subscribeChats(chatIDs []string) {
 	for _, chatID := range chatIDs {
-		chatChannel := pm.getChatChannel(chatID)
-		if err := pm.subscribeToChannel(chatChannel); err != nil {
+		if pm.afterRoomJoin != nil {
+			pm.afterRoomJoin(chatID)
+		}
+		if err := pm.subscribeToChannel(pm.getChatChannel(chatID)); err != nil {
 			pm.logger.WithFields(logrus.Fields{"chatID": chatID}).WithError(err).Error("Failed to subscribe to chat channel")
 		}
 	}
-
-	return nil
+	pm.releaseEmptyChats(chatIDs)
 }
 
 // UnsubscribeUser releases a user's personal channel. The hub calls it when
@@ -112,10 +131,6 @@ func (pm *PubSubManager) UnsubscribeUser(userID bson.ObjectID) {
 		pm.logger.WithFields(logrus.Fields{"userID": userID.Hex()}).WithError(err).Error("Failed to unsubscribe from user channel")
 	}
 }
-
-// testHookAfterEmptyCheck, when set by a test, runs between a release's
-// "room is empty" check and its unsubscribe. Always nil in production.
-var testHookAfterEmptyCheck func(chatID string)
 
 // releaseEmptyChats unsubscribes the channels of chats no connection on this
 // instance is in. JoinChat adds a client to the room before it subscribes, so
@@ -128,8 +143,8 @@ func (pm *PubSubManager) releaseEmptyChats(chatIDs []string) {
 		if pm.roomInUse(chatID) {
 			continue
 		}
-		if testHookAfterEmptyCheck != nil {
-			testHookAfterEmptyCheck(chatID)
+		if pm.afterEmptyCheck != nil {
+			pm.afterEmptyCheck(chatID)
 		}
 
 		channel := pm.getChatChannel(chatID)
