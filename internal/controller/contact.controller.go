@@ -41,13 +41,13 @@ func parseLimit(ctx *gin.Context) int {
 }
 
 // parsePage reads the "page" query parameter, counted from 1: 1 when absent,
-// unparseable or below 1 (#39).
+// unparseable or below 1, and at most services.MaxContactPage (#39).
 func parsePage(ctx *gin.Context) int {
 	page, err := strconv.Atoi(ctx.Query("page"))
 	if err != nil || page < 1 {
 		return 1
 	}
-	return page
+	return min(page, services.MaxContactPage)
 }
 
 // paramObjectID returns the ObjectID for a named path parameter.

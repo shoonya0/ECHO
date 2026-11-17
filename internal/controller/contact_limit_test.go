@@ -37,7 +37,10 @@ func TestParseLimitStaysInRange(t *testing.T) {
 // mean the first page.
 func TestParsePage(t *testing.T) {
 	gin.SetMode(gin.TestMode)
-	cases := map[string]int{"": 1, "abc": 1, "0": 1, "-2": 1, "1": 1, "7": 7}
+	cases := map[string]int{
+		"": 1, "abc": 1, "0": 1, "-2": 1, "1": 1, "7": 7,
+		"10000": 10000, "10001": 10000, "9223372036854775807": 10000,
+	}
 	for query, want := range cases {
 		t.Run("page="+query, func(t *testing.T) {
 			c, _ := gin.CreateTestContext(httptest.NewRecorder())

@@ -73,12 +73,16 @@ var userProjection = bson.M{
 
 // ============ CONTACTS & FRIENDS MANAGEMENT ============
 
+// MaxContactPage is the last page GetContacts serves. It keeps the skip far from
+// overflowing, and at 100 per page it is past any list a user document holds.
+const MaxContactPage = 10000
+
 // GetContacts returns one page of the user's list for contactStatus, in
-// username order, and the number of entries in the whole list. page counts from
-// 1; page and limit must be at least 1 (#39). IDs whose user no longer exists
-// are neither returned nor counted.
+// username order ignoring case, and the number of entries in the whole list.
+// page counts from 1 to MaxContactPage, and limit must be at least 1 (#39). IDs
+// whose user no longer exists are neither returned nor counted.
 func GetContacts(ctx context.Context, userID bson.ObjectID, contactStatus constants.ContactStatus, page, limit int) ([]models.ContactInfo, int, error) {
-	if page < 1 || limit < 1 {
+	if page < 1 || page > MaxContactPage || limit < 1 {
 		return []models.ContactInfo{}, 0, fmt.Errorf("invalid page %d or limit %d", page, limit)
 	}
 
@@ -112,6 +116,7 @@ func GetContacts(ctx context.Context, userID bson.ObjectID, contactStatus consta
 	findOpts := options.Find().
 		SetProjection(userProjection).
 		SetSort(bson.D{{Key: "username", Value: 1}, {Key: "_id", Value: 1}}).
+		SetCollation(&options.Collation{Locale: "en", Strength: 2}). // "Bob" between "alice" and "carol"
 		SetSkip(int64(page-1) * int64(limit)).
 		SetLimit(int64(limit))
 	cursor, err := users.Find(ctx, filter, findOpts)
