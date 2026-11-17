@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/shoonya0/ECHO/internal/constants"
@@ -39,6 +40,13 @@ type Hub struct {
 	// loadMembers reads chat participants for the membership re-check; nil
 	// means services.ChatMembers.
 	loadMembers MembersLoader
+
+	// restartMu serializes Restart, so connections that all find the context
+	// cancelled start the background loops once (#79).
+	restartMu sync.Mutex
+	// loopsRunning counts the background loops startLoops started that
+	// haven't returned; tests read it.
+	loopsRunning atomic.Int32
 }
 
 // GetHubInstance returns the process-wide hub, creating it on first use.
@@ -84,47 +92,59 @@ func (eh *Hub) Start() error {
 		return fmt.Errorf("failed to start pub/sub manager: %w", err)
 	}
 
-	// Start hub goroutines
-	go eh.runHub()
-	go eh.cleanupInactiveConnections()
-	go eh.syncPresenceWithRedis()
-	go eh.recheckSessions()
+	eh.startLoops()
 
 	eh.logger.Info("Enhanced WebSocket hub started successfully")
 	return nil
 }
 
-// Restart attempts to restart the hub if it has stopped
+// Restart starts the background loops again on a new context once the hub's
+// context has been cancelled. While the context is live the loops are still
+// running, so it does nothing (#79).
 func (eh *Hub) Restart() error {
-	eh.logger.Info("Attempting to restart hub")
+	eh.restartMu.Lock()
+	defer eh.restartMu.Unlock()
 
-	// Check if context is cancelled
 	select {
 	case <-eh.Ctx.Done():
-		eh.logger.Warn("Hub context is cancelled, creating new context")
-		// Create new context
-		ctx, cancel := context.WithCancel(context.Background())
-		eh.Hub.Ctx = ctx
-		eh.Hub.Cancel = cancel
 	default:
-		eh.logger.Info("Hub context is still active")
+		eh.logger.Info("Hub context is still active, not restarting")
+		return nil
 	}
 
-	// Restart goroutines
-	go eh.runHub()
-	go eh.cleanupInactiveConnections()
-	go eh.syncPresenceWithRedis()
-	go eh.recheckSessions()
+	eh.logger.Warn("Hub context is cancelled, restarting with a new context")
+	eh.Ctx, eh.Cancel = context.WithCancel(context.Background())
+	eh.startLoops()
 
 	eh.logger.Info("Hub restarted successfully")
 	return nil
 }
 
+// startLoops starts the hub's background loops on the current context. Each
+// loop keeps that context, so a Restart that swaps in a new one can't keep an
+// old loop running.
+func (eh *Hub) startLoops() {
+	ctx := eh.Ctx
+	loops := []func(context.Context){
+		eh.runHub,
+		eh.cleanupInactiveConnections,
+		eh.syncPresenceWithRedis,
+		eh.recheckSessions,
+	}
+	for _, loop := range loops {
+		eh.loopsRunning.Add(1)
+		go func() {
+			defer eh.loopsRunning.Add(-1)
+			loop(ctx)
+		}()
+	}
+}
+
 // runHub manages the main hub operations
-func (eh *Hub) runHub() {
+func (eh *Hub) runHub(ctx context.Context) {
 	for {
 		select {
-		case <-eh.Ctx.Done():
+		case <-ctx.Done():
 			eh.logger.Warn("Hub context cancelled, stopping main loop")
 			return
 
@@ -471,13 +491,13 @@ func (eh *Hub) getUserChats(ctx context.Context, userID bson.ObjectID) ([]string
 }
 
 // syncPresenceWithRedis periodically syncs presence data with Redis
-func (eh *Hub) syncPresenceWithRedis() {
+func (eh *Hub) syncPresenceWithRedis(ctx context.Context) {
 	ticker := time.NewTicker(30 * time.Second)
 	defer ticker.Stop()
 
 	for {
 		select {
-		case <-eh.Ctx.Done():
+		case <-ctx.Done():
 			return
 		case <-ticker.C:
 			eh.performPresenceSync()
@@ -514,13 +534,13 @@ func (eh *Hub) performPresenceSync() {
 }
 
 // cleanupInactiveConnections removes inactive connections
-func (eh *Hub) cleanupInactiveConnections() {
+func (eh *Hub) cleanupInactiveConnections(ctx context.Context) {
 	ticker := time.NewTicker(30 * time.Second)
 	defer ticker.Stop()
 
 	for {
 		select {
-		case <-eh.Ctx.Done():
+		case <-ctx.Done():
 			return
 		case <-ticker.C:
 			eh.performCleanup()

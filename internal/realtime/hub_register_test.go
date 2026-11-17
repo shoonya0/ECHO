@@ -97,7 +97,7 @@ func TestDisconnectBeforeRegistrationKeepsOtherConnectionsPresence(t *testing.T)
 func TestWaitRegisteredReturnsOnceRegistered(t *testing.T) {
 	hub := newTestHub(t)
 	stubRegistration(hub, "chat1")
-	go hub.runHub()
+	go hub.runHub(hub.Ctx)
 	client := newTestClient("c1", bson.NewObjectID())
 
 	hub.Register <- client
