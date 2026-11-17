@@ -4,6 +4,11 @@ Older entries moved here from
 [current-state.md](./current-state.md#recently-finished), newest first. Links point to
 the docs that describe each change today. Newer work is listed on that page.
 
+- **#27 (PR #96):** a block either way closes the direct chat to both people. Opening it
+  gets `403` / `PERMISSION_DENIED` `User is blocked`, and so do `send_message`,
+  `set_typing`, `mark_read` and reactions; history still reads. Groups aren't affected
+  ([requests](./websocket-requests.md), [app changes](../Android/_docs/08_SERVER_CHANGES/README.md)).
+  Not done from the code review: contact requests still miss a half-written block.
 - **#38 (PR #95):** a contact request or direct chat with yourself gets `400`
   (`INVALID_USER_ID` from `join_chat`) instead of storing broken data
   ([app changes](../Android/_docs/08_SERVER_CHANGES/README.md)).
