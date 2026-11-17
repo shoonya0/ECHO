@@ -1,6 +1,6 @@
 # ECHO: current state
 
-A one-page snapshot of where the project stands. Last checked on 2026-11-17 at `8185bd8`
+A one-page snapshot of where the project stands. Last checked on 2026-11-17 at `c083ad6`
 on `main`. To learn what the product does, read
 [product-overview.md](./product-overview.md). For the code, read
 [architecture-overview.md](./architecture-overview.md).
@@ -11,22 +11,17 @@ on `main`. To learn what the product does, read
 and with a link to exactly one feature state.md. Updated by /close-increment and
 /feature-docs update. -->
 
-- **Feature:** none · **#49** on `fix/49-follow-new-chats`: a chat a user gains (new
-  direct chat, new group, invite join) is followed by their open connections through a
-  hub-internal `internal.chat_added` on `user:<id>`, the reverse of #14's removal
-  (`internal/realtime/members_added.go`, `services.AddMembersToLiveChat`). Verified
-  (`verify.mjs --full` with `TEST_DB_REQUIRED=1`; hub and service tests fail without the
-  fix). Code review applied: a retried join that restores the chats entry follows the
-  chat; a failed publish subscribes in the background; chat IDs are checked. Not done: a
-  connection registering in the same ms as the add misses it; a removal racing an add is
-  undone only by the #117 re-check; `CreateDirectChat` ignores `MatchedCount` (issue proposed)
+- **Feature:** none · no branch open. Merged today: #117 (PR #128), #39 (PR #129), #49
+  (PR #130), after the realtime fixes #54, #122, #40 (typing), #123, #124
 - **#72 on Render (paused 2026-11-15):** `/health` answers `200`, but no chat with a message
   saved before PR #74 (`reactions: null`) is left to react to. Continue later, for example
   by setting `reactions: null` on a test message in Atlas first
-- **Next step:** PR for #49; ask before merging. After it: #51
-  (characters or bytes: needs a decision); the `users/suggestions` unbounded `page` issue
-  waits for a yes. Split `rest-api.md`, `websocket-requests.md` (199 lines) before adding
-- **Updated:** 2026-11-17 on `fix/49-follow-new-chats` at `3ee7b83`
+- **Next step:** commit this state as the first commit of the next branch. Candidates:
+  #51 (characters or bytes: needs a decision), #48 (`join_chat` ignores `chatId`), #50
+  (live events lack sender details). Two issues wait for a yes: `users/suggestions`
+  unbounded `page`, `CreateDirectChat` ignoring the `MatchedCount` of its `chats` update.
+  Split `rest-api.md`, `websocket-requests.md` (199 lines) before adding to them
+- **Updated:** 2026-11-17 on `main` at `c083ad6` (uncommitted)
 
 ## Where things stand
 
@@ -41,6 +36,13 @@ declining a group invite. The full list is in
 
 ## Recently finished
 
+- **#49 (PR #130):** a chat a user gains while connected (a new direct chat, either side; a
+  group they create; a code join, also a retry or a pending accept) reaches their open
+  connections at once, through a hub-internal `internal.chat_added` on `user:<id>`
+  ([pub/sub](./PUBSUB_ARCHITECTURE.md#connecting-and-disconnecting),
+  [app changes](../Android/_docs/08_SERVER_CHANGES/groups-and-invites.md)). Not done from
+  the review: a connection registering in the same ms misses the add; a removal racing an
+  add is undone by the #117 re-check within 30 s.
 - **#39 (PR #129):** the five contact lists come in pages: `page` 1 to 10000, cut to
   `limit`, sorted by username ignoring case, with the real `total`
   ([REST](./rest-api.md#contacts), [app changes](../Android/_docs/08_SERVER_CHANGES/contacts-and-blocking.md)).
@@ -111,9 +113,7 @@ declining a group invite. The full list is in
   see who joined: other members get `403`, anyone not in the group `404`
   ([REST](./rest-api.md#groups), [app changes](../Android/_docs/08_SERVER_CHANGES/README.md)).
   Security review: nothing found. From the code review: #103, #104.
-- **#67 (PR #101):** the contract test pages history with `?before=<nextCursor>` and checks
-  that `offset` gets `400`; every step passes against a local server.
-Older work, from #60 (PR #100) back: [finished-work.md](./finished-work.md).
+Older work, from #67 (PR #101) back: [finished-work.md](./finished-work.md).
 
 ## How to build, run, test
 
@@ -122,7 +122,7 @@ to remember is `node scripts/verify.mjs`.
 
 ## Test baseline
 
-Run on 2026-11-17 on `main` at `8185bd8`, on Windows, with MongoDB and Redis running and
+Run on 2026-11-17 on `main` at `c083ad6`, on Windows, with MongoDB and Redis running and
 `TEST_DB_REQUIRED=1`, through `node scripts/verify.mjs --full` after `go clean -testcache`.
 The lint row is from 2026-11-07 at `90b2f73`. Compare new runs against this table by test
 name.
@@ -133,7 +133,7 @@ name.
 | `go vet ./...` | 1s | pass | — |
 | `gofmt -l cmd internal` | <1s | pass (no files) | — |
 | `go test ./...` | 5s | pass, none skipped | — |
-| `go test -race ./...` | 13s | pass, none skipped | — |
+| `go test -race ./...` | 14s | pass, none skipped | — |
 | `golangci-lint run ./...` (v2.14) | 11s | **27 issues**: errcheck 20, staticcheck 7 | not blocking: verify lints only new code (`--new-from-merge-base=origin/main`) |
 
 - Tests that need MongoDB skip when it isn't running, unless `TEST_DB_REQUIRED` is set. CI
