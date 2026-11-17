@@ -13,11 +13,11 @@ and with a link to exactly one feature state.md. Updated by /close-increment and
 
 - **Feature:** none · **#40 (typing part)** on `fix/40-typing-without-mongo`: `set_typing`
   only broadcasts the typing event; it no longer writes `typingUsers` to MongoDB or starts
-  a 10-second timer that clears a user who is still typing. In progress
+  a 10-second timer that clears a user who is still typing. Verified (`verify.mjs --full`)
 - **#72 on Render (paused 2026-11-15):** `/health` answers `200`, but no chat with a message
   saved before PR #74 (`reactions: null`) is left to react to. Continue later, for example
   by setting `reactions: null` on a test message in Atlas first
-- **Next step:** failing test, fix, verify, review, PR (`Refs #40`). Split `rest-api.md`, `websocket-requests.md`
+- **Next step:** push and open the PR (`Refs #40`). Split `rest-api.md`, `websocket-requests.md`
   before adding to them
 - **Updated:** 2026-11-17 on `fix/40-typing-without-mongo`
 
@@ -146,7 +146,7 @@ There are 24 open issues. Where each risk sits in the code: [architecture-overvi
 | Contacts and blocking | Contact lists aren't cut to `limit`, and blocks written during a deploy can be missed | #39, #63 |
 | Online status and privacy | Online status is unreliable, and privacy settings aren't applied | #31, #32 |
 | Messages and data | Writes can half-finish, and some lists grow without limit | #37, #42 |
-| Limits and errors | WebSocket limits are per connection, not per user, and `set_typing` still writes to MongoDB; no limits on login and signup | #40 |
+| Limits and errors | WebSocket limits are per connection, not per user; no limits on login and signup | #40 |
 | WebSocket replies and events | Replies and events are inconsistent or leave out details, which affects the Android plan | #48, #50, #51 |
 
 ## Next task

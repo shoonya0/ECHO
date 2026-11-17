@@ -78,5 +78,6 @@ Details: [rest-api.md](../../../_docs/rest-api.md#the-basics),
 |---|---|
 | A frame over 64 KiB closes the socket with `1009` | Keep requests small (message content is at most 4000 bytes anyway). Treat `1009` as a bug, not a reason to retry the same frame. |
 | Over 20 requests a second (bursts of 40, pings included), a request isn't carried out. It gets an `error` with code `RATE_LIMITED` and its `requestId`, or no reply at all while the server's queue for this socket is busy | Debounce `set_typing` and batch `mark_read`. On `RATE_LIMITED`, or a request timeout, retry after a short backoff. The socket stays open. Don't send WebSocket pings more often than every few seconds. |
+| `set_typing` only sends the `typing` event; a chat's `typingUsers` in REST replies is no longer updated and can hold old entries | Show typing only from `typing` events, and clear it after a few seconds without a new one. Ignore `typingUsers`. |
 
 Details: [WEBSOCKET_PROTOCOL.md](../../../_docs/WEBSOCKET_PROTOCOL.md#stay-connected).

@@ -90,8 +90,8 @@ Tells the chat that you started or stopped typing.
 }
 ```
 
-**You get:** no `response`. A `typing` event goes to the chat. Each call writes to the
-database (#40).
+**You get:** no `response`. A `typing` event goes to the chat. Nothing is stored; the
+chat's `typingUsers` is no longer written (#40).
 
 **Errors:** `INVALID_REQUEST`, `INVALID_CHAT_ID`, `PERMISSION_DENIED`, `TYPING_FAILED`.
 
