@@ -72,14 +72,13 @@ func TestExceededDoesNotCount(t *testing.T) {
 		}
 	}
 	Hit(ctx, key, l)
-	Hit(ctx, key, l)
 	if exceeded, _ := Exceeded(ctx, key, l); exceeded {
-		t.Fatal("Exceeded true at Max hits; the limit allows Max")
+		t.Fatal("Exceeded true below Max hits")
 	}
 	Hit(ctx, key, l)
 	exceeded, retryAfter := Exceeded(ctx, key, l)
 	if !exceeded || retryAfter <= 0 {
-		t.Fatalf("Exceeded = %v, %v after Max+1 hits; want true and a wait", exceeded, retryAfter)
+		t.Fatalf("Exceeded = %v, %v after Max hits; want true and a wait", exceeded, retryAfter)
 	}
 }
 

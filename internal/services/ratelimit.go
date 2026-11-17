@@ -47,6 +47,9 @@ func EmailRateLimitID(email string) string {
 // limit and, if not, how long until the window ends. When Redis fails, the
 // request is allowed: an outage shouldn't block every login.
 func Hit(ctx context.Context, key string, l Limit) (allowed bool, retryAfter time.Duration) {
+	if database.Redis == nil {
+		return true, 0
+	}
 	var incr *redis.IntCmd
 	var ttl *redis.DurationCmd
 	_, err := database.Redis.TxPipelined(ctx, func(pipe redis.Pipeliner) error {
@@ -65,9 +68,13 @@ func Hit(ctx context.Context, key string, l Limit) (allowed bool, retryAfter tim
 	return false, waitFor(ttl.Val(), l)
 }
 
-// Exceeded reports whether key is already over the limit, without counting a
-// request. When Redis fails, it reports false.
+// Exceeded reports whether key has used up its limit (Max counted), without
+// counting a request. It suits a count of failures: after Max of them the next
+// attempt is refused. When Redis fails, it reports false.
 func Exceeded(ctx context.Context, key string, l Limit) (exceeded bool, retryAfter time.Duration) {
+	if database.Redis == nil {
+		return false, 0
+	}
 	var get *redis.StringCmd
 	var ttl *redis.DurationCmd
 	_, err := database.Redis.Pipelined(ctx, func(pipe redis.Pipeliner) error {
@@ -83,7 +90,7 @@ func Exceeded(ctx context.Context, key string, l Limit) (exceeded bool, retryAft
 		return false, 0
 	}
 	count, convErr := get.Int64()
-	if convErr != nil || count <= int64(l.Max) {
+	if convErr != nil || count < int64(l.Max) {
 		return false, 0
 	}
 	return true, waitFor(ttl.Val(), l)

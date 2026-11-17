@@ -103,6 +103,15 @@ func Login(c *gin.Context) {
 		return
 	}
 
+	// Failed logins per email, from any IP (#40). Checked before the lookup and
+	// bcrypt, so guessing stops for the window even with the right password.
+	emailKey := services.RateLimitKey("login-email", services.EmailRateLimitID(req.Email))
+	if exceeded, wait := services.Exceeded(c.Request.Context(), emailKey, services.LoginEmailFailLimit); exceeded {
+		log.Info("login refused: too many failed logins for this email")
+		utils.RateLimitedResponse(c, wait)
+		return
+	}
+
 	userProjection := bson.M{
 		"_id":                 1,
 		"email":               1,
@@ -120,6 +129,7 @@ func Login(c *gin.Context) {
 	err := database.DB.Collection(string(constants.UserColl)).FindOne(c.Request.Context(), bson.M{"email": req.Email}, options.FindOne().SetProjection(userProjection)).Decode(&rawDoc)
 	if err == mongo.ErrNoDocuments {
 		log.Debug("invalid credentials")
+		services.Hit(c.Request.Context(), emailKey, services.LoginEmailFailLimit) // counts like a wrong password
 		utils.ErrorResponse(c, http.StatusUnauthorized, "invalid credentials", nil)
 		return
 	} else if err != nil {
@@ -151,6 +161,7 @@ func Login(c *gin.Context) {
 		[]byte(user.PasswordHash), []byte(req.Password),
 	); err != nil {
 		log.WithError(err).Debug("invalid credentials")
+		services.Hit(c.Request.Context(), emailKey, services.LoginEmailFailLimit)
 		utils.ErrorResponse(c, http.StatusUnauthorized, "invalid credentials", nil)
 		return
 	}

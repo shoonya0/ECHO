@@ -1,10 +1,6 @@
 package middleware
 
 import (
-	"math"
-	"net/http"
-	"strconv"
-
 	"github.com/gin-gonic/gin"
 
 	"github.com/shoonya0/ECHO/internal/logger"
@@ -36,14 +32,7 @@ func RateLimitByIP(name string, l services.Limit) gin.HandlerFunc {
 		logger.WithContext(c.Request.Context()).
 			WithField("limit", name).
 			Info("rate limit reached")
-		RefuseRateLimited(c, retryAfter.Seconds())
+		utils.RateLimitedResponse(c, retryAfter)
+		c.Abort()
 	}
-}
-
-// RefuseRateLimited answers 429 with Retry-After (whole seconds, at least 1) and
-// error RATE_LIMITED, and stops the request.
-func RefuseRateLimited(c *gin.Context, retryAfterSeconds float64) {
-	c.Header("Retry-After", strconv.Itoa(max(1, int(math.Ceil(retryAfterSeconds)))))
-	utils.ErrorResponse(c, http.StatusTooManyRequests, "too many attempts; try again later", "RATE_LIMITED")
-	c.Abort()
 }
