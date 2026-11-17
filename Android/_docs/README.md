@@ -5,7 +5,7 @@ kind: area
 # ECHO Android: app plans
 
 The Android app is built separately. These pages are its plans, not shipped code. For the
-server's API as it works today, read [rest-api.md](../../_docs/rest-api.md) and
+server's API as it works today, read [rest-api/](../../_docs/rest-api/README.md) and
 [WEBSOCKET_PROTOCOL.md](../../_docs/WEBSOCKET_PROTOCOL.md).
 
 | Page | Topic |

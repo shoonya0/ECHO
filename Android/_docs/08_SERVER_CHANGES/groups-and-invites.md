@@ -17,7 +17,7 @@ Part of [server changes the app must handle](./README.md).
 - `stats.participantCount` is now correct, but counts pending members (#5) and deleted accounts (#35).
 - A `pending` member accepts by joining with a code (`200`, invites cleared). Live messages start at once (#49).
 
-Details: [rest-api.md](../../../_docs/rest-api.md#groups).
+Details: [rest-api/](../../../_docs/rest-api/groups.md#groups).
 
 ## Creating an invite code returns it (#104)
 
@@ -26,7 +26,7 @@ Details: [rest-api.md](../../../_docs/rest-api.md#groups).
   Share `data.inviteCode` directly; don't take the first entry of the list, which is the
   code made when the group was created.
 
-Details: [rest-api.md](../../../_docs/rest-api.md#groups).
+Details: [rest-api/](../../../_docs/rest-api/groups.md#groups).
 
 ## Invite codes (#15)
 
@@ -39,7 +39,7 @@ Details: [rest-api.md](../../../_docs/rest-api.md#groups).
 - Sending a deleted code to someone (`POST /groups/invites/:code/:userID/send`) now gets
   `400 Invalid invite` too, as an expired one already did (#91).
 
-Details: [rest-api.md](../../../_docs/rest-api.md#groups).
+Details: [rest-api/](../../../_docs/rest-api/groups.md#groups).
 
 ## Only owners and admins manage invite codes (#30)
 
@@ -53,7 +53,7 @@ Details: [rest-api.md](../../../_docs/rest-api.md#groups).
   removes the invitation from `GET groups/invites`. People added when the group was created
   are pending members: they can't join by code, so their invitation stays listed.
 
-Details: [rest-api.md](../../../_docs/rest-api.md#groups).
+Details: [rest-api/](../../../_docs/rest-api/groups.md#groups).
 
 ## Removing group members (#28)
 

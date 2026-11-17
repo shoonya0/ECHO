@@ -111,4 +111,4 @@ console.log("Saved as", reply.messageId);
 ```
 
 A real app also needs to reconnect after a disconnect, and to load missed messages
-[over REST](./rest-api.md#messages) when it does (#43).
+[over REST](./rest-api/chats.md#messages) when it does (#43).

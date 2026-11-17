@@ -18,7 +18,7 @@ you need, read that page, and stop when you have your answer.
 
 | I want to | Read |
 |---|---|
-| Call the REST API | [rest-api.md](./rest-api.md) |
+| Call the REST API | [rest-api/](./rest-api/README.md) |
 | Learn how the WebSocket works, with all error codes | [WEBSOCKET_PROTOCOL.md](./WEBSOCKET_PROTOCOL.md) |
 | See every request an app can send | [websocket-requests.md](./websocket-requests.md) |
 | See every event the server sends | [websocket-events.md](./websocket-events.md) |

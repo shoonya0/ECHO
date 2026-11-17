@@ -22,7 +22,7 @@ flowchart LR
 ```
 
 - **REST API:** normal web requests for things that happen once, such as logging in or
-  loading old messages. See [rest-api.md](./rest-api.md).
+  loading old messages. See [rest-api/](./rest-api/README.md).
 - **WebSocket:** a connection that stays open, so messages arrive the moment they are
   sent. See [WEBSOCKET_PROTOCOL.md](./WEBSOCKET_PROTOCOL.md).
 - **MongoDB:** stores everything that must last: users, chats and messages.

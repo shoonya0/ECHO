@@ -47,7 +47,7 @@ when its account is banned, deactivated or deleted after login.
   applies at once.
 - The WebSocket closes when the session ends; see below.
 
-Details: [rest-api.md](../../../_docs/rest-api.md).
+Details: [rest-api/](../../../_docs/rest-api/README.md).
 
 ## WebSocket close codes (#76)
 
@@ -80,7 +80,7 @@ Details: [WEBSOCKET_PROTOCOL.md](../../../_docs/WEBSOCKET_PROTOCOL.md#stay-conne
   a conflict with another change to the chat: retry it. `INVALID_CONTENT` for a bad
   `messageType` no longer repeats the value. Branch on `code`.
 
-Details: [rest-api.md](../../../_docs/rest-api.md#the-basics),
+Details: [rest-api/](../../../_docs/rest-api/basics.md#the-basics),
 [WEBSOCKET_PROTOCOL.md](../../../_docs/WEBSOCKET_PROTOCOL.md#error-codes).
 
 ## WebSocket limits (#40)

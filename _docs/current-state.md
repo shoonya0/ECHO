@@ -48,10 +48,10 @@ declining a group invite. The full list is in
   ([requests](./websocket-requests.md#join_chat)).
 - **#132 (PR #135):** a new direct chat is kept only when both users got their `chats`
   entry (else `404` / `INVALID_USER_ID`, chat and entries removed), and opening an existing
-  one writes back a missing entry ([REST](./rest-api.md#chats)).
+  one writes back a missing entry ([REST](./rest-api/chats.md#chats)).
 - **#131 (PR #134):** `GET users/suggestions` takes `page` 1 to 10000 (clamped, shared
   `services.MaxPage` with the contact lists), so a huge page no longer overflows the skip
-  into a `500` ([REST](./rest-api.md#finding-people)).
+  into a `500` ([REST](./rest-api/users.md#finding-people)).
 - **#51 (PR #133):** a message `content` is limited to 4000 characters (code points), not
   bytes, so Hindi or emoji text is no longer cut at about a third
   ([decided](./decisions.md#how-the-message-length-limit-counts-51),
@@ -103,21 +103,21 @@ declining a group invite. The full list is in
   fails (`404` or `500`) before any invitation goes out.
 - **#103 (PR #113):** a `pending` group member accepts by joining with any usable code of
   the group; `send` works for pending members, and joining clears every invitation to the
-  group. Live messages start at the next connection ([REST](./rest-api.md#groups),
+  group. Live messages start at the next connection ([REST](./rest-api/groups.md#groups),
   [app changes](../Android/_docs/08_SERVER_CHANGES/README.md)). A dedicated accept and decline
   action is left to #5 ([decisions](./decisions.md#how-a-pending-member-accepts-103-5)).
 - **#68 (PR #111):** a group holds at most `settings.maxParticipants` (default 100). Create,
   add and join past it add nobody: REST `409`, WebSocket `GROUP_FULL`, checked in the
-  update filter ([REST](./rest-api.md#groups), [app changes](../Android/_docs/08_SERVER_CHANGES/README.md)).
+  update filter ([REST](./rest-api/groups.md#groups), [app changes](../Android/_docs/08_SERVER_CHANGES/README.md)).
   From the code review: #112.
 - **#16 (PR #109):** a group's `stats.participantCount` follows every add, join and
   removal, and a startup backfill resets drifted groups (skipping malformed ones). It
   counts pending members and deleted accounts ([app changes](../Android/_docs/08_SERVER_CHANGES/README.md)).
   From the code review: #110 (derive the count instead of maintaining it).
 - **#62 (PR #108):** `GET users/contacts` leaves out people you blocked; `GET /blocked`
-  lists them ([REST](./rest-api.md#contacts), [app changes](../Android/_docs/08_SERVER_CHANGES/README.md)).
+  lists them ([REST](./rest-api/users.md#contacts), [app changes](../Android/_docs/08_SERVER_CHANGES/README.md)).
 - **#104 (PR #107):** creating an invite code returns it in `data`, shaped like an entry
-  of the group's list ([REST](./rest-api.md#groups),
+  of the group's list ([REST](./rest-api/groups.md#groups),
   [app changes](../Android/_docs/08_SERVER_CHANGES/README.md)).
 - **#59 (PR #105):** a non-member gets the same answer whether or not a chat exists:
   `PERMISSION_DENIED` from `send_message`, `invite_user` and `remove_user`, `404` from
@@ -126,7 +126,7 @@ declining a group invite. The full list is in
   From the code review: #106.
 - **#30 (PR #102):** only owners and admins create, list, delete or send invite codes or
   see who joined: other members get `403`, anyone not in the group `404`
-  ([REST](./rest-api.md#groups), [app changes](../Android/_docs/08_SERVER_CHANGES/README.md)).
+  ([REST](./rest-api/groups.md#groups), [app changes](../Android/_docs/08_SERVER_CHANGES/README.md)).
   Security review: nothing found. From the code review: #103, #104.
 Older work, from #67 (PR #101) back: [finished-work.md](./finished-work.md).
 

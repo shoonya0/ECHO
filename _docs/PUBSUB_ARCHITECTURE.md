@@ -157,7 +157,7 @@ its connections live, though it is still in the chat history (#43).
 
 `GET /echo/v1/chats/hub/stats` shows the counts for one server, to operators who send the
 stats token. See
-[rest-api.md](./rest-api.md#hub-statistics).
+[rest-api/](./rest-api/chats.md#hub-statistics).
 
 ## Known problems
 

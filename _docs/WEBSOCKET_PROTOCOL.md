@@ -126,7 +126,7 @@ point, such as a failed live broadcast, may not be reported at all.
 | `update_chat` | Not built | `NOT_IMPLEMENTED` error |
 
 `set_presence` exists in the models but has no handler, so it returns `UNKNOWN_REQUEST`.
-Old messages are loaded [over REST](./rest-api.md#messages), not over the WebSocket.
+Old messages are loaded [over REST](./rest-api/chats.md#messages), not over the WebSocket.
 
 ## Events at a glance
 
