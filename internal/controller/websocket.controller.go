@@ -138,6 +138,18 @@ func HandleWebSocketChat(ctx *gin.Context) {
 		DeviceInfo: user.Presence.DeviceInfo,
 	})
 
+	// Read requests only once the hub has registered the connection: a
+	// join_chat handled earlier would be dropped (#122).
+	waitCtx, cancelWait := context.WithTimeout(reqCtx, registrationTimeout)
+	err = hub.WaitRegistered(waitCtx, client)
+	cancelWait()
+	if err != nil {
+		log.WithError(err).WithFields(connectionLogFields(user, client)).Error("WebSocket connection was not registered")
+		hub.Unregister <- client // a registration still queued then skips it (#54)
+		_ = conn.Close()
+		return
+	}
+
 	log.WithFields(connectionLogFields(user, client)).Info("New WebSocket connection established")
 
 	go func() {
@@ -146,6 +158,10 @@ func HandleWebSocketChat(ctx *gin.Context) {
 
 	handleClientRead(reqCtx, client) // Handle reading in the main routine (blocking)
 }
+
+// registrationTimeout is how long a new connection waits for the hub to
+// register it before it is closed.
+const registrationTimeout = 10 * time.Second
 
 // closeHandshakeTimeout is how long the read loop waits for the client to answer
 // the server's close frame before the socket is closed anyway.

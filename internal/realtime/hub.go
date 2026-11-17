@@ -134,8 +134,23 @@ func (eh *Hub) runHub() {
 	}
 }
 
+// WaitRegistered waits until the hub has handled the client's registration.
+// The controller reads a connection's requests only after it, so a request such
+// as join_chat never runs before the connection's rooms are set (#122).
+func (eh *Hub) WaitRegistered(ctx context.Context, client *models.Client) error {
+	select {
+	case <-client.Registered():
+		return nil
+	case <-eh.Ctx.Done():
+		return errors.New("hub stopped before registering the connection")
+	case <-ctx.Done():
+		return fmt.Errorf("waiting for registration: %w", ctx.Err())
+	}
+}
+
 // handleClientRegistration handles new client connections with pub/sub
 func (eh *Hub) handleClientRegistration(client *models.Client) {
+	defer client.MarkRegistered()
 	eh.logger.WithFields(logrus.Fields{"clientID": client.ID, "userID": client.UserID.Hex()}).Info("Registering new client")
 
 	// Get user's chats from database BEFORE acquiring mutex (avoid deadlock!)

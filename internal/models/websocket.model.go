@@ -167,8 +167,34 @@ type Client struct {
 	lastActivity atomic.Pointer[time.Time] // see Touch and LastActivity
 	sendMu       sync.Mutex                // guards the fields below and every send/close on Send
 	sendClosed   bool
-	closeCode    int    // WebSocket close code sent when Send closes; 0 means a plain close
-	closeReason  string // close frame text, such as "ACCOUNT_BANNED"
+	closeCode    int           // WebSocket close code sent when Send closes; 0 means a plain close
+	closeReason  string        // close frame text, such as "ACCOUNT_BANNED"
+	registered   chan struct{} // closed once the hub has handled the registration; see Registered
+}
+
+// Registered returns a channel that is closed once the hub has handled this
+// connection's registration, whether it added the connection or skipped it.
+func (c *Client) Registered() <-chan struct{} {
+	c.sendMu.Lock()
+	defer c.sendMu.Unlock()
+	if c.registered == nil {
+		c.registered = make(chan struct{})
+	}
+	return c.registered
+}
+
+// MarkRegistered ends every wait on Registered. Later calls do nothing.
+func (c *Client) MarkRegistered() {
+	c.sendMu.Lock()
+	defer c.sendMu.Unlock()
+	if c.registered == nil {
+		c.registered = make(chan struct{})
+	}
+	select {
+	case <-c.registered:
+	default:
+		close(c.registered)
+	}
 }
 
 // Revoke ends the connection because its session may no longer be used: the

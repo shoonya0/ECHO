@@ -90,3 +90,57 @@ func TestDisconnectBeforeRegistrationKeepsOtherConnectionsPresence(t *testing.T)
 		t.Fatalf("presence of the other connection was removed: %+v, %v", p, ok)
 	}
 }
+
+// The controller reads a connection's requests only after the hub has handled
+// its registration, so a join_chat can't run before the connection's rooms are
+// set and be dropped (#122).
+func TestWaitRegisteredReturnsOnceRegistered(t *testing.T) {
+	hub := newTestHub(t)
+	stubRegistration(hub, "chat1")
+	go hub.runHub()
+	client := newTestClient("c1", bson.NewObjectID())
+
+	hub.Register <- client
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+	if err := hub.WaitRegistered(ctx, client); err != nil {
+		t.Fatalf("WaitRegistered: %v", err)
+	}
+
+	hub.Mutex.RLock()
+	_, registered := hub.Clients[client.ID]
+	hub.Mutex.RUnlock()
+	if !registered || !inRoomUnlocked(hub, "chat1", client.ID) {
+		t.Fatal("WaitRegistered returned before the registration was done")
+	}
+}
+
+// A registration skipped because the connection already closed (#54) still
+// ends the wait.
+func TestWaitRegisteredReturnsForSkippedRegistration(t *testing.T) {
+	hub := newTestHub(t)
+	stubRegistration(hub)
+	client := newTestClient("gone", bson.NewObjectID())
+
+	hub.handleClientUnregistration(client)
+	hub.handleClientRegistration(client)
+
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+	if err := hub.WaitRegistered(ctx, client); err != nil {
+		t.Fatalf("WaitRegistered: %v", err)
+	}
+}
+
+// A hub that never handles the registration doesn't block the connection
+// forever.
+func TestWaitRegisteredStopsAtTimeout(t *testing.T) {
+	hub := newTestHub(t)
+	client := newTestClient("c1", bson.NewObjectID())
+
+	ctx, cancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
+	defer cancel()
+	if err := hub.WaitRegistered(ctx, client); err == nil {
+		t.Fatal("WaitRegistered returned nil without a registration")
+	}
+}
