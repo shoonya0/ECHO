@@ -2,6 +2,16 @@
 
 Part of [server changes the app must handle](./README.md).
 
+## Contact lists come in pages (#39)
+
+- The five lists (`users/contacts`, `/requests`, `/sent-requests`, `/blocked`,
+  `/favorites`) now return at most `limit` entries (1 to 100, default 10), sorted by
+  username ignoring case. Before, they returned every entry whatever `limit` said.
+- Ask for more with `page` (from 1). `pagination.total` is the real count and
+  `total_pages` the number of pages. Load pages until `page` reaches `total_pages`, or a
+  user with more than `limit` contacts sees only the first ones
+  ([details](../../../_docs/rest-api.md#contacts)).
+
 ## Blocked people aren't in the contacts list (#62)
 
 - `GET users/contacts` no longer lists people you blocked: show them from

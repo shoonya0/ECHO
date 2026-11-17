@@ -40,6 +40,16 @@ func parseLimit(ctx *gin.Context) int {
 	return min(limit, 100)
 }
 
+// parsePage reads the "page" query parameter, counted from 1: 1 when absent,
+// unparseable or below 1, and at most services.MaxContactPage (#39).
+func parsePage(ctx *gin.Context) int {
+	page, err := strconv.Atoi(ctx.Query("page"))
+	if err != nil || page < 1 {
+		return 1
+	}
+	return min(page, services.MaxContactPage)
+}
+
 // paramObjectID returns the ObjectID for a named path parameter.
 func paramObjectID(ctx *gin.Context, param string) (bson.ObjectID, bool) {
 	raw := ctx.Param(param)
@@ -65,7 +75,7 @@ func contactsList(ctx *gin.Context, status constants.ContactStatus, msgPrefix st
 
 	limit := parseLimit(ctx)
 
-	results, err := services.GetContacts(reqCtx, userID, status, limit)
+	results, total, err := services.GetContacts(reqCtx, userID, status, parsePage(ctx), limit)
 	if err != nil {
 		log.Debug("failed to get " + msgPrefix + ": " + err.Error())
 		statusCode, msg := MapServiceErrorToHTTP(err)
@@ -73,7 +83,7 @@ func contactsList(ctx *gin.Context, status constants.ContactStatus, msgPrefix st
 		return
 	}
 
-	utils.PaginatedResponse(ctx, msgPrefix+" fetched successfully", results, limit, len(results))
+	utils.PaginatedResponse(ctx, msgPrefix+" fetched successfully", results, limit, total)
 }
 
 // ============ CONTACT LIST QUERIES ============
