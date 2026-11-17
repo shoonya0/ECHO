@@ -2,12 +2,15 @@ package controller
 
 import (
 	"context"
+	"fmt"
 	"strings"
 	"testing"
 
 	"github.com/shoonya0/ECHO/internal/constants"
 	"github.com/shoonya0/ECHO/internal/database"
 	"github.com/shoonya0/ECHO/internal/models"
+	"github.com/shoonya0/ECHO/internal/realtime"
+	"github.com/shoonya0/ECHO/internal/services"
 	"github.com/shoonya0/ECHO/internal/testutil"
 
 	"go.mongodb.org/mongo-driver/v2/bson"
@@ -102,6 +105,63 @@ func TestJoinChat(t *testing.T) {
 			t.Fatalf("joined rooms %v, want one (reply %+v)", *joined, reply)
 		}
 		wantJoinResponse(t, reply, (*joined)[0])
+	})
+
+	wantError := func(t *testing.T, client *models.Client, code string) {
+		t.Helper()
+		reply := readReply(t, client)
+		errMsg, ok := reply.Data.(models.ErrorMessage)
+		if !ok || errMsg.Code != code {
+			t.Errorf("reply = %+v, want %s", reply, code)
+		}
+	}
+
+	t.Run("a malformed chatId", func(t *testing.T) {
+		*joined = nil
+		client := newClient()
+		handleClientRequest(userCtx, client, models.MessageRequest{Type: models.WSRequestTypeJoinChat, ChatID: "nope", RequestID: "r1"})
+		wantError(t, client, "INVALID_CHAT_ID")
+		if len(*joined) != 0 {
+			t.Errorf("joined rooms %v, want none", *joined)
+		}
+	})
+
+	t.Run("a direct chat with a block, by chatId", func(t *testing.T) {
+		blocker := bson.NewObjectID()
+		if _, err := database.DB.Collection(string(constants.UserColl)).InsertOne(ctx, bson.M{"_id": blocker, "username": "blocker"}); err != nil {
+			t.Fatalf("insert user: %v", err)
+		}
+		directID := bson.NewObjectID()
+		member := bson.M{"role": string(constants.ChatRoleMember)}
+		if _, err := database.DB.Collection(string(constants.ChatColl)).InsertOne(ctx, bson.M{
+			"_id": directID, "chatType": string(constants.ChatTypeDirect),
+			"participants": bson.M{me.Hex(): member, blocker.Hex(): member},
+		}); err != nil {
+			t.Fatalf("insert direct chat: %v", err)
+		}
+		if err := services.BlockUnblockUser(ctx, blocker, me, string(constants.StatusBlocked)); err != nil {
+			t.Fatalf("block: %v", err)
+		}
+
+		*joined = nil
+		client := newClient()
+		handleClientRequest(userCtx, client, models.MessageRequest{Type: models.WSRequestTypeJoinChat, ChatID: directID.Hex(), RequestID: "r1"})
+		wantError(t, client, "PERMISSION_DENIED")
+		if len(*joined) != 0 {
+			t.Errorf("joined rooms %v, want none", *joined)
+		}
+	})
+
+	t.Run("a join a removal undid", func(t *testing.T) {
+		orig := joinChatRoom
+		joinChatRoom = func(context.Context, *models.Client, string) error {
+			return fmt.Errorf("removed during the join: %w", realtime.ErrNotInChat)
+		}
+		t.Cleanup(func() { joinChatRoom = orig })
+
+		client := newClient()
+		handleClientRequest(userCtx, client, models.MessageRequest{Type: models.WSRequestTypeJoinChat, ChatID: groupID.Hex(), RequestID: "r1"})
+		wantError(t, client, "PERMISSION_DENIED")
 	})
 
 	t.Run("neither chatId nor senderId", func(t *testing.T) {

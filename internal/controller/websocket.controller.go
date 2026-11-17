@@ -450,14 +450,15 @@ func handleJoinChat(ctx context.Context, client *models.Client, request models.M
 
 // joinChatByID follows a chat the caller is a participant of. Membership is
 // checked first, and an unknown chat gets the same answer as someone else's
-// (#23, #59).
+// (#23, #59). A direct chat with a block either way is refused, as it is by
+// senderId (#27).
 func joinChatByID(ctx context.Context, client *models.Client, request models.MessageRequest) {
 	chatID, err := bson.ObjectIDFromHex(request.ChatID)
 	if err != nil {
 		sendErrorResponse(client, request.RequestID, "INVALID_CHAT_ID", "Invalid chat ID format")
 		return
 	}
-	if err := services.RequireChatMember(ctx, chatID, client.UserID); err != nil {
+	if err := services.RequireChatAccess(ctx, chatID, client.UserID); err != nil {
 		if !errors.Is(err, services.ErrNotParticipant) {
 			wsLog().Printf("Failed to check chat membership for join: %v", err)
 		}
@@ -467,10 +468,15 @@ func joinChatByID(ctx context.Context, client *models.Client, request models.Mes
 	followChat(ctx, client, request.RequestID, chatID.Hex())
 }
 
-// followChat joins the room and answers the request. A failure to announce the
-// join to the chat doesn't undo it, so it is logged and the join still succeeds.
+// followChat joins the room and answers the request. A removal during the join
+// undoes it and is refused; a failure to announce the join doesn't undo it, so
+// it is logged and the join still succeeds.
 func followChat(ctx context.Context, client *models.Client, requestID, chatID string) {
 	if err := joinChatRoom(ctx, client, chatID); err != nil {
+		if errors.Is(err, realtime.ErrNotInChat) {
+			sendChatError(client, requestID, services.ErrNotParticipant, "JOIN_FAILED", "Failed to join chat")
+			return
+		}
 		wsLog().Printf("Joined chat %s but announcing it failed: %v", chatID, err)
 	}
 	sendSuccessResponse(client, requestID, map[string]any{"chatId": chatID})
