@@ -14,11 +14,12 @@ and with a link to exactly one feature state.md. Updated by /close-increment and
 - **Feature:** none · **#123 + #124** on `fix/123-subscribe-after-removal`: a join or
   registration checks the room again after subscribing, so a removal racing it can't leave
   the channel subscribed; the release test hook becomes a `PubSubManager` field. Verified
-  (`verify.mjs --full`; both new tests fail without the fix)
+  (`verify.mjs --full`; the new tests fail without the fix); code review applied: one
+  `subscribeChats` helper, no join event for a member removed during the join
 - **#72 on Render (paused 2026-11-15):** `/health` answers `200`, but no chat with a message
   saved before PR #74 (`reactions: null`) is left to react to. Continue later, for example
   by setting `reactions: null` on a test message in Atlas first
-- **Next step:** code review, then push and open the PR (`Fixes #123`, `Fixes #124`). Split `rest-api.md`, `websocket-requests.md`
+- **Next step:** push and open the PR (`Fixes #123`, `Fixes #124`). Split `rest-api.md`, `websocket-requests.md`
   before adding to them
 - **Updated:** 2026-11-17 on `fix/123-subscribe-after-removal`
 
