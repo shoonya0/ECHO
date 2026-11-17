@@ -543,13 +543,9 @@ func UpdateTypingStatus(ctx context.Context, chatID, userID bson.ObjectID, isTyp
 		Timestamp: time.Now(),
 	}
 
-	// Broadcast to chat room
+	// Typing is only broadcast, never stored: a MongoDB write per event cost
+	// too much, and nothing reads it back (#40).
 	BroadcastToChat(chatID.Hex(), typingMsg)
-
-	// Update typing users in chat document (with TTL)
-	if isTyping {
-		updateChatTypingStatus(chatID, userID, time.Now())
-	}
 
 	return nil
 }
@@ -667,31 +663,6 @@ func updateChatLastMessage(chatID, messageID bson.ObjectID, timestamp time.Time)
 	}
 
 	database.DB.Collection(string(constants.ChatColl)).UpdateOne(ctx, filter, update)
-}
-
-// updateChatTypingStatus updates typing status in chat document
-func updateChatTypingStatus(chatID, userID bson.ObjectID, timestamp time.Time) {
-	ctx := context.Background()
-
-	filter := bson.M{"_id": chatID}
-	update := bson.M{
-		"$set": bson.M{
-			"typingUsers." + userID.Hex(): timestamp,
-		},
-	}
-
-	database.DB.Collection(string(constants.ChatColl)).UpdateOne(ctx, filter, update)
-
-	// Remove typing status after 10 seconds
-	time.AfterFunc(10*time.Second, func() {
-		removeFilter := bson.M{"_id": chatID}
-		removeUpdate := bson.M{
-			"$unset": bson.M{
-				"typingUsers." + userID.Hex(): "",
-			},
-		}
-		database.DB.Collection(string(constants.ChatColl)).UpdateOne(context.Background(), removeFilter, removeUpdate)
-	})
 }
 
 // updateChatReadReceipts updates read receipts in chat document

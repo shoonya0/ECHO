@@ -56,9 +56,7 @@ func TestChatActionsRequireMembership(t *testing.T) {
 		call func(userID, chat bson.ObjectID) error
 	}{
 		{"typing", func(userID, chat bson.ObjectID) error {
-			// A member sends false: true starts a 10-second cleanup timer that
-			// would outlive this test and its database.
-			return UpdateTypingStatus(ctx, chat, userID, userID != member)
+			return UpdateTypingStatus(ctx, chat, userID, true)
 		}},
 		{"mark read", func(userID, chat bson.ObjectID) error {
 			return MarkMessagesAsRead(chat, userID, []bson.ObjectID{messageID})
