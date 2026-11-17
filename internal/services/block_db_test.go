@@ -58,7 +58,7 @@ func TestBlockIsOneSided(t *testing.T) {
 	}
 
 	// B's "blocked" list must not reveal that A blocked them.
-	list, err := GetContacts(ctx, b, constants.StatusBlocked, 10)
+	list, _, err := GetContacts(ctx, b, constants.StatusBlocked, 1, 10)
 	if err != nil {
 		t.Fatalf("GetContacts(B, blocked): %v", err)
 	}
@@ -283,7 +283,7 @@ func TestContactsListLeavesOutBlockedUsers(t *testing.T) {
 		t.Fatalf("A blocks B: %v", err)
 	}
 
-	list, err := GetContacts(ctx, a, constants.StatusContact, 10)
+	list, _, err := GetContacts(ctx, a, constants.StatusContact, 1, 10)
 	if err != nil {
 		t.Fatalf("GetContacts(A, contact): %v", err)
 	}
@@ -295,7 +295,7 @@ func TestContactsListLeavesOutBlockedUsers(t *testing.T) {
 		t.Fatalf("A's contacts = %v, want only C (%v); B (%v) is blocked", ids, c, b)
 	}
 
-	blocked, err := GetContacts(ctx, a, constants.StatusBlocked, 10)
+	blocked, _, err := GetContacts(ctx, a, constants.StatusBlocked, 1, 10)
 	if err != nil {
 		t.Fatalf("GetContacts(A, blocked): %v", err)
 	}

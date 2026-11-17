@@ -73,11 +73,18 @@ var userProjection = bson.M{
 
 // ============ CONTACTS & FRIENDS MANAGEMENT ============
 
-// GetContacts returns contacts/groups filtered by status for the given user.
-func GetContacts(ctx context.Context, userID bson.ObjectID, contactStatus constants.ContactStatus, limit int) ([]models.ContactInfo, error) {
+// GetContacts returns one page of the user's list for contactStatus, in
+// username order, and the number of entries in the whole list. page counts from
+// 1; page and limit must be at least 1 (#39). IDs whose user no longer exists
+// are neither returned nor counted.
+func GetContacts(ctx context.Context, userID bson.ObjectID, contactStatus constants.ContactStatus, page, limit int) ([]models.ContactInfo, int, error) {
+	if page < 1 || limit < 1 {
+		return []models.ContactInfo{}, 0, fmt.Errorf("invalid page %d or limit %d", page, limit)
+	}
+
 	cfg, ok := contactFieldsByStatus[contactStatus]
 	if !ok {
-		return []models.ContactInfo{}, fmt.Errorf("unknown contact status: %s", contactStatus)
+		return []models.ContactInfo{}, 0, fmt.Errorf("unknown contact status: %s", contactStatus)
 	}
 
 	var contact models.ContactRequest
@@ -85,31 +92,39 @@ func GetContacts(ctx context.Context, userID bson.ObjectID, contactStatus consta
 	err := database.DB.Collection(string(constants.UserColl)).FindOne(ctx, bson.M{"_id": userID}, opts).Decode(&contact)
 	if err != nil {
 		if err == mongo.ErrNoDocuments {
-			return []models.ContactInfo{}, nil
+			return []models.ContactInfo{}, 0, nil
 		}
-		return []models.ContactInfo{}, err
+		return []models.ContactInfo{}, 0, err
 	}
 
 	contactIDs := cfg.ids(contact.ContactInfo)
 	if len(contactIDs) == 0 {
-		return []models.ContactInfo{}, nil
+		return []models.ContactInfo{}, 0, nil
 	}
 
-	cursor, err := database.DB.Collection(string(constants.UserColl)).Find(
-		ctx,
-		bson.M{"_id": bson.M{"$in": contactIDs}},
-		options.Find().SetProjection(userProjection),
-	)
+	users := database.DB.Collection(string(constants.UserColl))
+	filter := bson.M{"_id": bson.M{"$in": contactIDs}}
+	total, err := users.CountDocuments(ctx, filter)
 	if err != nil {
-		return []models.ContactInfo{}, err
+		return []models.ContactInfo{}, 0, err
+	}
+
+	findOpts := options.Find().
+		SetProjection(userProjection).
+		SetSort(bson.D{{Key: "username", Value: 1}, {Key: "_id", Value: 1}}).
+		SetSkip(int64(page-1) * int64(limit)).
+		SetLimit(int64(limit))
+	cursor, err := users.Find(ctx, filter, findOpts)
+	if err != nil {
+		return []models.ContactInfo{}, 0, err
 	}
 	defer cursor.Close(ctx)
 
-	results := make([]models.ContactInfo, 0, len(contactIDs))
+	results := make([]models.ContactInfo, 0, min(limit, len(contactIDs)))
 	for cursor.Next(ctx) {
 		var user models.ContactInfo
 		if err := cursor.Decode(&user); err != nil {
-			return []models.ContactInfo{}, err
+			return []models.ContactInfo{}, 0, err
 		}
 
 		// Normalize presence: offline users show neither activity nor lastSeen.
@@ -126,7 +141,10 @@ func GetContacts(ctx context.Context, userID bson.ObjectID, contactStatus consta
 		results = append(results, user)
 	}
 
-	return results, nil
+	if err := cursor.Err(); err != nil {
+		return []models.ContactInfo{}, 0, err
+	}
+	return results, int(total), nil
 }
 
 // ============= Contact Actions =============

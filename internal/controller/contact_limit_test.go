@@ -32,3 +32,19 @@ func TestParseLimitStaysInRange(t *testing.T) {
 		})
 	}
 }
+
+// parsePage counts pages from 1: absent, 0, negative and unparseable values
+// mean the first page.
+func TestParsePage(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	cases := map[string]int{"": 1, "abc": 1, "0": 1, "-2": 1, "1": 1, "7": 7}
+	for query, want := range cases {
+		t.Run("page="+query, func(t *testing.T) {
+			c, _ := gin.CreateTestContext(httptest.NewRecorder())
+			c.Request = httptest.NewRequest("GET", "/?page="+query, nil)
+			if got := parsePage(c); got != want {
+				t.Fatalf("parsePage(%q) = %d, want %d", query, got, want)
+			}
+		})
+	}
+}
