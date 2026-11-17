@@ -29,8 +29,8 @@ Details: [websocket-requests.md](../../../_docs/websocket-requests.md#join_chat)
 ## Login and signup limits (#40, not deployed yet)
 
 - `login` and `signup` can answer `429` with `error` `RATE_LIMITED` and a `Retry-After`
-  header (seconds). After 10 failed logins for an email in 15 minutes, even the right
-  password gets `429` until the wait ends.
+  header (seconds). After 10 attempts on one account from the same network in 15
+  minutes, even the right password gets `429` until the wait ends.
 - Show "too many attempts, try again in N minutes" using `Retry-After`. Don't retry
   automatically, and don't treat it as a wrong password.
 

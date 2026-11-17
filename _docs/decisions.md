@@ -69,10 +69,15 @@ have no status, so the check must allow for that.
 
 ## How login and signup limits find the client (#40)
 
-Decided on 2026-11-17. Failed logins are counted per email, from any IP: that count can't
-be dodged and protects the account. Logins and signups are also counted per client IP.
+Decided on 2026-11-17. Login attempts on an account are counted per IP and account (10
+in 15 minutes) and per account from all IPs (100 an hour). The first stops one address from
+guessing without locking the owner out; locking an account takes several addresses at that
+limit. The second caps guessing spread over many addresses. Both are counted before bcrypt,
+only for accounts that exist, and a successful login clears them. Logins and signups are
+also counted per client IP.
 The IP comes from the header named in `CLIENT_IP_HEADER` (`True-Client-IP` on Render, set
 by Cloudflare in front of it), or else the socket address. `X-Forwarded-For` is never
-trusted, because Render's proxy appends to what the client sent. Per-IP limits are
+trusted, because Render's proxy appends to what the client sent, and a header value that
+isn't an IP is dropped. Per-IP limits are
 generous because mobile carriers put many users behind one address. Counts live in Redis.
 When Redis is down, requests go through: an outage shouldn't block every login.

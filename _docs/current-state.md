@@ -11,16 +11,19 @@ on `main`. To learn what the product does, read
 and with a link to exactly one feature state.md. Updated by /close-increment and
 /feature-docs update. -->
 
-- **Feature:** none · **#40, login and signup limits** on `fix/40-auth-rate-limit`: 10
-  failed logins per email in 15 min (any IP, checked before bcrypt), 50 logins per IP in
-  10 min, 10 signups per IP an hour; `429` `RATE_LIMITED` with `Retry-After`
+- **Feature:** none · **#40, login and signup limits** on `fix/40-auth-rate-limit`: login
+  attempts per IP + account (10 in 15 min) and per account (100 an hour), counted before
+  bcrypt and cleared on success; 50 logins per IP in 10 min, 10 signups per IP an hour; `429` `RATE_LIMITED` with `Retry-After`
   ([REST](./rest-api/users.md#accounts), [decided](./decisions.md#how-login-and-signup-limits-find-the-client-40)).
   IP from `CLIENT_IP_HEADER` (Render: `True-Client-IP`). Verified: `verify.mjs --full`,
   `TEST_DB_REQUIRED=1 go test ./...`, local server (11th login and signup get `429`)
 - **#72 on Render (paused 2026-11-15):** `/health` answers `200`, but no chat with a message
   saved before PR #74 (`reactions: null`) is left to react to. Continue later, for example
   by setting `reactions: null` on a test message in Atlas first
-- **Next step:** `/code-review` and `/security-review`, then PR; ask before merging. After
+- **Code review fixed:** concurrent guesses, the lockout of other users, typos adding up,
+  Redis filling with made-up emails, non-IP header values, Redis < 7. Left: emails that
+  differ only in case are separate accounts (#36); a fixed window allows ~2x at its edge
+- **Next step:** `/security-review`, then PR; ask before merging. After
   deploy: on Render, a login loop with a forged `X-Forwarded-For` must still get `429`, and
   two real clients mustn't share a bucket (else unset `CLIENT_IP_HEADER`, note it on #40).
   Split `websocket-requests.md` and `websocket-events.md` (~199 lines) before adding to them
