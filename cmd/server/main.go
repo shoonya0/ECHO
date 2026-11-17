@@ -88,6 +88,9 @@ func main() {
 	}
 
 	r := gin.New()
+	if err := middleware.ConfigureClientIP(r, config.Cfg.ClientIPHeader); err != nil {
+		log.WithError(err).Fatal("Failed to configure client IP")
+	}
 	r.Use(gin.Recovery())
 	r.Use(middleware.CORSMiddleware())
 	r.GET("/health", func(c *gin.Context) { c.JSON(http.StatusOK, gin.H{"status": "ok"}) })

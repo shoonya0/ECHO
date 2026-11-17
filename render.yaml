@@ -23,6 +23,8 @@ services:
         generateValue: true
       - key: STATS_TOKEN
         generateValue: true # operators send it as X-Stats-Token to read hub stats
+      - key: CLIENT_IP_HEADER
+        value: True-Client-IP # set by Cloudflare in front of Render; X-Forwarded-For is forgeable
       - key: LOG_LEVEL
         value: info
       - key: GIN_MODE

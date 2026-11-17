@@ -26,6 +26,10 @@ type Config struct {
 	// StatsToken is the X-Stats-Token value that unlocks GET chats/hub/stats.
 	// Empty turns that route off (#24).
 	StatsToken string
+
+	// ClientIPHeader names the header the platform's edge sets to the client's
+	// IP (True-Client-IP on Render). Empty means the socket address (#40).
+	ClientIPHeader string
 }
 
 // Cfg is the loaded configuration, set once by Load at startup.
@@ -47,7 +51,8 @@ func Load(path string) error {
 		LogFile:   os.Getenv("LOG_FILE"),
 		LogLevel:  getEnv("LOG_LEVEL", "info"),
 
-		StatsToken: strings.Trim(strings.TrimSpace(os.Getenv("STATS_TOKEN")), `"'`),
+		StatsToken:     strings.Trim(strings.TrimSpace(os.Getenv("STATS_TOKEN")), `"'`),
+		ClientIPHeader: strings.TrimSpace(os.Getenv("CLIENT_IP_HEADER")),
 	}
 
 	// A relative log path is relative to the project (where .env lives),
