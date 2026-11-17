@@ -75,7 +75,7 @@ go func() {
 }()
 ```
 
-`Start()` initializes pub/sub, launches `runHub()`, `cleanupInactiveConnections()`, and `syncPresenceWithRedis()` goroutines.
+`Start()` initializes pub/sub, then `startLoops()` launches `runHub`, `cleanupInactiveConnections`, `syncPresenceWithRedis` and `recheckSessions`. Each loop gets the context it was started on, not `eh.Ctx`.
 
 ### 2. Client lifecycle
 
@@ -190,7 +190,7 @@ If the hub's context is cancelled (e.g., Redis connection loss), the hub can be 
 ```go
 select {
 case <-hub.Ctx.Done():
-    hub.Restart()  // Creates new context, restarts goroutines
+    hub.Restart()  // new context + startLoops; no-op while the context is live (#79)
 default:
 }
 ```
