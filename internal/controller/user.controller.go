@@ -180,11 +180,7 @@ func GetUserSuggestions(ctx *gin.Context) {
 		return
 	}
 
-	// Parse page (1-based, min 1).
-	page, err := strconv.Atoi(ctx.DefaultQuery("page", "1"))
-	if err != nil || page < 1 {
-		page = 1
-	}
+	page := parsePage(ctx)
 
 	// Parse limit (default 20, max 50).
 	limit, err := strconv.Atoi(ctx.DefaultQuery("limit", "20"))

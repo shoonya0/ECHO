@@ -192,10 +192,14 @@ func GetUsersByIDs(ctx context.Context, userIDs []bson.ObjectID) ([]models.Login
 // It excludes the requesting user, their existing contacts/favorites/pending/blocked,
 // and any IDs provided via excludeIDs. All users (active or inactive) are included.
 // Results are sorted by createdAt descending for stable paging.
+// page counts from 1 to MaxPage, and limit must be at least 1 (#131).
 func GetUserSuggestions(ctx context.Context, userID bson.ObjectID, page, limit int, excludeIDs []bson.ObjectID) ([]models.UserSuggestion, int64, error) {
+	if page < 1 || page > MaxPage || limit < 1 {
+		return nil, 0, fmt.Errorf("invalid page %d or limit %d", page, limit)
+	}
 	coll := database.DB.Collection(string(constants.UserColl))
 
-	skip := int64((page - 1) * limit)
+	skip := int64(page-1) * int64(limit)
 	limit64 := int64(limit)
 
 	// Build the aggregation pipeline: single round-trip with two self-$lookups:
