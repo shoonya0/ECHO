@@ -15,9 +15,12 @@ import (
 const (
 	// maxFrameBytes is the largest frame the server reads. A bigger frame closes
 	// the connection with 1009 before it is buffered or decoded. A message's
-	// content is at most 4000 bytes, so this leaves room for JSON escaping,
-	// attachments, mentions and metadata.
+	// content is at most maxContentChars characters: 16000 bytes as UTF-8, or
+	// 48000 if the client escapes each one as a JSON surrogate pair, which
+	// leaves room for attachments, mentions and metadata.
 	maxFrameBytes = 64 << 10
+	// maxContentChars is the most characters a message's content may hold (#51).
+	maxContentChars = 4000
 	// requestsPerSecond and requestBurst set each connection's token bucket.
 	// A request over the limit is answered with RATE_LIMITED and not handled.
 	requestsPerSecond = 20

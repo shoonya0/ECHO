@@ -6,6 +6,7 @@ import (
 	"errors"
 	"net/http"
 	"time"
+	"unicode/utf8"
 
 	"github.com/shoonya0/ECHO/internal/constants"
 	"github.com/shoonya0/ECHO/internal/logger"
@@ -993,7 +994,9 @@ func validateMessagePermissions(ctx context.Context, chat *models.Chat, userID b
 // problem as a fixed text for the client, or "" when there is none. The text
 // never includes request values or internal errors (#41).
 func validateMessageContent(request models.MessageRequest) string {
-	if len(request.Content) > 4000 { // 4KB limit
+	// Characters, not bytes, as the error says (#51). 4000 of them are at most
+	// 16000 bytes, which still fits maxFrameBytes.
+	if utf8.RuneCountInString(request.Content) > maxContentChars {
 		return "message content too long (max 4000 characters)"
 	}
 
