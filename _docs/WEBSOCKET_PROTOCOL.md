@@ -70,17 +70,15 @@ follows.
 A connection follows:
 
 - The chats in your user's `chats` list at the moment you connect.
+- Chats you gain while connected, on every connection: a new direct chat (yours or
+  someone else's with you), a group you create, and a group you join with an invite code
+  (#49). No event announces them; load the chat over REST when its first event arrives.
 - Direct chats you open with `join_chat` on that connection.
-
-So these cases get no live events until you reconnect (#49):
-
-- Someone opens a new direct chat with you while you are online.
-- You create a group, or join one with an invite code.
 
 Two more cases to know about:
 
 - Members added to a group get no live events at all, even after reconnecting (#17).
-- Members removed from a group keep getting live events until they reconnect (#14).
+- Members removed from a group stop getting live events at once (#14).
 
 ## Message format
 

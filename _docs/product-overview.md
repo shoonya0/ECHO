@@ -40,8 +40,8 @@ Checked against the code at `17ec08b`. Issue numbers were last updated on 2026-1
 | Profiles | View, edit and delete your profile; view other people's | Works | Deleting a profile leaves old references behind (#35). |
 | Finding people | Get suggestions of people to add | Works | The "nearby" and "popular" lists are empty placeholders. |
 | Contacts | Send, accept and decline requests; remove; favorites; block and unblock | Partly works | A block stops direct chats in both directions (#27). Also #39, #62, #63. |
-| Direct chats | Start a chat with one person | Works | Someone already online gets no live messages from a new chat until they reconnect (#49). |
-| Group chats | Create a group; add and remove members | Partly works | Added members are `pending` with full access (#5) and no live messages (#17) until they accept by joining with a code (#103) and reconnect. Removed members stop getting them at once (#14). |
+| Direct chats | Start a chat with one person | Works | A new chat reaches the open connections of both people at once (#49). |
+| Group chats | Create a group; add and remove members | Partly works | Added members are `pending` with full access (#5) and no live messages (#17) until they accept by joining with a code (#103). Removed members stop getting them at once (#14). |
 | Invite codes | Create, list, delete and send codes; join with a code | Partly works | Some invite routes lack permission checks (#30). |
 | Live messages | Send and receive instantly | Works | Missed messages can't be detected (#43). |
 | Message history | Load old messages, page by page | Works | |
