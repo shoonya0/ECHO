@@ -1,6 +1,6 @@
 # ECHO: current state
 
-A one-page snapshot of where the project stands. Last checked on 2026-11-17 at `144b7dd`
+A one-page snapshot of where the project stands. Last checked on 2026-11-17 at `18afc67`
 on `main`. To learn what the product does, read
 [product-overview.md](./product-overview.md). For the code, read
 [architecture-overview.md](./architecture-overview.md).
@@ -11,18 +11,18 @@ on `main`. To learn what the product does, read
 and with a link to exactly one feature state.md. Updated by /close-increment and
 /feature-docs update. -->
 
-- **Feature:** none · **#48** on `fix/48-join-chat-chat-id`: `join_chat` with `chatId`
-  follows any chat the caller is a participant of (membership checked first), `senderId`
-  still opens a direct chat, and both answer with a `response` holding `chatId`
-  ([requests](./websocket-requests.md#join_chat)). From the code review: blocks refused by
-  `chatId` too, a repeated join isn't announced again, a join a removal undid is refused.
-  Verified (`verify.mjs --full` with `TEST_DB_REQUIRED=1`; the new cases fail on the old code)
+- **Feature:** none · **#50** on `fix/50-live-event-sender-details`: `message` events carry
+  `data.sender` and `data.mentions` from the saved message; `join` and `leave` carry the
+  username and avatar the connection loaded at connect (`Client.Username`, `Client.Avatar`)
+  ([events](./websocket-events.md)). Verified (`verify.mjs --full` with
+  `TEST_DB_REQUIRED=1`; both new tests fail on the old code)
 - **#72 on Render (paused 2026-11-15):** `/health` answers `200`, but no chat with a message
   saved before PR #74 (`reactions: null`) is left to react to. Continue later, for example
   by setting `reactions: null` on a test message in Atlas first
-- **Next step:** PR for #48; ask before merging. After it: #50 (live events lack sender
-  details). Split `rest-api.md`, `websocket-requests.md` (199 lines) before adding to them
-- **Updated:** 2026-11-17 on `fix/48-join-chat-chat-id` from `144b7dd`
+- **Next step:** PR for #50; ask before merging. After it, pick from the open issues
+  (`gh issue list`), for example #79 (`Hub.Restart` starts duplicate loops). Split
+  `rest-api.md`, `websocket-requests.md`, `websocket-events.md` (~199 lines) before adding to them
+- **Updated:** 2026-11-17 on `fix/50-live-event-sender-details` from `18afc67`
 
 ## Where things stand
 
@@ -37,6 +37,10 @@ declining a group invite. The full list is in
 
 ## Recently finished
 
+- **#48 (PR #136):** `join_chat` with `chatId` follows any chat you are in (block rule
+  included), `senderId` still opens a direct chat, and both answer with a `response`
+  holding `chatId`. A repeated join isn't announced again
+  ([requests](./websocket-requests.md#join_chat)).
 - **#132 (PR #135):** a new direct chat is kept only when both users got their `chats`
   entry (else `404` / `INVALID_USER_ID`, chat and entries removed), and opening an existing
   one writes back a missing entry ([REST](./rest-api.md#chats)).
@@ -175,7 +179,7 @@ There are 22 open issues. Where each risk sits in the code: [architecture-overvi
 | Online status and privacy | Online status is unreliable, and privacy settings aren't applied | #31, #32 |
 | Messages and data | Writes can half-finish, and some lists grow without limit | #37, #42 |
 | Limits and errors | WebSocket limits are per connection, not per user; no limits on login and signup | #40 |
-| WebSocket replies and events | Replies and events are inconsistent or leave out details, which affects the Android plan | #48, #50, #51 |
+| WebSocket replies and events | Replies and events are inconsistent or leave out details, which affects the Android plan | #50 |
 
 ## Next task
 
