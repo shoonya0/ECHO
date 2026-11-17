@@ -13,11 +13,13 @@ and with a link to exactly one feature state.md. Updated by /close-increment and
 
 - **Feature:** none · **#54** on `fix/54-dead-client-registration`: a disconnect the
   hub handles before the connection's registration closes its send queue, and the
-  registration skips a closed connection. Verified (`verify.mjs --full`)
+  registration skips a closed connection and drops the presence it stored. Verified
+  (`verify.mjs --full`) at `10ef17e`; code review applied (other findings are in #120's
+  code: issues proposed, not filed)
 - **#72 on Render (paused 2026-11-15):** `/health` answers `200`, but no chat with a message
   saved before PR #74 (`reactions: null`) is left to react to. Continue later, for example
   by setting `reactions: null` on a test message in Atlas first
-- **Next step:** code review, then push and open the PR (`Fixes #54`). Split `rest-api.md`, `websocket-requests.md`
+- **Next step:** push and open the PR (`Fixes #54`). Split `rest-api.md`, `websocket-requests.md`
   before adding to them
 - **Updated:** 2026-11-17 on `fix/54-dead-client-registration`
 
