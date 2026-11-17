@@ -1,6 +1,6 @@
 # ECHO: current state
 
-A one-page snapshot of where the project stands. Last checked on 2026-11-16 at `75b8b1d`
+A one-page snapshot of where the project stands. Last checked on 2026-11-17 at `8185bd8`
 on `main`. To learn what the product does, read
 [product-overview.md](./product-overview.md). For the code, read
 [architecture-overview.md](./architecture-overview.md).
@@ -11,17 +11,21 @@ on `main`. To learn what the product does, read
 and with a link to exactly one feature state.md. Updated by /close-increment and
 /feature-docs update. -->
 
-- **Feature:** none · **#123 + #124** on `fix/123-subscribe-after-removal`: a join or
-  registration checks the room again after subscribing, so a removal racing it can't leave
-  the channel subscribed; the release test hook becomes a `PubSubManager` field. Verified
-  (`verify.mjs --full`; the new tests fail without the fix); code review applied: one
-  `subscribeChats` helper, no join event for a member removed during the join
+- **Feature:** none · **#117** on `fix/117-recheck-room-membership`: every 30 s each
+  server reads the participants of its rooms' chats (`services.ChatMembers`) and takes out
+  connections of users who aren't members any more (`internal/realtime/membership.go`,
+  [pub/sub](./PUBSUB_ARCHITECTURE.md#background-jobs)). Verified (`verify.mjs --full` with
+  `TEST_DB_REQUIRED=1`; the new tests fail with the removal turned off). Code review applied:
+  only participant keys are read, parsed IDs go to the loader, no membership pass after a
+  session outage. Not done: a member removed and re-added within one pass is taken out
+  until they reconnect (as any new member is, #49); evicted connections get no event
 - **#72 on Render (paused 2026-11-15):** `/health` answers `200`, but no chat with a message
   saved before PR #74 (`reactions: null`) is left to react to. Continue later, for example
   by setting `reactions: null` on a test message in Atlas first
-- **Next step:** push and open the PR (`Fixes #123`, `Fixes #124`). Split `rest-api.md`, `websocket-requests.md`
-  before adding to them
-- **Updated:** 2026-11-17 on `fix/123-subscribe-after-removal`
+- **Next step:** PR open for #117; ask before merging. After it:
+  #39 (cut contact lists to `limit`), #51 (characters or bytes: needs a decision). Split
+  `rest-api.md`, `websocket-requests.md` (199 lines) before adding to them
+- **Updated:** 2026-11-17 on `fix/117-recheck-room-membership` at `82cfa15`
 
 ## Where things stand
 
@@ -36,6 +40,11 @@ declining a group invite. The full list is in
 
 ## Recently finished
 
+- **#123 + #124 (PR #127):** a join or registration releases the chat channel again after
+  subscribing if a removal emptied the room meanwhile, and no `join` is announced for a
+  member removed during the join. The release test hooks are `PubSubManager` fields
+  ([pub/sub](./PUBSUB_ARCHITECTURE.md#connecting-and-disconnecting)). Not done from the
+  code review: a removal before the room entry (#117), one per-chat reconcile step.
 - **#40, typing part (PR #126):** `set_typing` only broadcasts the `typing` event; it no
   longer writes `typingUsers` to MongoDB or starts a timer that cleared users still typing
   ([requests](./websocket-requests.md#set_typing),
@@ -96,9 +105,7 @@ declining a group invite. The full list is in
 - **#60 (PR #100):** a `chatId` in any case is lowercased where WebSocket requests come
   in, so its events reach the chat ([requests](./websocket-requests.md)).
 - **#47 (PR #99):** `send_message` replies have a top-level `requestId` ([events](./websocket-events.md)).
-- **#75 (PR #98):** reaction `details` hold usernames; older entries keep `""`
-  ([REST](./rest-api.md#messages), [app changes](../Android/_docs/08_SERVER_CHANGES/README.md)).
-Older work, from #25 (PR #97) back: [finished-work.md](./finished-work.md).
+Older work, from #75 (PR #98) back: [finished-work.md](./finished-work.md).
 
 ## How to build, run, test
 
@@ -107,7 +114,7 @@ to remember is `node scripts/verify.mjs`.
 
 ## Test baseline
 
-Run on 2026-11-12 on `fix/76-close-sockets-on-revoke`, on Windows, with MongoDB and Redis running and
+Run on 2026-11-17 on `main` at `8185bd8`, on Windows, with MongoDB and Redis running and
 `TEST_DB_REQUIRED=1`, through `node scripts/verify.mjs --full` after `go clean -testcache`.
 The lint row is from 2026-11-07 at `90b2f73`. Compare new runs against this table by test
 name.
@@ -117,8 +124,8 @@ name.
 | `go build ./...` | 2s | pass | — |
 | `go vet ./...` | 1s | pass | — |
 | `gofmt -l cmd internal` | <1s | pass (no files) | — |
-| `go test ./...` | 3s | pass, none skipped | — |
-| `go test -race ./...` | 16s | pass, none skipped | — |
+| `go test ./...` | 5s | pass, none skipped | — |
+| `go test -race ./...` | 13s | pass, none skipped | — |
 | `golangci-lint run ./...` (v2.14) | 11s | **27 issues**: errcheck 20, staticcheck 7 | not blocking: verify lints only new code (`--new-from-merge-base=origin/main`) |
 
 - Tests that need MongoDB skip when it isn't running, unless `TEST_DB_REQUIRED` is set. CI
@@ -137,7 +144,7 @@ blocks are stored, and who counts as a member.
 
 ## Known issues and risks
 
-There are 22 open issues once #123 and #124 close. Where each risk sits in the code: [architecture-overview.md](./architecture-overview.md#riskiest-areas).
+There are 22 open issues. Where each risk sits in the code: [architecture-overview.md](./architecture-overview.md#riskiest-areas).
 
 | Area | The problem, in short | Issues |
 |---|---|---|

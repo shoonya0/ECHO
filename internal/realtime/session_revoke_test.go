@@ -114,7 +114,9 @@ func TestRecheckClosesConnectionsTheAccountCheckRefuses(t *testing.T) {
 		return nil
 	}
 
-	hub.performSessionRecheck()
+	if !hub.performSessionRecheck() {
+		t.Error("a pass with no outage reported one")
+	}
 
 	assertClosedWith(t, bannedA, CloseCodeForbidden, ReasonAccountBanned)
 	assertClosedWith(t, bannedB, CloseCodeForbidden, ReasonAccountBanned)
@@ -165,7 +167,9 @@ func TestRecheckStopsAtAnOutageAndKeepsConnections(t *testing.T) {
 		return errors.New("redis is down")
 	}
 
-	hub.performSessionRecheck()
+	if hub.performSessionRecheck() {
+		t.Error("a pass stopped by an outage reported it completed, so the membership pass would run")
+	}
 
 	for _, c := range clients {
 		assertOpen(t, c)

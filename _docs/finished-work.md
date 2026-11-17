@@ -4,6 +4,8 @@ Older entries moved here from
 [current-state.md](./current-state.md#recently-finished), newest first. Links point to
 the docs that describe each change today. Newer work is listed on that page.
 
+- **#75 (PR #98):** reaction `details` hold usernames; older entries keep `""`
+  ([REST](./rest-api.md#messages), [app changes](../Android/_docs/08_SERVER_CHANGES/README.md)).
 - **#25 (PR #97):** each user counts once per emoji; a no-op add or remove replies
   `changed: false` with no event, and `count` is set from `users`, healing drift
   ([requests](./websocket-requests.md#add_reaction-and-remove_reaction)). Not done from

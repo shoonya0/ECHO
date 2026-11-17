@@ -188,7 +188,9 @@ func (eh *Hub) checkNewSession(client *models.Client) {
 	// Any other error: the periodic re-check tries again.
 }
 
-// recheckSessions runs performSessionRecheck every SessionRecheckInterval.
+// recheckSessions runs performSessionRecheck and then
+// performMembershipRecheck every SessionRecheckInterval. The second is skipped
+// when the first couldn't make its checks.
 func (eh *Hub) recheckSessions() {
 	ticker := time.NewTicker(SessionRecheckInterval)
 	defer ticker.Stop()
@@ -198,7 +200,11 @@ func (eh *Hub) recheckSessions() {
 		case <-eh.Ctx.Done():
 			return
 		case <-ticker.C:
-			eh.performSessionRecheck()
+			// After an outage the membership reads would only wait out
+			// their timeouts too.
+			if eh.performSessionRecheck() {
+				eh.performMembershipRecheck()
+			}
 		}
 	}
 }
@@ -206,8 +212,8 @@ func (eh *Hub) recheckSessions() {
 // performSessionRecheck checks every open connection, one check per user and
 // token, sessionCheckWorkers at a time, and closes those whose session ended. The
 // first check that can't be made (an outage) ends the pass with one log line;
-// the next pass tries again.
-func (eh *Hub) performSessionRecheck() {
+// the next pass tries again. It reports false after such an outage.
+func (eh *Hub) performSessionRecheck() (completed bool) {
 	eh.Mutex.RLock()
 	clients := slices.Collect(maps.Values(eh.Clients))
 	eh.Mutex.RUnlock()
@@ -262,5 +268,7 @@ func (eh *Hub) performSessionRecheck() {
 
 	if errp := outage.Load(); errp != nil {
 		eh.logger.WithError(*errp).Warn("Session re-check stopped: a check couldn't be made; open connections are kept until the next pass")
+		return false
 	}
+	return true
 }
