@@ -12,8 +12,8 @@ and with a link to exactly one feature state.md. Updated by /close-increment and
 /feature-docs update. -->
 
 - **Feature:** none · bug #69 on `fix/69-scrub-forged-chat-entries`: startup repair
-  `RemoveForgedChatEntries` plus DB test, `verify.mjs` passed (`TEST_DB_REQUIRED=1`),
-  not pushed. #35 (PR #142) is merged on `main` at `417cd55`. #5 step 2 (enforce pending) waits for the
+  `RemoveStaleChatEntries` (every start, review fixes in), `verify.mjs --full` passed
+  (`TEST_DB_REQUIRED=1`), not pushed. #35 (PR #142) is merged on `main` at `417cd55`. #5 step 2 (enforce pending) waits for the
   Android invite screen ([group-invites](./features/group-invites/state.md))
 - **Proposed from the #35 review, not filed:** a password check before deleting an
   account; a delete rate limit plus an index on `messages.senderId`; events to members
@@ -35,11 +35,11 @@ and with a link to exactly one feature state.md. Updated by /close-increment and
 - **Still open on #40:** a per-account WebSocket limit, mention lookups, `CheckOrigin`.
   Proposed, not filed: hide which emails have accounts (signup `409`, login timing). Split
   `websocket-requests.md` and `websocket-events.md` (~199 lines) before adding to them
-- **Next step:** `/code-review` of #69, then PR (ask before merging). After it deploys:
-  the startup log shows `Removed chat entries of users who aren't participants` (or
-  nothing if none), and `migrations` holds `remove-forged-chat-entries-69`. The Render
-  checks above are the user's
-- **Updated:** 2026-11-18 on `fix/69-scrub-forged-chat-entries` at `29953df`
+- **Next step:** push and PR for #69 (ask before merging). After it deploys, the
+  startup log shows `Removed chat entries of users who aren't participants` once (or
+  nothing if none were found), and not on the next start. The Render checks above are
+  the user's
+- **Updated:** 2026-11-18 on `fix/69-scrub-forged-chat-entries` at `fba75b2`
 
 ## Where things stand
 
