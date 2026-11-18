@@ -2,6 +2,15 @@
 
 Part of [server changes the app must handle](./README.md).
 
+## Deleting an account (#35)
+
+- After `DELETE profile/delete`, the deleted person's messages and direct-chat entry show
+  `displayName` "Deleted user" with an empty `username` and `avatar`: show that name, and
+  don't open a profile for them (`GET users/:id` answers `404`).
+- They are gone from your contacts and from groups. A group they owned gets a new owner.
+
+Details: [users.md](../../../_docs/rest-api/users.md#profile).
+
 ## Emails ignore case; profile can't change the email (#36)
 
 - `signup` and `login` lowercase the email, so `Alice@x.com` and `alice@x.com` are one

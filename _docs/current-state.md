@@ -171,7 +171,7 @@ name.
 
 None right now. What has been decided, and what each choice unblocks, is in
 [decisions.md](./decisions.md): invite permissions (#30), the message length limit (#51), accepting a group invite (#103, #5), membership in `participants`
-only (#14, #17), soft-deleting accounts (#35), transactions on a replica set (#37), how
+only (#14, #17), deleting accounts (#35), transactions on a replica set (#37), how
 blocks are stored, and who counts as a member.
 
 ## Known issues and risks
@@ -183,7 +183,7 @@ There are 14 open issues. Where each risk sits in the code: [architecture-overvi
 | Live connections | The server can leak resources or stall under load, missed live messages can't be detected, and open connections miss new chats | #21, #22, #43, #49, #117 |
 | Groups | Pending members still pass membership checks (#5 step 2), and the participant count is maintained by hand | #5, #110 |
 | Invite codes | Entries left by forged joins before #9 was fixed are still stored | #69 |
-| Accounts | Deleting an account leaves old references, usernames aren't unique, and display copies go stale | #35, #36 |
+| Accounts | Usernames aren't unique, and display copies go stale | #36 |
 | Contacts and blocking | Contact lists aren't cut to `limit`, and blocks written during a deploy can be missed | #39, #63 |
 | Online status and privacy | Online status is unreliable, and privacy settings aren't applied | #31, #32 |
 | Messages and data | Writes can half-finish, and some lists grow without limit | #37, #42 |
