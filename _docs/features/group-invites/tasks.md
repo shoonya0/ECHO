@@ -4,7 +4,7 @@
 
 - [x] 1. Invitees get a `users.chats` entry at create and add; `GetUserChats` skips pending → check: service DB tests
 - [x] 2. `AcceptGroupInvite`, `DeclineGroupInvite`, `PendingGroupInvites` → check: service DB tests
-- [ ] 3. REST `POST groups/:groupID/accept`, `POST groups/:groupID/decline`, `GET groups/pending` → check: controller tests
+- [x] 3. REST `POST groups/:groupID/accept`, `POST groups/:groupID/decline`, `GET groups/pending` → check: controller tests
 - [ ] 4. Startup backfill: legacy pending members (no chats entry) accepted → check: migration DB test
 - [ ] 5. Docs: REST groups, decisions, Android log; local server check → check: `node scripts/verify.mjs --full`, live run
 - [ ] 6. `/code-review` + `/security-review`, PR
