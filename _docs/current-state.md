@@ -12,13 +12,14 @@ and with a link to exactly one feature state.md. Updated by /close-increment and
 /feature-docs update. -->
 
 - **Feature:** #31 increment 1 (live presence) on `fix/31-presence-delivery`: code, tests
-  and docs done, verified, not pushed. Next: `/code-review`, then PR. Increment 2 (REST
+  and docs done; code review: 8 findings, 6 fixed, 2 documented. Increment 2 (REST
   presence: contacts and profiles read `online:<id>`, `lastSeen` written on offline, status
   not from the JWT) is its own branch. #5 step 2 waits for the Android invite screen
   ([group-invites](./features/group-invites/state.md))
-- **Not filed, from #31:** a crashed server sends no offline for its users (its entry
-  expires in 2 min); two servers connecting and disconnecting one user within
-  milliseconds can order online and offline wrongly
+- **Not filed, from #31:** a user held only by a server that crashes gets no offline (its
+  entry expires in 2 min); two servers connecting and disconnecting one user within
+  milliseconds can order online and offline wrongly; during a deploy, old and new servers
+  miss each other's presence events
 - **Proposed from the #35 review, not filed:** a password check before deleting an
   account; a delete rate limit plus an index on `messages.senderId`; events to members
   when someone accepts, declines, leaves or is deleted
@@ -46,8 +47,8 @@ and with a link to exactly one feature state.md. Updated by /close-increment and
   losing messages
 - **Not filed, from #22:** a `chat_added` arriving while a connection's chats load is
   missed; a connection's welcome is dropped when its 10-message queue is already full
-- **Next step:** `/code-review` of #31 increment 1, then push and open the PR; the Render
-  checks above are the user's
+- **Next step:** the user reviews and merges the #31 increment 1 PR; the Render checks
+  above are the user's
 - **Updated:** 2026-11-18 on `fix/31-presence-delivery` (verify `--full` passed)
 
 ## Where things stand

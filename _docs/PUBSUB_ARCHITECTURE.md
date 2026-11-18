@@ -99,7 +99,9 @@ call `BroadcastToChat`, which calls the hub's `PublishToChat`.
 The sorted set `online:<userID>` records which servers hold the user: one entry per server,
 scored with its expiry time. A server adds its entry on each connection, renews it every 30
 seconds, and removes it on the user's last connection there. Offline is published only when
-no other server's entry is still valid; if Redis can't say, it is published anyway (#31).
+no other server's entry is still valid; if Redis can't say, it is published anyway. A server
+that skipped it checks again once those entries expire, so a server stopped during a deploy
+can't keep the user online (#31).
 
 ## Connecting and disconnecting
 
