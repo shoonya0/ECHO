@@ -12,14 +12,13 @@ and with a link to exactly one feature state.md. Updated by /close-increment and
 /feature-docs update. -->
 
 - **Feature:** none · on `fix/36-email-case` (not pushed): #36 parts 1 and 3. Emails are
-  trimmed and lowercased on signup and login, a startup migration (`NormalizeEmails`)
-  lowers stored ones, and `PUT profile/` no longer changes `email`
-  ([decided](./decisions.md#changing-the-email-36)). `verify --full` passed with
-  `TEST_DB_REQUIRED=1`; a local server check passed. Left on #36: unique usernames, stale
-  display copies
-- **Next step:** `/code-review` and `/security-review`, then push, PR, ask before merge.
-  Propose an issue for a change-email flow (password + address check). On Render after
-  deploy: the startup log's `Normalized emails` / conflict lines
+  stored trimmed and lower case; signup and login match them ignoring case (`email_ci`
+  collation index), so legacy capitals work before the startup `NormalizeEmails` lowers
+  them. `PUT profile/` no longer changes `email` ([decided](./decisions.md#changing-the-email-36)).
+  Code + security review fixed (5 findings); `verify --full` passed with
+  `TEST_DB_REQUIRED=1`. Left on #36: unique usernames, stale display copies
+- **Next step:** push, PR, ask before merge. Propose an issue for a change-email flow. On
+  Render after deploy: `email_ci` built, and any `Normalized emails` / conflict log lines
 - **#40 on Render (not checked yet):** a login loop with a forged `True-Client-IP` and
   `X-Forwarded-For` must still get `429`, and two real clients mustn't share a count. If
   Render's edge doesn't set `True-Client-IP`, unset `CLIENT_IP_HEADER` and note it on #40.
