@@ -30,18 +30,23 @@ The hub keeps four lookup tables:
 | `ChatClients` | Which connections follow this chat? |
 | `UserClients` | Which connections belong to this user? |
 | `ClientChats` | Which chats does this connection follow? (A user's chats are the union over their connections.) |
+| `PendingClients` | Which connections of this user are queued but not registered yet? A user with one isn't "gone" (#22). |
 
 These maps must only be touched while holding `hub.Mutex`. To use one after unlocking, copy
 what you need first. Never wait on a hub channel while holding the lock. `JoinChat` and
 `LeaveChat` still publish to Redis under it, which can slow other work.
 
 The hub goroutine (`runHub`) only changes maps; it never waits on MongoDB or Redis (#22).
-Each registration runs in its own goroutine: it reads the user's chats (at most 5
-seconds), changes the maps, subscribes, then publishes the user as online. If the chats
-can't be read, the connection is closed with `1011` and the app reconnects. A disconnect
-changes the maps on the hub goroutine and leaves the channel releases and the offline
-publish to a goroutine. Connections queue themselves with `QueueRegister` and
-`QueueUnregister`, which give up once the hub has stopped.
+Each registration runs in its own goroutine, at most 32 at once: it reads the user's
+chats (at most 5 seconds), changes the maps, subscribes, then announces the user as
+online if no other connection of theirs has. If the chats can't be read or the user
+channel can't be subscribed, the connection is closed with `1011` and the app
+reconnects. A disconnect changes the maps on the hub goroutine and leaves the channel
+releases and the offline publish to a goroutine. It counts as the user's last only if
+no other connection is registered or still queued. One user's online and offline
+publishes share a lock, so they can't land in the wrong order. Connections queue
+themselves with `QueueRegister` and `QueueUnregister`, which give up once the hub has
+stopped. A Redis subscribe waits at most 5 seconds for its confirmation.
 
 ## The path of one message
 
