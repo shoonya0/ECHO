@@ -2,6 +2,7 @@ package services
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"time"
 
@@ -205,20 +206,39 @@ func NormalizeEmails(ctx context.Context) (updated int64, conflicts []bson.Objec
 	return updated, conflicts, nil
 }
 
+// legacyPendingMarker is the migrations document that stores the cutoff of
+// AcceptLegacyPendingMembers: the start of the first server that ran it.
+const legacyPendingMarker = "accept-legacy-pending-5"
+
 // AcceptLegacyPendingMembers accepts group members made pending before #5, when nobody
 // could accept and pending members had full access; the choice was to keep that access.
-// They are told apart from invitees since #5 by having no chats entry for the group:
-// every invite since then writes one. The member is accepted first and the entry
-// written after. A run stopped in between leaves an accepted member without an entry
-// (no live messages until a join by code writes it), rather than a legacy member who
-// looks like a new invitee. A member whose account is gone is left as it is (#35). Idempotent: an
-// accepted member, or one with an entry, is skipped. Returns the number accepted.
-func AcceptLegacyPendingMembers(ctx context.Context) (int64, error) {
+// "Before" is a cutoff stored on the first run: startedAt of the first server running
+// this code, taken before it served requests, so every invite this code made is later.
+// A later start keeps the first cutoff. Each legacy member gets the group's chats entry,
+// then is accepted, so a run stopped in between is finished by the next one. A pending
+// member from after the cutoff is never accepted here; one whose chats entry is missing
+// (a write that failed or didn't finish) gets it, so the invite shows in their list.
+// Members whose account is gone are left as they are (#35). A failure on one member
+// doesn't stop the others; all failures are returned together. Idempotent. Returns
+// the number of members accepted.
+func AcceptLegacyPendingMembers(ctx context.Context, startedAt time.Time) (int64, error) {
 	chats := database.DB.Collection(string(constants.ChatColl))
 	users := database.DB.Collection(string(constants.UserColl))
 
-	// Each group's pending member IDs, as strings, so one malformed entry can't
-	// fail the decode of the rest.
+	var marker struct {
+		Cutoff time.Time `bson:"cutoff"`
+	}
+	err := database.DB.Collection(string(constants.MigrationColl)).FindOneAndUpdate(ctx,
+		bson.M{"_id": legacyPendingMarker},
+		bson.M{"$setOnInsert": bson.M{"cutoff": startedAt}},
+		options.FindOneAndUpdate().SetUpsert(true).SetReturnDocument(options.After),
+	).Decode(&marker)
+	if err != nil {
+		return 0, fmt.Errorf("read the cutoff: %w", err)
+	}
+
+	// Each group's pending members with when they became pending, as strings and
+	// dates, so one malformed entry can't fail the decode of the rest.
 	cur, err := chats.Aggregate(ctx, mongo.Pipeline{
 		{{Key: "$match", Value: bson.M{"chatType": string(constants.ChatTypeGroup), "participants": bson.M{"$type": "object"}}}},
 		{{Key: "$project", Value: bson.M{"pending": bson.M{"$map": bson.M{
@@ -226,57 +246,73 @@ func AcceptLegacyPendingMembers(ctx context.Context) (int64, error) {
 				"input": bson.M{"$objectToArray": "$participants"},
 				"cond":  bson.M{"$eq": bson.A{"$$this.v.requestStatus", string(constants.StatusPending)}},
 			}},
-			"in": "$$this.k",
+			"in": bson.M{"id": "$$this.k", "createdAt": "$$this.v.createdAt"},
 		}}}}},
 		{{Key: "$match", Value: bson.M{"pending.0": bson.M{"$exists": true}}}},
 	})
 	if err != nil {
 		return 0, fmt.Errorf("find pending members: %w", err)
 	}
-	var groups []struct {
-		ID      bson.ObjectID `bson:"_id"`
-		Pending []string      `bson:"pending"`
-	}
-	if err := cur.All(ctx, &groups); err != nil {
-		return 0, fmt.Errorf("decode pending members: %w", err)
-	}
+	defer func() { _ = cur.Close(ctx) }() // read-only cursor; a close error changes nothing
 
 	var accepted int64
-	for _, g := range groups {
+	var errs []error
+	for cur.Next(ctx) {
+		var g struct {
+			ID      bson.ObjectID `bson:"_id"`
+			Pending []struct {
+				ID        string    `bson:"id"`
+				CreatedAt time.Time `bson:"createdAt"` // zero when missing: made before #5
+			} `bson:"pending"`
+		}
+		if err := cur.Decode(&g); err != nil {
+			errs = append(errs, fmt.Errorf("decode group: %w", err))
+			continue
+		}
 		entry := "chats." + g.ID.Hex()
-		for _, hex := range g.Pending {
-			userID, err := bson.ObjectIDFromHex(hex)
+		var legacy, recent []bson.ObjectID
+		for _, p := range g.Pending {
+			id, err := bson.ObjectIDFromHex(p.ID)
 			if err != nil {
 				continue // not a user ID; nothing to accept
 			}
-			n, err := users.CountDocuments(ctx, bson.M{"_id": userID, entry: bson.M{"$exists": false}})
-			if err != nil {
-				return accepted, fmt.Errorf("check user %s: %w", hex, err)
-			}
-			if n == 0 {
-				continue // invited since #5, or the account is gone
-			}
-			now := time.Now()
-			key := "participants." + hex
-			res, err := chats.UpdateOne(ctx,
-				bson.M{"_id": g.ID, key + ".requestStatus": string(constants.StatusPending)},
-				bson.M{"$set": bson.M{
-					key + ".requestStatus": string(constants.StatusAccepted),
-					key + ".joinedAt":      now,
-					key + ".updatedAt":     now,
-				}},
-			)
-			if err != nil {
-				return accepted, fmt.Errorf("accept %s in %s: %w", hex, g.ID.Hex(), err)
-			}
-			if res.ModifiedCount == 0 {
-				continue // answered meanwhile
-			}
-			accepted++
-			if _, err := users.UpdateOne(ctx, bson.M{"_id": userID}, bson.M{"$max": bson.M{entry: 0}}); err != nil {
-				return accepted, fmt.Errorf("add %s to the chats of %s: %w", g.ID.Hex(), hex, err)
+			if p.CreatedAt.Before(marker.Cutoff) {
+				legacy = append(legacy, id)
+			} else {
+				recent = append(recent, id)
 			}
 		}
+
+		if len(recent) > 0 {
+			if _, err := users.UpdateMany(ctx,
+				bson.M{"_id": bson.M{"$in": recent}, entry: bson.M{"$exists": false}},
+				bson.M{"$set": bson.M{entry: 0}},
+			); err != nil {
+				errs = append(errs, fmt.Errorf("add %s to invitees' chats: %w", g.ID.Hex(), err))
+			}
+		}
+		for _, id := range legacy {
+			res, err := users.UpdateOne(ctx, bson.M{"_id": id}, bson.M{"$max": bson.M{entry: 0}})
+			if err != nil {
+				errs = append(errs, fmt.Errorf("add %s to the chats of %s: %w", g.ID.Hex(), id.Hex(), err))
+				continue
+			}
+			if res.MatchedCount == 0 {
+				continue // the account is gone (#35)
+			}
+			res, err = chats.UpdateOne(ctx,
+				bson.M{"_id": g.ID, participantField(id) + ".requestStatus": string(constants.StatusPending)},
+				bson.M{"$set": acceptedFields(id, time.Now())},
+			)
+			if err != nil {
+				errs = append(errs, fmt.Errorf("accept %s in %s: %w", id.Hex(), g.ID.Hex(), err))
+				continue
+			}
+			accepted += res.ModifiedCount // 0: answered meanwhile
+		}
 	}
-	return accepted, nil
+	if err := cur.Err(); err != nil {
+		errs = append(errs, fmt.Errorf("iterate groups: %w", err))
+	}
+	return accepted, errors.Join(errs...)
 }
