@@ -23,7 +23,7 @@ func TestDisconnectHandledBeforeRegistrationIsNotRegistered(t *testing.T) {
 	stubRegistration(hub, "chat1")
 	client := newTestClient("gone", bson.NewObjectID())
 
-	hub.handleClientUnregistration(client)
+	unregisterAndWait(hub, client)
 	hub.handleClientRegistration(client)
 
 	hub.Mutex.RLock()
@@ -51,7 +51,7 @@ func TestRegistrationThenDisconnect(t *testing.T) {
 		t.Fatal("registered connection is not in its chat")
 	}
 
-	hub.handleClientUnregistration(client)
+	unregisterAndWait(hub, client)
 	if inRoomUnlocked(hub, "chat1", client.ID) || !client.IsClosed() {
 		t.Fatal("disconnect did not remove and close the connection")
 	}
@@ -67,7 +67,7 @@ func TestDisconnectBeforeRegistrationRemovesItsPresence(t *testing.T) {
 	GetPresenceInstance().Set(UserPresence{UserID: client.UserID, Status: "online", ClientID: client.ID})
 	t.Cleanup(func() { GetPresenceInstance().Delete(client.UserID) })
 
-	hub.handleClientUnregistration(client)
+	unregisterAndWait(hub, client)
 	hub.handleClientRegistration(client)
 
 	if _, ok := GetPresenceInstance().Get(client.UserID); ok {
@@ -84,7 +84,7 @@ func TestDisconnectBeforeRegistrationKeepsOtherConnectionsPresence(t *testing.T)
 	GetPresenceInstance().Set(UserPresence{UserID: userID, Status: "online", ClientID: "newer"})
 	t.Cleanup(func() { GetPresenceInstance().Delete(userID) })
 
-	hub.handleClientUnregistration(gone)
+	unregisterAndWait(hub, gone)
 
 	if p, ok := GetPresenceInstance().Get(userID); !ok || p.ClientID != "newer" {
 		t.Fatalf("presence of the other connection was removed: %+v, %v", p, ok)
@@ -122,7 +122,7 @@ func TestWaitRegisteredReturnsForSkippedRegistration(t *testing.T) {
 	stubRegistration(hub)
 	client := newTestClient("gone", bson.NewObjectID())
 
-	hub.handleClientUnregistration(client)
+	unregisterAndWait(hub, client)
 	hub.handleClientRegistration(client)
 
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second)

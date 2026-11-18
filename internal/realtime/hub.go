@@ -14,6 +14,7 @@ import (
 	"github.com/shoonya0/ECHO/internal/services"
 
 	"github.com/google/uuid"
+	"github.com/gorilla/websocket"
 	"github.com/redis/go-redis/v9"
 	"github.com/sirupsen/logrus"
 	"go.mongodb.org/mongo-driver/v2/bson"
@@ -39,6 +40,9 @@ type Hub struct {
 	// loadMembers reads chat participants for the membership re-check; nil
 	// means services.ChatMembers.
 	loadMembers MembersLoader
+	// background tracks the Redis work a disconnect leaves running, so tests can
+	// wait for it (#22).
+	background sync.WaitGroup
 }
 
 // GetHubInstance returns the process-wide hub, creating it on first use.
@@ -105,6 +109,29 @@ func (eh *Hub) startLoops() {
 	}
 }
 
+// chatLoadTimeout bounds the MongoDB read of a new connection's chats (#22). A
+// variable so tests can shorten it.
+var chatLoadTimeout = 5 * time.Second
+
+// QueueRegister hands client to the hub for registration. It gives up once the
+// hub has stopped, so the connection's goroutine can't wait forever (#22);
+// WaitRegistered then reports the stop.
+func (eh *Hub) QueueRegister(client *models.Client) {
+	select {
+	case eh.Register <- client:
+	case <-eh.Ctx.Done():
+	}
+}
+
+// QueueUnregister hands client to the hub for removal. It gives up once the hub
+// has stopped, so the connection's goroutine can't wait forever (#22).
+func (eh *Hub) QueueUnregister(client *models.Client) {
+	select {
+	case eh.Unregister <- client:
+	case <-eh.Ctx.Done():
+	}
+}
+
 // runHub manages the main hub operations
 func (eh *Hub) runHub(ctx context.Context) {
 	for {
@@ -114,7 +141,10 @@ func (eh *Hub) runHub(ctx context.Context) {
 			return
 
 		case client := <-eh.Register:
-			eh.handleClientRegistration(client)
+			// In its own goroutine: it reads MongoDB and Redis, and this loop
+			// must not wait on either (#22). The maps are changed only under the
+			// lock, and a disconnect handled first is caught by IsClosed (#54).
+			go eh.handleClientRegistration(client)
 
 		case client := <-eh.Unregister:
 			eh.handleClientUnregistration(client)
@@ -141,16 +171,21 @@ func (eh *Hub) handleClientRegistration(client *models.Client) {
 	defer client.MarkRegistered()
 	eh.logger.WithFields(logrus.Fields{"clientID": client.ID, "userID": client.UserID.Hex()}).Info("Registering new client")
 
-	// Get user's chats from database BEFORE acquiring mutex (avoid deadlock!)
-	ctx := context.Background()
+	// Read the chats before taking the lock, with a time limit (#22).
 	loadChats := eh.loadChats
 	if loadChats == nil {
 		loadChats = eh.getUserChats
 	}
+	ctx, cancel := context.WithTimeout(eh.Ctx, chatLoadTimeout)
 	userChats, err := loadChats(ctx, client.UserID)
+	cancel()
 	if err != nil {
-		eh.logger.WithError(err).Error("Failed to get user chats")
-		userChats = []string{}
+		// Registered without its chats, the connection would stay open and get
+		// no messages. Closed with 1011, the app reconnects with backoff. The
+		// read loop's disconnect then finds it unregistered and cleans up.
+		eh.logger.WithError(err).WithFields(logrus.Fields{"clientID": client.ID}).Error("Failed to load the chats of a new connection; closing it")
+		client.Revoke(websocket.CloseInternalServerErr, "try again")
+		return
 	}
 
 	eh.Mutex.Lock()
@@ -182,17 +217,7 @@ func (eh *Hub) handleClientRegistration(client *models.Client) {
 	}
 
 	presence, ok := GetPresenceInstance().Get(client.UserID)
-	if ok {
-		if presence.Status == UserStatus(constants.UserStatusOnline) {
-			if err := eh.pubSubManager.PublishPresenceUpdate(&models.WSPresenceStatus{
-				UserID:   userID,
-				Status:   string(constants.UserStatusOnline),
-				LastSeen: time.Now(),
-			}); err != nil {
-				eh.logger.WithError(err).Error("Failed to publish presence update")
-			}
-		}
-	}
+	online := ok && presence.Status == UserStatus(constants.UserStatusOnline)
 
 	eh.Mutex.Unlock()
 
@@ -200,6 +225,19 @@ func (eh *Hub) handleClientRegistration(client *models.Client) {
 	// subscribeChats.
 	if err := eh.pubSubManager.SubscribeUserToChannels(client.UserID, userChats); err != nil {
 		eh.logger.WithError(err).Error("Failed to subscribe to channels")
+	}
+
+	// Without the lock, so a slow Redis can't block every broadcast (#22), and
+	// after the subscribe: presence reaches the user's chats through their
+	// channels, which must be followed first.
+	if online {
+		if err := eh.pubSubManager.PublishPresenceUpdate(&models.WSPresenceStatus{
+			UserID:   userID,
+			Status:   string(constants.UserStatusOnline),
+			LastSeen: time.Now(),
+		}); err != nil {
+			eh.logger.WithError(err).Error("Failed to publish presence update")
+		}
 	}
 
 	// Off the hub goroutine, so registrations don't wait on Redis (#22, #76).
@@ -265,28 +303,41 @@ func (eh *Hub) handleClientUnregistration(client *models.Client) {
 
 	eh.Mutex.Unlock()
 
-	// Redis calls run after unlocking; the release takes the lock itself
-	eh.pubSubManager.releaseEmptyChats(emptyRooms)
-
 	if lastConnection {
-		eh.pubSubManager.UnsubscribeUser(client.UserID)
-
-		// delete from presence
-		GetPresenceInstance().Delete(client.UserID)
-
-		// Publish presence update
-		presenceStatus := &models.WSPresenceStatus{
-			UserID:   userID,
-			Status:   string(constants.UserStatusOffline),
-			LastSeen: time.Now(),
-		}
-		if err := eh.pubSubManager.PublishPresenceUpdate(presenceStatus); err != nil {
-			eh.logger.WithError(err).Error("Failed to publish presence update")
-		}
+		GetPresenceInstance().Delete(client.UserID) // in memory, no I/O
 	}
-
-	// Close send channel
 	client.CloseSend()
+
+	// The Redis calls run off the hub goroutine (#22); each takes the lock itself
+	// and checks again, so a connection registering meanwhile keeps its channels.
+	eh.background.Add(1)
+	go func() {
+		defer eh.background.Done()
+		eh.releaseAfterDisconnect(client.UserID, emptyRooms, lastConnection)
+	}()
+}
+
+// releaseAfterDisconnect releases the Redis channels a closed connection left
+// unused and, after the user's last connection, publishes them as offline. A
+// connection of the same user that registered meanwhile keeps the user channel
+// and isn't shown as offline; an offline publish that races a registration can
+// still land after its online one (#31).
+func (eh *Hub) releaseAfterDisconnect(userID bson.ObjectID, emptyRooms []string, lastConnection bool) {
+	eh.pubSubManager.releaseEmptyChats(emptyRooms)
+	if !lastConnection {
+		return
+	}
+	eh.pubSubManager.UnsubscribeUser(userID)
+	if eh.pubSubManager.userInUse(userID.Hex()) {
+		return
+	}
+	if err := eh.pubSubManager.PublishPresenceUpdate(&models.WSPresenceStatus{
+		UserID:   userID.Hex(),
+		Status:   string(constants.UserStatusOffline),
+		LastSeen: time.Now(),
+	}); err != nil {
+		eh.logger.WithError(err).Error("Failed to publish presence update")
+	}
 }
 
 // JoinChat adds the connection to the chat's room, subscribes the chat and

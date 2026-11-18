@@ -36,6 +36,13 @@ type PubSubManager struct {
 	// subscribe.
 	afterEmptyCheck func(chatID string)
 	afterRoomJoin   func(chatID string)
+	// beforeUserRelease runs between UnsubscribeUser's "no connection" check and
+	// its unsubscribe; beforeUserSubscribe runs before SubscribeUserToChannels
+	// subscribes the user channel; beforePresencePublish runs at the start of
+	// PublishPresenceUpdate (#22).
+	beforeUserRelease     func(userID bson.ObjectID)
+	beforeUserSubscribe   func(userID bson.ObjectID)
+	beforePresencePublish func()
 }
 
 // Channel naming conventions for pub/sub
@@ -95,12 +102,21 @@ func (pm *PubSubManager) Start() error {
 	return nil
 }
 
-// SubscribeUserToChannels subscribes a user to their personal and chat channels
+// SubscribeUserToChannels subscribes a new connection's user channel and chat
+// channels. Call it after the connection is in the hub's maps. Disconnects run
+// concurrently (#22): if the user's last connection closed before the subscribe,
+// its release had nothing to release, so the user channel is checked again
+// afterwards and released if unused.
 func (pm *PubSubManager) SubscribeUserToChannels(userID bson.ObjectID, chatIDs []string) error {
-	// Subscribe to user's personal channel for direct messages
+	if pm.beforeUserSubscribe != nil {
+		pm.beforeUserSubscribe(userID)
+	}
 	userChannel := pm.getUserChannel(userID.Hex())
 	if err := pm.subscribeToChannel(userChannel); err != nil {
 		return fmt.Errorf("failed to subscribe to user channel: %w", err)
+	}
+	if !pm.userInUse(userID.Hex()) {
+		pm.UnsubscribeUser(userID)
 	}
 
 	pm.subscribeChats(chatIDs)
@@ -125,10 +141,25 @@ func (pm *PubSubManager) subscribeChats(chatIDs []string) {
 
 // UnsubscribeUser releases a user's personal channel. The hub calls it when
 // the user's last connection on this instance closes, whether or not they
-// followed any chat (#20).
+// followed any chat (#20). Registrations run concurrently (#22), so a user with
+// an open connection keeps the channel: one that registers between the check and
+// the unsubscribe is seen by the second check, which subscribes again. Messages
+// published in that gap are missed (#43). No lock is held across a Redis call.
 func (pm *PubSubManager) UnsubscribeUser(userID bson.ObjectID) {
-	if err := pm.unsubscribeFromChannel(pm.getUserChannel(userID.Hex())); err != nil {
+	if pm.userInUse(userID.Hex()) {
+		return
+	}
+	if pm.beforeUserRelease != nil {
+		pm.beforeUserRelease(userID)
+	}
+	channel := pm.getUserChannel(userID.Hex())
+	if err := pm.unsubscribeFromChannel(channel); err != nil {
 		pm.logger.WithFields(logrus.Fields{"userID": userID.Hex()}).WithError(err).Error("Failed to unsubscribe from user channel")
+	}
+	if pm.userInUse(userID.Hex()) {
+		if err := pm.subscribeToChannel(channel); err != nil {
+			pm.logger.WithFields(logrus.Fields{"userID": userID.Hex()}).WithError(err).Error("Failed to subscribe again to user channel")
+		}
 	}
 }
 
@@ -160,6 +191,13 @@ func (pm *PubSubManager) releaseEmptyChats(chatIDs []string) {
 	}
 }
 
+// userInUse says whether the user has a connection in the hub's maps.
+func (pm *PubSubManager) userInUse(userID string) bool {
+	pm.hub.Mutex.RLock()
+	defer pm.hub.Mutex.RUnlock()
+	return len(pm.hub.UserClients[userID]) > 0
+}
+
 func (pm *PubSubManager) roomInUse(chatID string) bool {
 	pm.hub.Mutex.RLock()
 	defer pm.hub.Mutex.RUnlock()
@@ -175,6 +213,9 @@ func (pm *PubSubManager) PublishToChat(chatID string, message *models.WebSocketM
 
 // PublishPresenceUpdate publishes presence updates to the global presence channel
 func (pm *PubSubManager) PublishPresenceUpdate(status *models.WSPresenceStatus) error {
+	if pm.beforePresencePublish != nil {
+		pm.beforePresencePublish()
+	}
 	message := &models.WebSocketMessage{
 		Type:      models.WSMessageTypePresence,
 		UserID:    status.UserID,

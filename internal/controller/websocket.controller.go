@@ -118,7 +118,7 @@ func HandleWebSocketChat(ctx *gin.Context) {
 		DisplayName: user.Profile.DisplayName,
 	})
 
-	realtime.GetHubInstance().Register <- client // Register client with hub
+	hub.QueueRegister(client) // gives up if the hub stopped; WaitRegistered reports it (#22)
 
 	// Update presence
 	realtime.GetPresenceInstance().Set(realtime.UserPresence{
@@ -136,7 +136,7 @@ func HandleWebSocketChat(ctx *gin.Context) {
 	cancelWait()
 	if err != nil {
 		log.WithError(err).WithFields(connectionLogFields(user, client)).Error("WebSocket connection was not registered")
-		hub.Unregister <- client // a registration still queued then skips it (#54)
+		hub.QueueUnregister(client) // a registration still queued then skips it (#54)
 		_ = conn.Close()
 		return
 	}
@@ -208,7 +208,7 @@ func handleClientWrite(client *models.Client) {
 // message to be read from the client
 func handleClientRead(ctx context.Context, client *models.Client) {
 	defer func() {
-		realtime.GetHubInstance().Unregister <- client
+		realtime.GetHubInstance().QueueUnregister(client) // never waits on a stopped hub (#22)
 		_ = client.Connection.Close()
 		wsLog().Printf("Read goroutine closed for client: %s", client.ID)
 	}()
