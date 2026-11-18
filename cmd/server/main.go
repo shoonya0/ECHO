@@ -90,6 +90,12 @@ func main() {
 		} else if n > 0 {
 			log.WithField("groups", n).Info("Backfilled participant counts")
 		}
+		// #5: members made pending before invites could be answered; idempotent.
+		if n, err := services.AcceptLegacyPendingMembers(indexCtx); err != nil {
+			log.WithError(err).Error("Failed to accept legacy pending members")
+		} else if n > 0 {
+			log.WithField("members", n).Info("Accepted legacy pending group members")
+		}
 	}()
 	// Redis backs token revocation and WebSocket pub/sub, so it is required.
 	if err := database.ConnectRedis(ctx); err != nil {

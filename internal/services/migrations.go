@@ -3,6 +3,7 @@ package services
 import (
 	"context"
 	"fmt"
+	"time"
 
 	"github.com/shoonya0/ECHO/internal/constants"
 	"github.com/shoonya0/ECHO/internal/database"
@@ -202,4 +203,80 @@ func NormalizeEmails(ctx context.Context) (updated int64, conflicts []bson.Objec
 		return updated, conflicts, fmt.Errorf("iterate users: %w", err)
 	}
 	return updated, conflicts, nil
+}
+
+// AcceptLegacyPendingMembers accepts group members made pending before #5, when nobody
+// could accept and pending members had full access; the choice was to keep that access.
+// They are told apart from invitees since #5 by having no chats entry for the group:
+// every invite since then writes one. The member is accepted first and the entry
+// written after. A run stopped in between leaves an accepted member without an entry
+// (no live messages until a join by code writes it), rather than a legacy member who
+// looks like a new invitee. A member whose account is gone is left as it is (#35). Idempotent: an
+// accepted member, or one with an entry, is skipped. Returns the number accepted.
+func AcceptLegacyPendingMembers(ctx context.Context) (int64, error) {
+	chats := database.DB.Collection(string(constants.ChatColl))
+	users := database.DB.Collection(string(constants.UserColl))
+
+	// Each group's pending member IDs, as strings, so one malformed entry can't
+	// fail the decode of the rest.
+	cur, err := chats.Aggregate(ctx, mongo.Pipeline{
+		{{Key: "$match", Value: bson.M{"chatType": string(constants.ChatTypeGroup), "participants": bson.M{"$type": "object"}}}},
+		{{Key: "$project", Value: bson.M{"pending": bson.M{"$map": bson.M{
+			"input": bson.M{"$filter": bson.M{
+				"input": bson.M{"$objectToArray": "$participants"},
+				"cond":  bson.M{"$eq": bson.A{"$$this.v.requestStatus", string(constants.StatusPending)}},
+			}},
+			"in": "$$this.k",
+		}}}}},
+		{{Key: "$match", Value: bson.M{"pending.0": bson.M{"$exists": true}}}},
+	})
+	if err != nil {
+		return 0, fmt.Errorf("find pending members: %w", err)
+	}
+	var groups []struct {
+		ID      bson.ObjectID `bson:"_id"`
+		Pending []string      `bson:"pending"`
+	}
+	if err := cur.All(ctx, &groups); err != nil {
+		return 0, fmt.Errorf("decode pending members: %w", err)
+	}
+
+	var accepted int64
+	for _, g := range groups {
+		entry := "chats." + g.ID.Hex()
+		for _, hex := range g.Pending {
+			userID, err := bson.ObjectIDFromHex(hex)
+			if err != nil {
+				continue // not a user ID; nothing to accept
+			}
+			n, err := users.CountDocuments(ctx, bson.M{"_id": userID, entry: bson.M{"$exists": false}})
+			if err != nil {
+				return accepted, fmt.Errorf("check user %s: %w", hex, err)
+			}
+			if n == 0 {
+				continue // invited since #5, or the account is gone
+			}
+			now := time.Now()
+			key := "participants." + hex
+			res, err := chats.UpdateOne(ctx,
+				bson.M{"_id": g.ID, key + ".requestStatus": string(constants.StatusPending)},
+				bson.M{"$set": bson.M{
+					key + ".requestStatus": string(constants.StatusAccepted),
+					key + ".joinedAt":      now,
+					key + ".updatedAt":     now,
+				}},
+			)
+			if err != nil {
+				return accepted, fmt.Errorf("accept %s in %s: %w", hex, g.ID.Hex(), err)
+			}
+			if res.ModifiedCount == 0 {
+				continue // answered meanwhile
+			}
+			accepted++
+			if _, err := users.UpdateOne(ctx, bson.M{"_id": userID}, bson.M{"$max": bson.M{entry: 0}}); err != nil {
+				return accepted, fmt.Errorf("add %s to the chats of %s: %w", g.ID.Hex(), hex, err)
+			}
+		}
+	}
+	return accepted, nil
 }
