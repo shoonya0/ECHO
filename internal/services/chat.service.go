@@ -1123,19 +1123,14 @@ func addGroupMembers(ctx context.Context, userID bson.ObjectID, chat models.Chat
 	if err != nil {
 		return fmt.Errorf("failed to update chat: %w", err)
 	}
+	addedIDs := make([]bson.ObjectID, 0, len(users))
+	for _, u := range users {
+		addedIDs = append(addedIDs, u.ID)
+	}
 	if res.MatchedCount == 0 {
-		addedIDs := make([]bson.ObjectID, 0, len(users))
-		for _, u := range users {
-			addedIDs = append(addedIDs, u.ID)
-		}
 		return addNotApplied(ctx, chatID, addedIDs)
 	}
-
-	added := make([]bson.ObjectID, 0, len(users))
-	for _, u := range users {
-		added = append(added, u.ID)
-	}
-	giveInviteesChatEntry(ctx, chatID, added) // #5
+	giveInviteesChatEntry(ctx, chatID, addedIDs) // #5
 	return nil
 }
 
@@ -1626,13 +1621,8 @@ func finishGroupJoin(ctx context.Context, chatID, userID bson.ObjectID) error {
 func acceptPendingMember(ctx context.Context, chatID, userID bson.ObjectID, inviteID string, now time.Time) (bool, error) {
 	filter := usableInviteFilter(chatID, inviteID, now)
 	filter[participantField(userID)+".requestStatus"] = string(constants.StatusPending)
-	key := participantField(userID)
 	res, err := database.DB.Collection(string(constants.ChatColl)).UpdateOne(ctx, filter, bson.M{
-		"$set": bson.M{
-			key + ".requestStatus": string(constants.StatusAccepted),
-			key + ".joinedAt":      now,
-			key + ".updatedAt":     now,
-		},
+		"$set":      acceptedFields(userID, now),
 		"$addToSet": bson.M{"inviteCode.$.userIDs": userID},
 	})
 	if err != nil {

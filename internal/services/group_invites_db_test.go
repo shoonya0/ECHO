@@ -143,6 +143,18 @@ func TestAcceptGroupInvite(t *testing.T) {
 	if err := AcceptGroupInvite(ctx, user, chatID); !errors.Is(err, ErrAlreadyParticipant) {
 		t.Fatalf("second accept: err %v, want ErrAlreadyParticipant", err)
 	}
+	// An accept that stopped after the status write (a 500 to the client) is
+	// finished by the retry, which still answers 409 (code review of #5).
+	if _, err := database.DB.Collection(string(constants.UserColl)).UpdateOne(ctx, bson.M{"_id": user},
+		bson.M{"$unset": bson.M{"chats." + chatID.Hex(): ""}}); err != nil {
+		t.Fatalf("drop chats entry: %v", err)
+	}
+	if err := AcceptGroupInvite(ctx, user, chatID); !errors.Is(err, ErrAlreadyParticipant) {
+		t.Fatalf("retried accept: err %v, want ErrAlreadyParticipant", err)
+	}
+	if !hasChatEntry(t, ctx, user, chatID) {
+		t.Fatalf("retried accept did not restore the chats entry")
+	}
 	// No invite and no such group answer the same, so group IDs can't be probed (#59).
 	if err := AcceptGroupInvite(ctx, outsider, chatID); !errors.Is(err, ErrChatNotFound) {
 		t.Fatalf("outsider: err %v, want ErrChatNotFound", err)

@@ -2,6 +2,7 @@ package services
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"time"
 
@@ -27,17 +28,34 @@ type PendingGroupInvite struct {
 // giveInviteesChatEntry adds the group chatID to each invitee's chats list, which is
 // where their pending invite is found (#5). $max keeps an entry that is already
 // there. The invitees are already pending members, so a failure is only logged:
-// accepting by group ID still works, and the hub skips pending chats either way.
+// accepting by group ID still works, the hub skips pending chats either way, and
+// the startup backfill writes the missing entry.
 func giveInviteesChatEntry(ctx context.Context, chatID bson.ObjectID, invitees []bson.ObjectID) {
 	if len(invitees) == 0 {
 		return
 	}
-	if _, err := database.DB.Collection(string(constants.UserColl)).UpdateMany(ctx,
+	res, err := database.DB.Collection(string(constants.UserColl)).UpdateMany(ctx,
 		bson.M{"_id": bson.M{"$in": invitees}},
 		bson.M{"$max": bson.M{"chats." + chatID.Hex(): 0}},
-	); err != nil {
-		logger.WithContext(ctx).WithError(err).WithField("chat", chatID.Hex()).
-			Warn("Invitees may not see the group among their pending invites")
+	)
+	log := logger.WithContext(ctx).WithField("chat", chatID.Hex())
+	switch {
+	case err != nil:
+		// The startup backfill writes missing entries (AcceptLegacyPendingMembers).
+		log.WithError(err).Warn("Invitees may not see the group among their pending invites until the next start")
+	case res.MatchedCount < int64(len(invitees)):
+		log.WithField("missing", int64(len(invitees))-res.MatchedCount).Debug("Some invitees have no user document")
+	}
+}
+
+// acceptedFields is the $set that makes userID an accepted member, used by every
+// path that accepts a pending member (#5, #103).
+func acceptedFields(userID bson.ObjectID, now time.Time) bson.M {
+	key := participantField(userID)
+	return bson.M{
+		key + ".requestStatus": string(constants.StatusAccepted),
+		key + ".joinedAt":      now,
+		key + ".updatedAt":     now,
 	}
 }
 
@@ -70,25 +88,28 @@ func notPendingError(ctx context.Context, chatID, userID bson.ObjectID) error {
 }
 
 // AcceptGroupInvite makes userID, a pending member of the group chatID, an accepted
-// one (#5). The member already counts toward the size limit and participantCount,
+// one (#5). Calling it again as an accepted member returns ErrAlreadyParticipant
+// after making sure the join is complete. The member already counts toward the size limit and participantCount,
 // so neither changes. Afterwards the group is on their chats list and their open
 // connections follow it (#17).
 func AcceptGroupInvite(ctx context.Context, userID, chatID bson.ObjectID) error {
-	now := time.Now()
-	key := participantField(userID)
 	res, err := database.DB.Collection(string(constants.ChatColl)).UpdateOne(ctx,
 		pendingInviteFilter(chatID, userID),
-		bson.M{"$set": bson.M{
-			key + ".requestStatus": string(constants.StatusAccepted),
-			key + ".joinedAt":      now,
-			key + ".updatedAt":     now,
-		}},
+		bson.M{"$set": acceptedFields(userID, time.Now())},
 	)
 	if err != nil {
 		return fmt.Errorf("failed to accept the invite: %w", err)
 	}
 	if res.MatchedCount == 0 {
-		return notPendingError(ctx, chatID, userID)
+		err := notPendingError(ctx, chatID, userID)
+		if errors.Is(err, ErrAlreadyParticipant) {
+			// A retry of an accept that stopped after the status write (the client
+			// got a 500) finishes it; the answer stays 409.
+			if ferr := finishGroupJoin(ctx, chatID, userID); ferr != nil {
+				return ferr
+			}
+		}
+		return err
 	}
 	return finishGroupJoin(ctx, chatID, userID)
 }
@@ -129,8 +150,12 @@ func DeclineGroupInvite(ctx context.Context, userID, chatID bson.ObjectID) error
 	if len(codes) > 0 {
 		update["$pull"] = bson.M{"chatInvitations": bson.M{"token": bson.M{"$in": codes}}}
 	}
-	if _, err := database.DB.Collection(string(constants.UserColl)).UpdateOne(ctx, bson.M{"_id": userID}, update); err != nil {
+	userRes, err := database.DB.Collection(string(constants.UserColl)).UpdateOne(ctx, bson.M{"_id": userID}, update)
+	switch {
+	case err != nil:
 		log.WithError(err).Warn("Declined invitee keeps the group on their chats list")
+	case userRes.MatchedCount == 0:
+		log.Debug("Declined invitee has no user document") // the account is gone (#35)
 	}
 	return nil
 }

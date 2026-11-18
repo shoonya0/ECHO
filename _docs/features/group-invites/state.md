@@ -9,7 +9,8 @@
   decline 200 then 404)
 - **Open questions / blockers:** none
 - **Don't forget:** a pending invite is stored as the invitee's `users.chats.<groupId>`
-  entry, so the backfill tells legacy pending members (no entry) from new ones (entry).
+  entry. The backfill tells legacy pending members from new ones by the cutoff in the
+  `migrations` doc `accept-legacy-pending-5`, never by the entry (code review).
   `websocket-requests.md` is at 200 lines: split it before adding to it
 
 ## Recent sessions (newest first, keep 5)
