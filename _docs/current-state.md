@@ -11,14 +11,10 @@ on `main`. To learn what the product does, read
 and with a link to exactly one feature state.md. Updated by /close-increment and
 /feature-docs update. -->
 
-- **Feature:** none · on `fix/36-email-case` (not pushed): #36 parts 1 and 3. Emails are
-  stored trimmed and lower case; signup and login match them ignoring case (`email_ci`
-  collation index), so legacy capitals work before the startup `NormalizeEmails` lowers
-  them. `PUT profile/` no longer changes `email` ([decided](./decisions.md#changing-the-email-36)).
-  Code + security review fixed (5 findings); `verify --full` passed with
-  `TEST_DB_REQUIRED=1`. Left on #36: unique usernames, stale display copies
-- **Next step:** push, PR, ask before merge. Propose an issue for a change-email flow. On
-  Render after deploy: `email_ci` built, and any `Normalized emails` / conflict log lines
+- **Feature:** #5 group invites, starting on `feature/5-group-invite-accept`. `main` at
+  `f022f2c`: #36's email changes (PR #140) are merged, so Render deploys them
+- **#36 on Render (not checked yet):** startup log shows `Indexes ensured` with `email_ci`,
+  and any `Normalized emails` count or conflict warning (user IDs to merge by hand)
 - **#40 on Render (not checked yet):** a login loop with a forged `True-Client-IP` and
   `X-Forwarded-For` must still get `429`, and two real clients mustn't share a count. If
   Render's edge doesn't set `True-Client-IP`, unset `CLIENT_IP_HEADER` and note it on #40.
@@ -30,7 +26,7 @@ and with a link to exactly one feature state.md. Updated by /close-increment and
 - **Still open on #40:** a per-account WebSocket limit, mention lookups, `CheckOrigin`.
   Proposed, not filed: hide which emails have accounts (signup `409`, login timing). Split
   `websocket-requests.md` and `websocket-events.md` (~199 lines) before adding to them
-- **Updated:** 2026-11-18 on `fix/36-email-case`
+- **Updated:** 2026-11-18 on `feature/5-group-invite-accept`
 
 ## Where things stand
 
@@ -45,6 +41,12 @@ declining a group invite. The full list is in
 
 ## Recently finished
 
+- **#36, emails (PR #140):** emails are stored trimmed and lower case; signup and login
+  match them ignoring case (`email_ci`), so legacy capitals work before the startup
+  `NormalizeEmails` lowers them; `PUT profile/` no longer changes `email`
+  ([decided](./decisions.md#changing-the-email-36), [REST](./rest-api/users.md#accounts),
+  [app changes](../Android/_docs/08_SERVER_CHANGES/auth-and-connection.md)). Left on #36:
+  unique usernames, stale display copies.
 - **#40, login and signup (PR #139):** login attempts are counted per IP + account (10 in
   15 min) and per account (100 an hour), before bcrypt, by account ID, and cleared on
   success; 50 logins per IP in 10 min, 10 signups per IP an hour. Over that: `429`
