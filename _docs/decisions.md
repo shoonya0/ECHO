@@ -52,9 +52,12 @@ avatar copied into their messages and direct-chat entries become "Deleted user",
 people's history stays whole. A soft delete would have needed a "not deleted" filter in
 every one of the ~37 reads of other users, which already treat a missing account as gone
 (the auth check answers `ACCOUNT_NOT_FOUND`), and IDs can't be reused (#34). A deleted owner
-hands the group to another owner, else the earliest-joined admin, else the earliest-joined
-accepted member; with none, the group has no owner. The account goes last, so a delete
-that stops partway can be repeated. Finding the chats and messages scans (no index on
+of a group or channel hands it to another owner, else the earliest-joined admin, else the
+earliest-joined accepted member; a co-owner leaves the primary owner (`ownerId`) alone.
+With nobody to hand it to, the group has no owner and its invite codes are deleted. The
+account's sockets close and its token is locked before the cleanup, the account goes
+last (a delete that stops partway can be repeated), and a second pass after it catches
+anything others added meanwhile. Finding the chats and messages scans (no index on
 `participants.<id>` or `senderId`), which is fine for a rare action.
 
 ## MongoDB transactions

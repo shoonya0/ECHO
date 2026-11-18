@@ -116,19 +116,21 @@ func DeleteProfile(ctx *gin.Context) {
 		return
 	}
 
+	// Close every open WebSocket of the account, on every instance (#76), before the
+	// delete cleans up after it, so its sockets can't send messages the cleanup has
+	// already passed (code review of #35). A failed delete can reconnect.
+	if objectID, err := bson.ObjectIDFromHex(userID.(string)); err == nil {
+		if err := realtime.GetHubInstance().CloseSessions(reqCtx, objectID, "", realtime.ReasonAccountNotFound); err != nil {
+			log.WithError(err).Warn("Couldn't tell other instances about the delete; their re-check will close its sockets")
+		}
+	}
+
 	err := services.DeleteProfile(reqCtx, userID.(string))
 	if err != nil {
 		log.Debug("failed to delete profile: " + err.Error())
 		status, msg := MapServiceErrorToHTTP(err)
 		utils.ErrorResponse(ctx, status, msg, nil)
 		return
-	}
-
-	// Close every open WebSocket of the account, on every instance (#76).
-	if objectID, err := bson.ObjectIDFromHex(userID.(string)); err == nil {
-		if err := realtime.GetHubInstance().CloseSessions(reqCtx, objectID, "", realtime.ReasonAccountNotFound); err != nil {
-			log.WithError(err).Warn("Couldn't tell other instances about the delete; their re-check will close its sockets")
-		}
 	}
 
 	log.Debug("profile deleted successfully")

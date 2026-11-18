@@ -24,6 +24,22 @@ const DeletedUserName = "Deleted user"
 // when the chat changes between its read and its update.
 const leaveAttempts = 3
 
+// scrubAccountReferences removes or anonymizes everything that points at userID
+// (#35). Every step is idempotent.
+func scrubAccountReferences(ctx context.Context, userID bson.ObjectID) error {
+	if err := scrubContacts(ctx, userID); err != nil {
+		return err
+	}
+	chatIDs, err := chatsWithParticipant(ctx, userID)
+	if err != nil {
+		return err
+	}
+	if err := leaveChatsOnDelete(ctx, userID, chatIDs); err != nil {
+		return err
+	}
+	return anonymizeMessages(ctx, userID)
+}
+
 // scrubContacts takes userID out of every other user's contact, favorite, request
 // and block lists (#35).
 func scrubContacts(ctx context.Context, userID bson.ObjectID) error {
@@ -79,16 +95,16 @@ func leaveChatsOnDelete(ctx context.Context, userID bson.ObjectID, chatIDs []bso
 }
 
 // leaveChatOnDelete takes the deleted userID out of one chat (#35). In a direct chat
-// the entry stays, anonymized, so the other person keeps the history. In a group the
-// user is removed, and an owner hands the group on (successorOnDelete). Each update
-// re-checks what it read, and a chat that changed meanwhile is read again.
+// the entry stays, anonymized, so the other person keeps the history. In a group or a
+// channel the user is removed, and an owner hands it on (ownershipOnDelete). Each
+// update re-checks what it read, and a chat that changed meanwhile is read again.
 func leaveChatOnDelete(ctx context.Context, chatID, userID bson.ObjectID) error {
 	chats := database.DB.Collection(string(constants.ChatColl))
 	key := participantField(userID)
 	for range leaveAttempts {
 		var chat models.Chat
 		err := chats.FindOne(ctx, bson.M{"_id": chatID},
-			options.FindOne().SetProjection(bson.M{"chatType": 1, "ownerId": 1, "participants": 1}),
+			options.FindOne().SetProjection(bson.M{"chatType": 1, "ownerId": 1, "participants": 1, "inviteCode.inviteCode": 1}),
 		).Decode(&chat)
 		if errors.Is(err, mongo.ErrNoDocuments) {
 			return nil // the chat is gone
@@ -103,26 +119,29 @@ func leaveChatOnDelete(ctx context.Context, chatID, userID bson.ObjectID) error 
 
 		filter := bson.M{"_id": chatID, key: bson.M{"$exists": true}}
 		var update bson.M
-		if chat.ChatType != string(constants.ChatTypeGroup) {
+		if chat.ChatType == string(constants.ChatTypeDirect) {
 			update = bson.M{"$set": bson.M{key + ".userInfo": models.ContactUserInfo{
 				UserID: userID, DisplayName: DeletedUserName,
 			}}}
 		} else {
+			// Pin what the ownership choice was made from, so a concurrent transfer
+			// or role change isn't undone (code review of #35). {ownerId: nil} also
+			// matches a group that stores none.
+			filter[key+".role"] = me.Role
+			if chat.OwnerID.IsZero() {
+				filter["ownerId"] = nil
+			} else {
+				filter["ownerId"] = chat.OwnerID
+			}
 			set := bson.M{"updatedAt": time.Now()}
 			unset := bson.M{key: ""}
-			if me.Role == string(constants.ChatRoleOwner) || chat.OwnerID == userID {
-				next, ok := successorOnDelete(chat.Participants, userID)
-				if ok {
-					nextKey := participantField(next)
-					filter[nextKey+".role"] = chat.Participants[next].Role
-					set[nextKey+".role"] = string(constants.ChatRoleOwner)
-					set["ownerId"] = next
-				} else if chat.OwnerID == userID {
-					unset["ownerId"] = ""
-				}
-			}
+			ownershipOnDelete(chat, userID, filter, set, unset)
 			// The filter requires the user to be present, so this removes one (#16).
-			update = bson.M{"$set": set, "$unset": unset, "$inc": bson.M{"stats.participantCount": -1}}
+			update = bson.M{
+				"$set": set, "$unset": unset,
+				"$inc":  bson.M{"stats.participantCount": -1},
+				"$pull": bson.M{"adminIds": userID},
+			}
 		}
 
 		res, err := chats.UpdateOne(ctx, filter, update)
@@ -134,6 +153,44 @@ func leaveChatOnDelete(ctx context.Context, chatID, userID bson.ObjectID) error 
 		}
 	}
 	return fmt.Errorf("leave chat %s: it kept changing", chatID.Hex())
+}
+
+// ownershipOnDelete adds to the update that takes userID out of the group chat what
+// ownership needs (#35). A plain member, or a co-owner while another owner stays,
+// changes nothing. The primary owner (ownerId), or the last owner, hands the group to
+// successorOnDelete's pick, who also becomes ownerId if userID held it or it names
+// nobody in the group. With no one to hand it to, ownerId is cleared and every invite
+// code is deleted: nobody is left to moderate who joins.
+func ownershipOnDelete(chat models.Chat, userID bson.ObjectID, filter, set, unset bson.M) {
+	isPrimary := chat.OwnerID == userID
+	_, primaryStays := chat.Participants[chat.OwnerID]
+	primaryStays = primaryStays && !isPrimary
+	otherOwner := false
+	for id, p := range chat.Participants {
+		if id != userID && p.Role == string(constants.ChatRoleOwner) && p.RequestStatus == string(constants.StatusAccepted) {
+			otherOwner = true
+		}
+	}
+	if !isPrimary && (chat.Participants[userID].Role != string(constants.ChatRoleOwner) || otherOwner) {
+		return
+	}
+
+	if next, ok := successorOnDelete(chat.Participants, userID); ok {
+		nextKey := participantField(next)
+		filter[nextKey+".role"] = chat.Participants[next].Role
+		set[nextKey+".role"] = string(constants.ChatRoleOwner)
+		if !primaryStays {
+			set["ownerId"] = next
+		}
+		return
+	}
+	if isPrimary {
+		unset["ownerId"] = ""
+	}
+	if !primaryStays && len(chat.InviteCode) > 0 {
+		filter["inviteCode"] = bson.M{"$type": "array"}
+		set["inviteCode.$[].deleted"] = true
+	}
 }
 
 // successorOnDelete picks who owns a group after its owner userID is deleted (#35):

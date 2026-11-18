@@ -198,3 +198,48 @@ func TestDeleteProfileFinishesAPartialRun(t *testing.T) {
 	}
 	checkDeleted(t, ctx, f)
 }
+
+// Review of #35: deleting a co-owner leaves the primary owner (ownerId) alone;
+// a channel's owner hands it on like a group's, not kept like a direct chat's;
+// and a group left with no owner stops admitting people by its invite codes.
+func TestDeleteProfileOwnershipEdgeCases(t *testing.T) {
+	ctx := useTestDB(t)
+	a, x, y, m, e := bson.NewObjectID(), bson.NewObjectID(), bson.NewObjectID(), bson.NewObjectID(), bson.NewObjectID()
+	insertTestUsers(t, ctx, a, x, y, m, e)
+	early, late := time.Now().Add(-2*time.Hour), time.Now().Add(-time.Hour)
+	coOwned, channel, orphan := bson.NewObjectID(), bson.NewObjectID(), bson.NewObjectID()
+	if _, err := database.DB.Collection(string(constants.ChatColl)).InsertMany(ctx, []any{
+		bson.M{"_id": coOwned, "chatType": "group", "ownerId": x, "adminIds": bson.A{a, x}, "stats": bson.M{"participantCount": 3},
+			"participants": bson.M{
+				a.Hex(): member("owner", "accepted", early), x.Hex(): member("owner", "accepted", late),
+				y.Hex(): member("owner", "accepted", early),
+			}},
+		bson.M{"_id": channel, "chatType": "channel", "ownerId": a, "stats": bson.M{"participantCount": 2},
+			"participants": bson.M{a.Hex(): member("owner", "accepted", early), m.Hex(): member("member", "accepted", late)}},
+		bson.M{"_id": orphan, "chatType": "group", "ownerId": a, "stats": bson.M{"participantCount": 2},
+			"participants": bson.M{a.Hex(): member("owner", "accepted", early), e.Hex(): member("member", "pending", late)},
+			"inviteCode":   bson.A{mintInvite(t, time.Now().Add(time.Hour))}},
+	}); err != nil {
+		t.Fatalf("insert chats: %v", err)
+	}
+
+	if err := DeleteProfile(ctx, a.Hex()); err != nil {
+		t.Fatalf("DeleteProfile: %v", err)
+	}
+
+	co := loadChat(t, ctx, coOwned)
+	if co.OwnerID != x || co.Participants[y].Role != "owner" || co.Participants[x].Role != "owner" {
+		t.Errorf("co-owned: ownerId %s; want x kept and both owners untouched", co.OwnerID.Hex())
+	}
+	if slices.Contains(co.AdminIDs, a) {
+		t.Errorf("co-owned: adminIds still holds the deleted user")
+	}
+	ch := loadChat(t, ctx, channel)
+	if _, ok := ch.Participants[a]; ok || ch.OwnerID != m || ch.Participants[m].Role != "owner" {
+		t.Errorf("channel: deleted user kept or not handed on (ownerId %s)", ch.OwnerID.Hex())
+	}
+	or := loadChat(t, ctx, orphan)
+	if !or.OwnerID.IsZero() || len(or.InviteCode) != 1 || !or.InviteCode[0].Deleted {
+		t.Errorf("ownerless group: ownerId %s, codes %+v; want no owner and every code deleted", or.OwnerID.Hex(), or.InviteCode)
+	}
+}
