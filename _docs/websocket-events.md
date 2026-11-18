@@ -171,12 +171,12 @@ profile as it was when that connection opened (#50); `avatar` is left out when e
 {
   "type": "presence",
   "userId": "<userId>",
-  "data": { "userId": "<userId>", "status": "online", "lastSeen": "...", "instanceID": "<server>" }
+  "data": { "userId": "<userId>", "status": "online", "lastSeen": "..." }
 }
 ```
 
-This event has no `chatId`. Don't rely on it: "online" is rarely sent, and "offline" doesn't
-reach chat members (#31).
+No `chatId`. Sent once to each connection sharing a chat with the user: `online` at their first
+connection on a server (so maybe twice), `offline` when their last one anywhere closes (#31).
 
 ## `chat_updated`: group members changed
 

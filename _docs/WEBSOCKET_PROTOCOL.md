@@ -137,7 +137,7 @@ Old messages are loaded [over REST](./rest-api/chats.md#messages), not over the 
 | `delivery` | Someone read messages |
 | `reaction` | Someone added or removed a reaction |
 | `join`, `leave` | Someone started or stopped following a chat |
-| `presence` | Someone came online or went offline. Often missing (#31). |
+| `presence` | Someone you share a chat with came online or went offline, once per connection (#31) |
 | `chat_updated` | Group members changed |
 | `response` | Your request worked, or the welcome message |
 | `error` | Your request failed |

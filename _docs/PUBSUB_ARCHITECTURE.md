@@ -90,14 +90,16 @@ call `BroadcastToChat`, which calls the hub's `PublishToChat`.
 | Channel | Meant for | Used today? |
 |---|---|---|
 | `chat:<chatID>` | All events of one chat | **Yes.** This is the main path. It also carries `internal.members_removed` after `remove_user`: each server takes those users' connections out of the room, and never forwards it. Being on the same channel keeps its place after the `chat_updated` (#14). |
-| `presence:global` | Online and offline updates | Yes, but unreliable (#31) |
+| `presence:global` | Online and offline updates | **Yes** (#31). Each update lists the user's chats; every server sends it to its own connections in them, once per connection, without the list. |
 | `user:<userID>` | Messages for one person | Only `internal.chat_added`: when the person gains a chat (a new direct chat, a group they created or joined with a code), each server puts their connections in its room and subscribes to it, and never forwards it (#49). |
 | `system:global` | Announcements to everyone | No. Servers listen, but nothing publishes to it. |
 | `instance:<instanceID>` | Messages for one server | No. Servers listen, but nothing publishes to it. |
 | `control:sessions` | Close a user's connections on every server (logout, deleted profile) | **Yes** (#76). Never forwarded to clients. |
 
-The server also writes a normal Redis key, `presence:<userID>`, every 30 seconds. It expires
-after 2 minutes, and nothing reads it yet (#31).
+The sorted set `online:<userID>` records which servers hold the user: one entry per server,
+scored with its expiry time. A server adds its entry on each connection, renews it every 30
+seconds, and removes it on the user's last connection there. Offline is published only when
+no other server's entry is still valid; if Redis can't say, it is published anyway (#31).
 
 ## Connecting and disconnecting
 
@@ -108,7 +110,8 @@ after 2 minutes, and nothing reads it yet (#31).
    removes entries for chats that don't list the user (#69).
 2. Adds the connection to its lookup tables.
 3. Subscribes this server to `user:<userID>` and to `chat:<chatID>` for each of those chats.
-4. Announces the user as online, if this is their first connection here.
+4. Marks the user in `online:<userID>`, and announces them as online to the members of
+   their chats if this is their first connection here.
 5. Sends the welcome message.
 
 Up to 32 connections go through these steps at once, so a slow call delays only the
@@ -122,8 +125,9 @@ after an add can be applied first; the membership re-check (#117) fixes that wit
 
 **When someone disconnects,** the hub takes the connection out of every room it is in and
 unsubscribes each chat channel whose room is left empty on this server. When a user's last
-connection closes, it also drops the `user:<id>` channel and tells others the user went
-offline; the offline part doesn't work properly yet (#31). `leave_chat` and `remove_user`
+connection closes, it also drops the `user:<id>` channel and, unless another server still
+holds the user, tells the members of that connection's chats (and of the chats their online
+went to) that the user went offline (#31). `leave_chat` and `remove_user`
 release a chat's channel the same way when they empty its room. A join always enters the
 room before it subscribes, and a release re-subscribes if someone joined while it was
 closing the channel, so a join is never left without a subscription (#55). The
@@ -146,7 +150,7 @@ disconnects it.
 | How often | What it does |
 |---|---|
 | Every 30 seconds | Removes connections with no activity for 5 minutes, and clears expired cache entries |
-| Every 30 seconds | Writes `presence:<userID>` to Redis for connected users |
+| Every 30 seconds | Renews this server's entry in `online:<userID>` for connected users (#31) |
 | Every 30 seconds | Re-checks each open connection's token and account, and closes those that may no longer be used (#76) |
 | Every 30 seconds, after that | Reads the participants of every room's chat (200 chats per query) and takes out the connections of users who aren't members any more. This catches what `internal.members_removed` missed: a reconnect racing `remove_user`, or Redis failing during it (#117). A failed read removes nobody |
 
@@ -169,7 +173,7 @@ its connections live, though it is still in the chat history (#43).
 | A message is saved but doesn't arrive live | Does the person's connection follow the chat? A pending member gets nothing live until they accept (#5). Look for "may not follow a new chat" in the server log (#49). |
 | Nobody gets live messages | Is Redis up? Look for publish errors in the server log. |
 | Memory or Redis connections keep growing | Known problem: #21 |
-| Online status is wrong | Known problem: #31 |
+| Online status is wrong | Live events: is Redis up? Contacts and profiles: known problem, #31 |
 
 `GET /echo/v1/chats/hub/stats` shows the counts for one server, to operators who send the
 stats token. See
@@ -180,7 +184,7 @@ stats token. See
 | Issue | Problem |
 |---|---|
 | #21 | Each Redis channel uses its own connection, so connections grow with users and chats |
-| #31 | Online status is unreliable |
+| #31 | Contacts and profiles show a stored status, not who is connected. A server that crashes sends no offline for its users |
 | #40 | Rate limits are per socket, not per account |
 | #43 | Apps can't detect or recover missed live messages |
 
