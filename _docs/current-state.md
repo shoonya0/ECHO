@@ -1,6 +1,6 @@
 # ECHO: current state
 
-A one-page snapshot of where the project stands. Last checked on 2026-11-17 at `8fd32a6`
+A one-page snapshot of where the project stands. Last checked on 2026-11-18 at `417cd55`
 on `main`. To learn what the product does, read
 [product-overview.md](./product-overview.md). For the code, read
 [architecture-overview.md](./architecture-overview.md).
@@ -11,9 +11,15 @@ on `main`. To learn what the product does, read
 and with a link to exactly one feature state.md. Updated by /close-increment and
 /feature-docs update. -->
 
-- **Feature:** none · on `fix/35-account-deletion` (#35, hard delete + scrub): code, tests and docs done; code + security review fixed (6 of 10, the rest proposed as issues); `verify --full` and a live run passed; next: PR. `main` at
-  `04ce392`: #5 step 1 (PR #141) is merged and #17 closed. #5 step 2 (enforce pending)
-  waits for the Android invite screen ([group-invites](./features/group-invites/state.md))
+- **Feature:** none · bug #69 on `fix/69-scrub-forged-chat-entries`: startup repair
+  `RemoveStaleChatEntries` (every start, review fixes in), `verify.mjs --full` passed
+  (`TEST_DB_REQUIRED=1`), not pushed. #35 (PR #142) is merged on `main` at `417cd55`. #5 step 2 (enforce pending) waits for the
+  Android invite screen ([group-invites](./features/group-invites/state.md))
+- **Proposed from the #35 review, not filed:** a password check before deleting an
+  account; a delete rate limit plus an index on `messages.senderId`; events to members
+  when someone accepts, declines, leaves or is deleted
+- **#35 on Render (not checked yet):** delete a test account and check that its contacts,
+  groups and messages are cleaned (`Deleted user`)
 - **#5 on Render (not checked yet):** startup log shows `Accepted legacy pending group
   members` once, and `migrations` holds `accept-legacy-pending-5`
 - **#36 on Render (not checked yet):** startup log shows `Indexes ensured` with `email_ci`,
@@ -29,7 +35,11 @@ and with a link to exactly one feature state.md. Updated by /close-increment and
 - **Still open on #40:** a per-account WebSocket limit, mention lookups, `CheckOrigin`.
   Proposed, not filed: hide which emails have accounts (signup `409`, login timing). Split
   `websocket-requests.md` and `websocket-events.md` (~199 lines) before adding to them
-- **Updated:** 2026-11-18 on `fix/35-account-deletion`
+- **Next step:** push and PR for #69 (ask before merging). After it deploys, the
+  startup log shows `Removed chat entries of users who aren't participants` once (or
+  nothing if none were found), and not on the next start. The Render checks above are
+  the user's
+- **Updated:** 2026-11-18 on `fix/69-scrub-forged-chat-entries` at `fba75b2`
 
 ## Where things stand
 
@@ -43,6 +53,14 @@ Not built yet: editing or deleting messages, and changing chat settings. The ful
 
 ## Recently finished
 
+- **#35, account deletion (PR #142):** deleting an account closes its sockets, locks its
+  token, pulls the ID from every contact and block list, takes it out of groups and
+  channels (an owner hands on: another owner, else the earliest admin, else the earliest
+  accepted member; with nobody, the group's codes are deleted), shows its messages and
+  direct-chat entry as "Deleted user", then deletes the document
+  ([decided](./decisions.md#what-deleting-an-account-does),
+  [app changes](../Android/_docs/08_SERVER_CHANGES/auth-and-connection.md)). Review: 6 of
+  10 fixed; reactions and `readBy` keep the bare ID.
 - **#5 step 1 + #17 (PR #141):** invitees accept or decline (`groups/:groupID/accept`,
   `decline`, `GET groups/pending`) and get live messages once they accept; a startup
   backfill accepted members left pending before, by a cutoff stored in `migrations`
@@ -122,22 +140,7 @@ Not built yet: editing or deleting messages, and changing chat settings. The ful
   chat's Redis channel takes their connections out of the room
   ([events](./websocket-events.md), [app changes](../Android/_docs/08_SERVER_CHANGES/groups-and-invites.md)).
   The Android log is split into topic pages. Security review: nothing found; code review: #116, #117.
-- **#106 (PR #115):** `send_message` and `invite_user` read the chat once, in the same
-  query that checks membership (`services.GetChatForMember`); replies are unchanged.
-  `remove_user` still reads it twice.
-- **#112 (PR #114):** creating a group checks the write that adds it to the creator's chat
-  list; if that write fails or finds no user, the new group is removed and the request
-  fails (`404` or `500`) before any invitation goes out.
-- **#103 (PR #113):** a `pending` group member accepts by joining with any usable code of
-  the group; `send` works for pending members, and joining clears every invitation to the
-  group. Live messages start at the next connection ([REST](./rest-api/groups.md#groups),
-  [app changes](../Android/_docs/08_SERVER_CHANGES/README.md)). A dedicated accept and decline
-  action is left to #5 ([decisions](./decisions.md#how-a-pending-member-accepts-103-5)).
-- **#68 (PR #111):** a group holds at most `settings.maxParticipants` (default 100). Create,
-  add and join past it add nobody: REST `409`, WebSocket `GROUP_FULL`, checked in the
-  update filter ([REST](./rest-api/groups.md#groups), [app changes](../Android/_docs/08_SERVER_CHANGES/README.md)).
-  From the code review: #112.
-Older work, from #104 (PR #107) back: [finished-work.md](./finished-work.md).
+Older work, from #106 (PR #115) back: [finished-work.md](./finished-work.md).
 
 ## How to build, run, test
 
@@ -146,7 +149,7 @@ to remember is `node scripts/verify.mjs`.
 
 ## Test baseline
 
-Run on 2026-11-17 on `main` at `8fd32a6`, on Windows, with MongoDB and Redis running and
+Run on 2026-11-18 on `main` at `417cd55`, on Windows, with MongoDB and Redis running and
 `TEST_DB_REQUIRED=1`, through `node scripts/verify.mjs --full` after `go clean -testcache`.
 The lint row is from 2026-11-07 at `90b2f73`. Compare new runs against this table by test
 name.
@@ -154,10 +157,10 @@ name.
 | Command | Duration | Result | Known failures (by name) |
 |---|---|---|---|
 | `go build ./...` | 2s | pass | — |
-| `go vet ./...` | 1s | pass | — |
+| `go vet ./...` | <1s | pass | — |
 | `gofmt -l cmd internal` | <1s | pass (no files) | — |
-| `go test ./...` | 5s | pass, none skipped | — |
-| `go test -race ./...` | 14s | pass, none skipped | — |
+| `go test ./...` | 8s | pass, none skipped | — |
+| `go test -race ./...` | 35s | pass, none skipped | — |
 | `golangci-lint run ./...` (v2.14) | 11s | **27 issues**: errcheck 20, staticcheck 7 | not blocking: verify lints only new code (`--new-from-merge-base=origin/main`) |
 
 - Tests that need MongoDB skip when it isn't running, unless `TEST_DB_REQUIRED` is set. CI
@@ -176,7 +179,7 @@ blocks are stored, and who counts as a member.
 
 ## Known issues and risks
 
-There are 14 open issues. Where each risk sits in the code: [architecture-overview.md](./architecture-overview.md#riskiest-areas).
+There are 13 open issues. Where each risk sits in the code: [architecture-overview.md](./architecture-overview.md#riskiest-areas).
 
 | Area | The problem, in short | Issues |
 |---|---|---|

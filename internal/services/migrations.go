@@ -206,6 +206,186 @@ func NormalizeEmails(ctx context.Context) (updated int64, conflicts []bson.Objec
 	return updated, conflicts, nil
 }
 
+// staleEntriesBatch is how many users RemoveStaleChatEntries checks per chats query.
+var staleEntriesBatch = 200 // a variable so tests can make batches small
+
+// RemoveStaleChatEntries removes chats.<id> entries from users whose chat doesn't list
+// them in participants, or no longer exists. Forged invite joins left these before #9
+// was fixed (#69); a cleanup write that fails after a decline, a removal or an undone
+// direct chat still can, so it runs on every start. Pending members (#5) are
+// participants, so their entries stay. Every write path adds the participant before the
+// entry, so a join in progress keeps its entry. A join that lands between the check and
+// the removal is written back, with an unread count of 0; a removal in that window can
+// leave an entry, which the next start removes. Closing those windows needs
+// transactions (#37). Users are checked in batches, one chats query per batch. A failure
+// in one batch or user doesn't stop the others; all failures are returned together.
+// Returns the number of entries removed.
+func RemoveStaleChatEntries(ctx context.Context) (int64, error) {
+	cur, err := database.DB.Collection(string(constants.UserColl)).Find(ctx,
+		bson.M{"chats": bson.M{"$type": "object", "$ne": bson.M{}}},
+		options.Find().SetProjection(bson.M{"chats": 1}).SetBatchSize(int32(staleEntriesBatch)),
+	)
+	if err != nil {
+		return 0, fmt.Errorf("find users with chats: %w", err)
+	}
+	defer func() { _ = cur.Close(ctx) }() // read-only cursor; a close error changes nothing
+
+	var removed int64
+	var errs []error
+	batch := make([]userChatEntries, 0, staleEntriesBatch)
+	flush := func() {
+		n, err := removeStaleEntriesOf(ctx, batch)
+		removed += n
+		if err != nil {
+			errs = append(errs, err)
+		}
+		batch = batch[:0]
+	}
+	for cur.Next(ctx) {
+		var u struct {
+			ID    bson.ObjectID `bson:"_id"`
+			Chats bson.M        `bson:"chats"`
+		}
+		if err := cur.Decode(&u); err != nil {
+			errs = append(errs, fmt.Errorf("decode user: %w", err))
+			continue
+		}
+		e := userChatEntries{user: u.ID}
+		for key := range u.Chats {
+			if id, err := bson.ObjectIDFromHex(key); err == nil {
+				e.chats = append(e.chats, id)
+			}
+		}
+		if len(e.chats) == 0 {
+			continue
+		}
+		if batch = append(batch, e); len(batch) == staleEntriesBatch {
+			flush()
+		}
+	}
+	if err := cur.Err(); err != nil {
+		errs = append(errs, fmt.Errorf("iterate users: %w", err))
+	}
+	if len(batch) > 0 {
+		flush()
+	}
+	return removed, errors.Join(errs...)
+}
+
+// userChatEntries is a user and the chat IDs in their chats list.
+type userChatEntries struct {
+	user  bson.ObjectID
+	chats []bson.ObjectID
+}
+
+// removeStaleEntriesOf removes, for each user in batch, the entries whose chat doesn't
+// list them, and writes back those whose user became a participant meanwhile.
+func removeStaleEntriesOf(ctx context.Context, batch []userChatEntries) (int64, error) {
+	var all []bson.ObjectID
+	for _, e := range batch {
+		all = append(all, e.chats...)
+	}
+	members, err := chatParticipantKeys(ctx, all)
+	if err != nil {
+		return 0, err
+	}
+
+	users := database.DB.Collection(string(constants.UserColl))
+	var removed int64
+	var errs []error
+	stale := map[bson.ObjectID][]bson.ObjectID{}
+	var staleChats []bson.ObjectID
+	for _, e := range batch {
+		unset := bson.M{}
+		var ids []bson.ObjectID
+		for _, id := range e.chats {
+			if !members[id][e.user.Hex()] {
+				unset["chats."+id.Hex()] = ""
+				ids = append(ids, id)
+			}
+		}
+		if len(ids) == 0 {
+			continue
+		}
+		res, err := users.UpdateOne(ctx, bson.M{"_id": e.user}, bson.M{"$unset": unset})
+		if err != nil {
+			errs = append(errs, fmt.Errorf("remove entries of %s: %w", e.user.Hex(), err))
+			continue
+		}
+		if res.MatchedCount == 0 {
+			continue // the account is gone (#35)
+		}
+		removed += int64(len(ids))
+		stale[e.user] = ids
+		staleChats = append(staleChats, ids...)
+	}
+	if len(stale) == 0 {
+		return removed, errors.Join(errs...)
+	}
+
+	// A join that made the user a participant after the check above kept its entry
+	// ($max on one already there), so the unset took it: write it back.
+	joined, err := chatParticipantKeys(ctx, staleChats)
+	if err != nil {
+		return removed, errors.Join(append(errs, fmt.Errorf("recheck: %w", err))...)
+	}
+	for user, ids := range stale {
+		restore := bson.M{}
+		for _, id := range ids {
+			if joined[id][user.Hex()] {
+				restore["chats."+id.Hex()] = 0
+			}
+		}
+		if len(restore) == 0 {
+			continue
+		}
+		res, err := users.UpdateOne(ctx, bson.M{"_id": user}, bson.M{"$max": restore})
+		if err != nil {
+			errs = append(errs, fmt.Errorf("restore entries of %s: %w", user.Hex(), err))
+			continue
+		}
+		if res.MatchedCount > 0 {
+			removed -= int64(len(restore))
+		}
+	}
+	return removed, errors.Join(errs...)
+}
+
+// chatParticipantKeys returns, for each of chatIDs that exists, the hex IDs of its
+// participants. A chat whose participants isn't a document has none.
+func chatParticipantKeys(ctx context.Context, chatIDs []bson.ObjectID) (map[bson.ObjectID]map[string]bool, error) {
+	out := make(map[bson.ObjectID]map[string]bool, len(chatIDs))
+	if len(chatIDs) == 0 {
+		return out, nil
+	}
+	cur, err := database.DB.Collection(string(constants.ChatColl)).Aggregate(ctx, mongo.Pipeline{
+		{{Key: "$match", Value: bson.M{"_id": bson.M{"$in": chatIDs}}}},
+		{{Key: "$project", Value: bson.M{"members": bson.M{"$cond": bson.A{
+			bson.M{"$eq": bson.A{bson.M{"$type": "$participants"}, "object"}},
+			bson.M{"$map": bson.M{"input": bson.M{"$objectToArray": "$participants"}, "in": "$$this.k"}},
+			bson.A{},
+		}}}}},
+	})
+	if err != nil {
+		return nil, fmt.Errorf("find participants: %w", err)
+	}
+	var found []struct {
+		ID      bson.ObjectID `bson:"_id"`
+		Members []string      `bson:"members"`
+	}
+	if err := cur.All(ctx, &found); err != nil {
+		return nil, fmt.Errorf("decode participants: %w", err)
+	}
+	for _, c := range found {
+		set := make(map[string]bool, len(c.Members))
+		for _, m := range c.Members {
+			set[m] = true
+		}
+		out[c.ID] = set
+	}
+	return out, nil
+}
+
 // legacyPendingMarker is the migrations document that stores the cutoff of
 // AcceptLegacyPendingMembers: the start of the first server that ran it.
 const legacyPendingMarker = "accept-legacy-pending-5"

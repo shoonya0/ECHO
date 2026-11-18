@@ -99,6 +99,14 @@ func main() {
 		} else if n > 0 {
 			log.WithField("members", n).Info("Accepted legacy pending group members")
 		}
+		// #69: chats entries of users who aren't participants (forged joins before #9,
+		// failed cleanups); idempotent. After #5's backfill, which writes the entries
+		// of pending invitees.
+		if n, err := services.RemoveStaleChatEntries(indexCtx); err != nil {
+			log.WithError(err).Error("Failed to remove stale chat entries")
+		} else if n > 0 {
+			log.WithField("entries", n).Info("Removed chat entries of users who aren't participants")
+		}
 	}()
 	// Redis backs token revocation and WebSocket pub/sub, so it is required.
 	if err := database.ConnectRedis(ctx); err != nil {

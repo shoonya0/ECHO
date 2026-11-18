@@ -4,6 +4,21 @@ Older entries moved here from
 [current-state.md](./current-state.md#recently-finished), newest first. Links point to
 the docs that describe each change today. Newer work is listed on that page.
 
+- **#106 (PR #115):** `send_message` and `invite_user` read the chat once, in the same
+  query that checks membership (`services.GetChatForMember`); replies are unchanged.
+  `remove_user` still reads it twice.
+- **#112 (PR #114):** creating a group checks the write that adds it to the creator's chat
+  list; if that write fails or finds no user, the new group is removed and the request
+  fails (`404` or `500`) before any invitation goes out.
+- **#103 (PR #113):** a `pending` group member accepts by joining with any usable code of
+  the group; `send` works for pending members, and joining clears every invitation to the
+  group. Live messages start at the next connection ([REST](./rest-api/groups.md#groups),
+  [app changes](../Android/_docs/08_SERVER_CHANGES/README.md)). A dedicated accept and decline
+  action is left to #5 ([decisions](./decisions.md#how-a-pending-member-accepts-103-5)).
+- **#68 (PR #111):** a group holds at most `settings.maxParticipants` (default 100). Create,
+  add and join past it add nobody: REST `409`, WebSocket `GROUP_FULL`, checked in the
+  update filter ([REST](./rest-api/groups.md#groups), [app changes](../Android/_docs/08_SERVER_CHANGES/README.md)).
+  From the code review: #112.
 - **#16 (PR #109):** a group's `stats.participantCount` follows every add, join and
   removal, and a startup backfill resets drifted groups (skipping malformed ones). It
   counts pending members and deleted accounts ([app changes](../Android/_docs/08_SERVER_CHANGES/README.md)).
