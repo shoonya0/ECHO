@@ -25,7 +25,8 @@ import (
 // ============ ENHANCED CHAT SERVICE WITH REAL-TIME SUPPORT ============
 
 // GetUserChats returns the chats the hub subscribes userID to: the chats in the
-// user's chats list where the user is also a participant. The list alone isn't
+// user's chats list where the user is also a participant who has accepted (a
+// pending invite is listed too, #5, but not followed). The list alone isn't
 // trusted: before #9 was fixed, a forged invite code added a group to it
 // without making the user a participant, and those entries are still stored.
 func GetUserChats(ctx context.Context, userID bson.ObjectID) ([]bson.ObjectID, error) {
@@ -55,7 +56,12 @@ func GetUserChats(ctx context.Context, userID bson.ObjectID) ([]bson.ObjectID, e
 	}
 
 	cursor, err := database.DB.Collection(string(constants.ChatColl)).Find(ctx,
-		bson.M{"_id": bson.M{"$in": listed}, participantField(userID): bson.M{"$exists": true}},
+		bson.M{
+			"_id":                    bson.M{"$in": listed},
+			participantField(userID): bson.M{"$exists": true},
+			// A pending invite isn't followed until it is accepted (#5, #17).
+			participantField(userID) + ".requestStatus": bson.M{"$ne": string(constants.StatusPending)},
+		},
 		options.Find().SetProjection(bson.M{"_id": 1}),
 	)
 	if err != nil {
@@ -503,14 +509,17 @@ func CreateGroupChat(ctx context.Context, chatName, description string, particip
 	// Give each invitee an invitation for the new code. The group is already
 	// saved, so an invitee whose account was deleted since the lookup is skipped
 	// instead of failing the create.
+	invitees := make([]bson.ObjectID, 0, len(users))
 	for _, u := range users {
 		if u.ID == creator.ID {
 			continue
 		}
+		invitees = append(invitees, u.ID)
 		if _, err := addInvitation(ctx, invite.InviteCode, u.ID); err != nil {
 			return nil, fmt.Errorf("failed to send invite to user %s: %w", u.ID.Hex(), err)
 		}
 	}
+	giveInviteesChatEntry(ctx, chat.ChatID, invitees) // #5
 
 	return &chat, nil
 }
@@ -1122,6 +1131,11 @@ func addGroupMembers(ctx context.Context, userID bson.ObjectID, chat models.Chat
 		return addNotApplied(ctx, chatID, addedIDs)
 	}
 
+	added := make([]bson.ObjectID, 0, len(users))
+	for _, u := range users {
+		added = append(added, u.ID)
+	}
+	giveInviteesChatEntry(ctx, chatID, added) // #5
 	return nil
 }
 
