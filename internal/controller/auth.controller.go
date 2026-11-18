@@ -46,6 +46,7 @@ func Signup(c *gin.Context) {
 		utils.ErrorResponse(c, http.StatusBadRequest, "invalid request", bindErrorDetail(err))
 		return
 	}
+	req.Email = utils.NormalizeEmail(req.Email)
 
 	count, err := database.DB.Collection(string(constants.UserColl)).CountDocuments(c.Request.Context(), bson.M{"email": req.Email})
 	if err != nil {
@@ -96,6 +97,7 @@ func Login(c *gin.Context) {
 		utils.ErrorResponse(c, http.StatusBadRequest, "invalid request", bindErrorDetail(err))
 		return
 	}
+	req.Email = utils.NormalizeEmail(req.Email)
 
 	if req.Email == "" || req.Password == "" {
 		log.Debug("email and password are required")
