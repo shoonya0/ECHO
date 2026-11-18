@@ -2,8 +2,10 @@ package services
 
 import (
 	"context"
+	"errors"
 	"slices"
 	"testing"
+	"time"
 
 	"go.mongodb.org/mongo-driver/v2/bson"
 	"go.mongodb.org/mongo-driver/v2/mongo/options"
@@ -97,5 +99,110 @@ func TestGetUserChatsSkipsPendingGroups(t *testing.T) {
 	}
 	if slices.Contains(got, pendingGroup) || !slices.Contains(got, joined) {
 		t.Fatalf("GetUserChats = %v, want only the accepted group %s", got, joined.Hex())
+	}
+}
+
+func participantStatus(t *testing.T, ctx context.Context, chatID, userID bson.ObjectID) (string, bool) {
+	t.Helper()
+	p, ok := loadChat(t, ctx, chatID).Participants[userID]
+	return p.RequestStatus, ok
+}
+
+// Accepting makes the pending member accepted, keeps their chats entry, drops
+// their invitations to the group and lets the hub follow it (#5, #17).
+func TestAcceptGroupInvite(t *testing.T) {
+	ctx := useTestDB(t)
+	owner, user, outsider := bson.NewObjectID(), bson.NewObjectID(), bson.NewObjectID()
+	chatID := insertInviteGroup(t, ctx, owner, user)
+	insertTestUsers(t, ctx, outsider)
+	code := mintInvite(t, time.Now().Add(time.Hour))
+	if _, err := database.DB.Collection(string(constants.ChatColl)).UpdateOne(ctx, bson.M{"_id": chatID},
+		bson.M{"$push": bson.M{"inviteCode": code}}); err != nil {
+		t.Fatalf("add code: %v", err)
+	}
+	if _, err := addInvitation(ctx, code.InviteCode, user); err != nil {
+		t.Fatalf("add invitation: %v", err)
+	}
+
+	if err := AcceptGroupInvite(ctx, user, chatID); err != nil {
+		t.Fatalf("AcceptGroupInvite: %v", err)
+	}
+	if status, _ := participantStatus(t, ctx, chatID, user); status != string(constants.StatusAccepted) {
+		t.Fatalf("status = %q, want accepted", status)
+	}
+	if !hasChatEntry(t, ctx, user, chatID) {
+		t.Fatalf("chats entry missing after accept")
+	}
+	if invites, err := GetAllInvitesOfUser(ctx, user); err != nil || len(invites) != 0 {
+		t.Fatalf("invitations = %v, err %v; want none", invites, err)
+	}
+	if got, err := GetUserChats(ctx, user); err != nil || !slices.Contains(got, chatID) {
+		t.Fatalf("GetUserChats = %v, err %v; want the accepted group", got, err)
+	}
+
+	if err := AcceptGroupInvite(ctx, user, chatID); !errors.Is(err, ErrAlreadyParticipant) {
+		t.Fatalf("second accept: err %v, want ErrAlreadyParticipant", err)
+	}
+	// No invite and no such group answer the same, so group IDs can't be probed (#59).
+	if err := AcceptGroupInvite(ctx, outsider, chatID); !errors.Is(err, ErrChatNotFound) {
+		t.Fatalf("outsider: err %v, want ErrChatNotFound", err)
+	}
+	if err := AcceptGroupInvite(ctx, user, bson.NewObjectID()); !errors.Is(err, ErrChatNotFound) {
+		t.Fatalf("unknown group: err %v, want ErrChatNotFound", err)
+	}
+}
+
+// Declining takes the invitee out of the group and its count, and off their
+// chats list (#5). They can be added again later.
+func TestDeclineGroupInvite(t *testing.T) {
+	ctx := useTestDB(t)
+	owner, user := bson.NewObjectID(), bson.NewObjectID()
+	chatID := insertInviteGroup(t, ctx, owner, user)
+
+	if err := DeclineGroupInvite(ctx, user, chatID); err != nil {
+		t.Fatalf("DeclineGroupInvite: %v", err)
+	}
+	chat := loadChat(t, ctx, chatID)
+	if _, ok := chat.Participants[user]; ok {
+		t.Fatalf("declined user still a participant")
+	}
+	if chat.Stats.ParticipantCount != 1 {
+		t.Fatalf("participantCount = %d, want 1", chat.Stats.ParticipantCount)
+	}
+	if hasChatEntry(t, ctx, user, chatID) {
+		t.Fatalf("chats entry left after decline")
+	}
+
+	if err := DeclineGroupInvite(ctx, user, chatID); !errors.Is(err, ErrChatNotFound) {
+		t.Fatalf("second decline: err %v, want ErrChatNotFound", err)
+	}
+	if err := DeclineGroupInvite(ctx, owner, chatID); !errors.Is(err, ErrAlreadyParticipant) {
+		t.Fatalf("accepted member declining: err %v, want ErrAlreadyParticipant", err)
+	}
+	if err := AddGroupMember(ctx, owner, chatID, []bson.ObjectID{user}); err != nil {
+		t.Fatalf("adding the declined user again: %v", err)
+	}
+}
+
+// The pending list holds only the user's own pending groups (#5).
+func TestPendingGroupInvites(t *testing.T) {
+	ctx := useTestDB(t)
+	owner, user, other := bson.NewObjectID(), bson.NewObjectID(), bson.NewObjectID()
+	pending := insertInviteGroup(t, ctx, owner, user, other)
+	accepted := insertInviteGroup(t, ctx, owner, user)
+	if err := AcceptGroupInvite(ctx, user, accepted); err != nil {
+		t.Fatalf("accept: %v", err)
+	}
+	insertInviteGroup(t, ctx, owner, other) // someone else's invite
+
+	got, err := PendingGroupInvites(ctx, user)
+	if err != nil {
+		t.Fatalf("PendingGroupInvites: %v", err)
+	}
+	if len(got) != 1 || got[0].ChatID != pending {
+		t.Fatalf("pending = %+v, want only %s", got, pending.Hex())
+	}
+	if got[0].InvitedBy != owner || got[0].ParticipantCount != 3 || got[0].Name == "" {
+		t.Fatalf("pending entry = %+v, want inviter %s, 3 participants and a name", got[0], owner.Hex())
 	}
 }

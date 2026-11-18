@@ -1588,17 +1588,23 @@ func JoinGroupByInvite(ctx context.Context, userID bson.ObjectID, inviteID strin
 		}
 	}
 
-	codes, err := groupInviteCodes(ctx, chatObjectID)
+	return finishGroupJoin(ctx, chatObjectID, userID)
+}
+
+// finishGroupJoin completes userID becoming an accepted member of the group chatID,
+// by a code or by accepting their invite (#5): the chat goes on their chats list,
+// their invitations to the group are dropped as used (#30, #103), and their open
+// connections follow it (#49). $max adds a missing entry as 0 and keeps an unread
+// count that is already there.
+func finishGroupJoin(ctx context.Context, chatID, userID bson.ObjectID) error {
+	codes, err := groupInviteCodes(ctx, chatID)
 	if err != nil {
 		return err
 	}
-	// Add chat ref to user, and drop their invitations for this group, which
-	// are now used (#30, #103). $max adds a missing entry as 0 and keeps an
-	// unread count that is already there.
 	userRes, err := database.DB.Collection(string(constants.UserColl)).UpdateOne(ctx,
 		bson.M{"_id": userID},
 		bson.M{
-			"$max":  bson.M{"chats." + chatObjectID.Hex(): 0},
+			"$max":  bson.M{"chats." + chatID.Hex(): 0},
 			"$pull": bson.M{"chatInvitations": bson.M{"token": bson.M{"$in": codes}}},
 		},
 	)
@@ -1609,7 +1615,7 @@ func JoinGroupByInvite(ctx context.Context, userID bson.ObjectID, inviteID strin
 		return fmt.Errorf("add chat to user: %w", ErrUserNotFound)
 	}
 
-	AddMembersToLiveChat(ctx, chatObjectID, userID) // #49
+	AddMembersToLiveChat(ctx, chatID, userID) // #49
 	return nil
 }
 
