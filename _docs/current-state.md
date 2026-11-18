@@ -1,6 +1,6 @@
 # ECHO: current state
 
-A one-page snapshot of where the project stands. Last checked on 2026-11-18 at `417cd55`
+A one-page snapshot of where the project stands. Last checked on 2026-11-18 at `cbd75c0`
 on `main`. To learn what the product does, read
 [product-overview.md](./product-overview.md). For the code, read
 [architecture-overview.md](./architecture-overview.md).
@@ -11,10 +11,8 @@ on `main`. To learn what the product does, read
 and with a link to exactly one feature state.md. Updated by /close-increment and
 /feature-docs update. -->
 
-- **Feature:** none · bug #22 on `fix/22-hub-blocking-io`: the hub goroutine does no
-  MongoDB or Redis I/O; code review fixed (pending connections, presence order, online
-  once per user, 32 registrations at most). `verify.mjs --full`, contract test, burst,
-  churn and MongoDB-outage checks passed, not pushed. `main` at `eb5a820` (#69). #5 step 2 (enforce pending) waits for the
+- **Feature:** none · nothing in progress. `main` at `cbd75c0`: #22 (PR #144) is merged,
+  so Render deploys it. #5 step 2 (enforce pending) waits for the
   Android invite screen ([group-invites](./features/group-invites/state.md))
 - **Proposed from the #35 review, not filed:** a password check before deleting an
   account; a delete rate limit plus an index on `messages.senderId`; events to members
@@ -38,10 +36,14 @@ and with a link to exactly one feature state.md. Updated by /close-increment and
   `websocket-requests.md` and `websocket-events.md` (~199 lines) before adding to them
 - **#69 on Render (not checked yet):** the startup log shows `Removed chat entries of users
   who aren't participants` once (or nothing), and not on the next start
-- **Next step:** push and PR for #22 (ask before merging). Not filed: a `chat_added`
-  arriving while a connection's chats load is still missed (#49); a connection's welcome
-  can still be dropped when its 10-message queue is full on arrival
-- **Updated:** 2026-11-18 on `fix/22-hub-blocking-io` at `90d94b0`
+- **#22 on Render (not checked yet):** connecting gets the welcome, and messages and
+  presence arrive; two devices of one account connect and disconnect without either
+  losing messages
+- **Not filed, from #22:** a `chat_added` arriving while a connection's chats load is
+  missed; a connection's welcome is dropped when its 10-message queue is already full
+- **Next step:** pick from the open issues (`gh issue list`); the Render checks above are
+  the user's
+- **Updated:** 2026-11-18 on `main` at `cbd75c0` (not committed yet: rides on the next branch)
 
 ## Where things stand
 
@@ -55,6 +57,13 @@ Not built yet: editing or deleting messages, and changing chat settings. The ful
 
 ## Recently finished
 
+- **#22 (PR #144):** the hub goroutine only changes maps. Each connection registers in its
+  own goroutine (32 at most, chats read within 5 s); one that can't be set up closes with
+  `1011` so the app reconnects. Disconnects release Redis channels in the background, a
+  user is announced online once and offline only when no connection is left or queued
+  ([pub/sub](./PUBSUB_ARCHITECTURE.md#connecting-and-disconnecting),
+  [app changes](../Android/_docs/08_SERVER_CHANGES/auth-and-connection.md)). Code review:
+  9 findings, 8 fixed; a live burst check found a presence flood, fixed.
 - **#69 (PR #143):** a startup repair, `RemoveStaleChatEntries`, removes `users.chats`
   entries whose chat doesn't list the user or is gone (forged joins before #9, failed
   cleanups). It runs on every start, in batches of 200 users.
@@ -172,13 +181,12 @@ blocks are stored, and who counts as a member.
 
 ## Known issues and risks
 
-There are 13 open issues. Where each risk sits in the code: [architecture-overview.md](./architecture-overview.md#riskiest-areas).
+There are 11 open issues. Where each risk sits in the code: [architecture-overview.md](./architecture-overview.md#riskiest-areas).
 
 | Area | The problem, in short | Issues |
 |---|---|---|
-| Live connections | The server can leak resources or stall under load, missed live messages can't be detected, and open connections miss new chats | #21, #22, #43, #49, #117 |
+| Live connections | Each Redis channel uses its own connection, and missed live messages can't be detected | #21, #43 |
 | Groups | Pending members still pass membership checks (#5 step 2), and the participant count is maintained by hand | #5, #110 |
-| Invite codes | Entries left by forged joins before #9 was fixed are still stored | #69 |
 | Accounts | Usernames aren't unique, and display copies go stale | #36 |
 | Contacts and blocking | Contact lists aren't cut to `limit`, and blocks written during a deploy can be missed | #39, #63 |
 | Online status and privacy | Online status is unreliable, and privacy settings aren't applied | #31, #32 |

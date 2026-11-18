@@ -101,17 +101,18 @@ after 2 minutes, and nothing reads it yet (#31).
 
 ## Connecting and disconnecting
 
-**When someone connects,** the hub:
+**When someone connects,** the hub, in a goroutine of its own for that connection:
 
 1. Reads the `chats` list on the user's MongoDB document, and keeps only the chats where
-   the user is also in `participants` (`GetUserChats`). Before #9 was fixed, a forged
-   invite code could add a chat to the list without making the user a participant.
-2. Subscribes this server to `user:<userID>` and to `chat:<chatID>` for each of those chats.
-3. Adds the connection to its lookup tables.
-4. Sends the welcome message.
+   the user is also in `participants` and not pending (`GetUserChats`). A startup repair
+   removes entries for chats that don't list the user (#69).
+2. Adds the connection to its lookup tables.
+3. Subscribes this server to `user:<userID>` and to `chat:<chatID>` for each of those chats.
+4. Announces the user as online, if this is their first connection here.
+5. Sends the welcome message.
 
-This runs on one goroutine, one connection at a time. That is why the server accepts about
-1,750 new connections per second, and why one slow call delays everyone else (#22).
+Up to 32 connections go through these steps at once, so a slow call delays only the
+connections waiting on it (#22).
 
 The list is only read at this moment. A chat gained later reaches the open connections
 through `internal.chat_added` on `user:<userID>` (#49). A connection registering in the
@@ -179,7 +180,6 @@ stats token. See
 | Issue | Problem |
 |---|---|
 | #21 | Each Redis channel uses its own connection, so connections grow with users and chats |
-| #22 | Slow MongoDB or Redis calls hold up all connects and disconnects |
 | #31 | Online status is unreliable |
 | #40 | Rate limits are per socket, not per account |
 | #43 | Apps can't detect or recover missed live messages |
