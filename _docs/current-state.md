@@ -11,8 +11,11 @@ on `main`. To learn what the product does, read
 and with a link to exactly one feature state.md. Updated by /close-increment and
 /feature-docs update. -->
 
-- **Feature:** [group-invites](./features/group-invites/state.md) (#5, #17), on `feature/group-invites`, increment 1 ready for review (accept, decline, pending list, legacy backfill). `main` at
-  `f022f2c`: #36's email changes (PR #140) are merged, so Render deploys them
+- **Feature:** none · on `fix/35-account-deletion` (#35, hard delete + scrub). `main` at
+  `04ce392`: #5 step 1 (PR #141) is merged and #17 closed. #5 step 2 (enforce pending)
+  waits for the Android invite screen ([group-invites](./features/group-invites/state.md))
+- **#5 on Render (not checked yet):** startup log shows `Accepted legacy pending group
+  members` once, and `migrations` holds `accept-legacy-pending-5`
 - **#36 on Render (not checked yet):** startup log shows `Indexes ensured` with `email_ci`,
   and any `Normalized emails` count or conflict warning (user IDs to merge by hand)
 - **#40 on Render (not checked yet):** a login loop with a forged `True-Client-IP` and
@@ -26,7 +29,7 @@ and with a link to exactly one feature state.md. Updated by /close-increment and
 - **Still open on #40:** a per-account WebSocket limit, mention lookups, `CheckOrigin`.
   Proposed, not filed: hide which emails have accounts (signup `409`, login timing). Split
   `websocket-requests.md` and `websocket-events.md` (~199 lines) before adding to them
-- **Updated:** 2026-11-18 on `feature/group-invites`
+- **Updated:** 2026-11-18 on `fix/35-account-deletion`
 
 ## Where things stand
 
@@ -35,12 +38,17 @@ messages, message history, typing, read receipts, reactions and invite codes. Ma
 these still have open bugs. The full table is in
 [product-overview.md](./product-overview.md#what-works-today).
 
-Not built yet: editing or deleting messages, changing chat settings, and accepting or
-declining a group invite. The full list is in
+Not built yet: editing or deleting messages, and changing chat settings. The full list is in
 [product-overview.md](./product-overview.md#not-built-yet).
 
 ## Recently finished
 
+- **#5 step 1 + #17 (PR #141):** invitees accept or decline (`groups/:groupID/accept`,
+  `decline`, `GET groups/pending`) and get live messages once they accept; a startup
+  backfill accepted members left pending before, by a cutoff stored in `migrations`
+  ([REST](./rest-api/groups.md#groups), [decided](./decisions.md#where-a-pending-group-invite-is-stored-5),
+  [app changes](../Android/_docs/08_SERVER_CHANGES/groups-and-invites.md)). Left: enforcing
+  pending (step 2), a group event on accept and decline.
 - **#36, emails (PR #140):** emails are stored trimmed and lower case; signup and login
   match them ignoring case (`email_ci`), so legacy capitals work before the startup
   `NormalizeEmails` lowers them; `PUT profile/` no longer changes `email`
@@ -129,16 +137,7 @@ declining a group invite. The full list is in
   add and join past it add nobody: REST `409`, WebSocket `GROUP_FULL`, checked in the
   update filter ([REST](./rest-api/groups.md#groups), [app changes](../Android/_docs/08_SERVER_CHANGES/README.md)).
   From the code review: #112.
-- **#16 (PR #109):** a group's `stats.participantCount` follows every add, join and
-  removal, and a startup backfill resets drifted groups (skipping malformed ones). It
-  counts pending members and deleted accounts ([app changes](../Android/_docs/08_SERVER_CHANGES/README.md)).
-  From the code review: #110 (derive the count instead of maintaining it).
-- **#62 (PR #108):** `GET users/contacts` leaves out people you blocked; `GET /blocked`
-  lists them ([REST](./rest-api/users.md#contacts), [app changes](../Android/_docs/08_SERVER_CHANGES/README.md)).
-- **#104 (PR #107):** creating an invite code returns it in `data`, shaped like an entry
-  of the group's list ([REST](./rest-api/groups.md#groups),
-  [app changes](../Android/_docs/08_SERVER_CHANGES/README.md)).
-Older work, from #59 (PR #105) back: [finished-work.md](./finished-work.md).
+Older work, from #104 (PR #107) back: [finished-work.md](./finished-work.md).
 
 ## How to build, run, test
 
@@ -177,7 +176,7 @@ blocks are stored, and who counts as a member.
 
 ## Known issues and risks
 
-There are 15 open issues. Where each risk sits in the code: [architecture-overview.md](./architecture-overview.md#riskiest-areas).
+There are 14 open issues. Where each risk sits in the code: [architecture-overview.md](./architecture-overview.md#riskiest-areas).
 
 | Area | The problem, in short | Issues |
 |---|---|---|
