@@ -11,9 +11,9 @@ on `main`. To learn what the product does, read
 and with a link to exactly one feature state.md. Updated by /close-increment and
 /feature-docs update. -->
 
-- **Feature:** none · bug #69 on `fix/69-scrub-forged-chat-entries`: startup repair
-  `RemoveStaleChatEntries` (every start, review fixes in), `verify.mjs --full` passed
-  (`TEST_DB_REQUIRED=1`), not pushed. #35 (PR #142) is merged on `main` at `417cd55`. #5 step 2 (enforce pending) waits for the
+- **Feature:** none · bug #22 on `fix/22-hub-blocking-io`: the hub goroutine does no
+  MongoDB or Redis I/O; `verify.mjs --full` (`TEST_DB_REQUIRED=1`), contract test and a live
+  churn + MongoDB-outage check passed, not pushed. `main` at `eb5a820` (#69). #5 step 2 (enforce pending) waits for the
   Android invite screen ([group-invites](./features/group-invites/state.md))
 - **Proposed from the #35 review, not filed:** a password check before deleting an
   account; a delete rate limit plus an index on `messages.senderId`; events to members
@@ -35,11 +35,11 @@ and with a link to exactly one feature state.md. Updated by /close-increment and
 - **Still open on #40:** a per-account WebSocket limit, mention lookups, `CheckOrigin`.
   Proposed, not filed: hide which emails have accounts (signup `409`, login timing). Split
   `websocket-requests.md` and `websocket-events.md` (~199 lines) before adding to them
-- **Next step:** push and PR for #69 (ask before merging). After it deploys, the
-  startup log shows `Removed chat entries of users who aren't participants` once (or
-  nothing if none were found), and not on the next start. The Render checks above are
-  the user's
-- **Updated:** 2026-11-18 on `fix/69-scrub-forged-chat-entries` at `fba75b2`
+- **#69 on Render (not checked yet):** the startup log shows `Removed chat entries of users
+  who aren't participants` once (or nothing), and not on the next start
+- **Next step:** `/code-review` of #22, then PR (ask before merging). Not filed: a
+  `chat_added` arriving while a connection's chats load is still missed (#49)
+- **Updated:** 2026-11-18 on `fix/22-hub-blocking-io` at `a1d3c59`
 
 ## Where things stand
 
@@ -53,6 +53,9 @@ Not built yet: editing or deleting messages, and changing chat settings. The ful
 
 ## Recently finished
 
+- **#69 (PR #143):** a startup repair, `RemoveStaleChatEntries`, removes `users.chats`
+  entries whose chat doesn't list the user or is gone (forged joins before #9, failed
+  cleanups). It runs on every start, in batches of 200 users.
 - **#35, account deletion (PR #142):** deleting an account closes its sockets, locks its
   token, pulls the ID from every contact and block list, takes it out of groups and
   channels (an owner hands on: another owner, else the earliest admin, else the earliest
@@ -101,18 +104,6 @@ Not built yet: editing or deleting messages, and changing chat settings. The ful
   bytes, so Hindi or emoji text is no longer cut at about a third
   ([decided](./decisions.md#how-the-message-length-limit-counts-51),
   [app changes](../Android/_docs/08_SERVER_CHANGES/messages.md)).
-- **#49 (PR #130):** a chat a user gains while connected (a new direct chat, either side; a
-  group they create; a code join, also a retry or a pending accept) reaches their open
-  connections at once, through a hub-internal `internal.chat_added` on `user:<id>`
-  ([pub/sub](./PUBSUB_ARCHITECTURE.md#connecting-and-disconnecting),
-  [app changes](../Android/_docs/08_SERVER_CHANGES/groups-and-invites.md)). Not done from
-  the review: a connection registering in the same ms misses the add; a removal racing an
-  add is undone by the #117 re-check within 30 s.
-- **#117 (PR #128):** every 30 s each server reads the participants of its rooms' chats
-  (`services.ChatMembers`, keys only) and takes out connections of users who aren't
-  members any more ([pub/sub](./PUBSUB_ARCHITECTURE.md#background-jobs)). Not done from the
-  code review: a member removed and re-added within one pass stays out until they
-  reconnect (#49); evicted connections get no event.
 - **#123 + #124 (PR #127):** a join or registration releases the chat channel again after
   subscribing if a removal emptied the room meanwhile, and no `join` is announced for a
   member removed during the join. The release test hooks are `PubSubManager` fields
@@ -140,7 +131,7 @@ Not built yet: editing or deleting messages, and changing chat settings. The ful
   chat's Redis channel takes their connections out of the room
   ([events](./websocket-events.md), [app changes](../Android/_docs/08_SERVER_CHANGES/groups-and-invites.md)).
   The Android log is split into topic pages. Security review: nothing found; code review: #116, #117.
-Older work, from #106 (PR #115) back: [finished-work.md](./finished-work.md).
+Older work, from #49 (PR #130) back: [finished-work.md](./finished-work.md).
 
 ## How to build, run, test
 

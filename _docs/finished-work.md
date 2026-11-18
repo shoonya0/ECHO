@@ -4,6 +4,18 @@ Older entries moved here from
 [current-state.md](./current-state.md#recently-finished), newest first. Links point to
 the docs that describe each change today. Newer work is listed on that page.
 
+- **#49 (PR #130):** a chat a user gains while connected (a new direct chat, either side; a
+  group they create; a code join, also a retry or a pending accept) reaches their open
+  connections at once, through a hub-internal `internal.chat_added` on `user:<id>`
+  ([pub/sub](./PUBSUB_ARCHITECTURE.md#connecting-and-disconnecting),
+  [app changes](../Android/_docs/08_SERVER_CHANGES/groups-and-invites.md)). Not done from
+  the review: a connection registering in the same ms misses the add; a removal racing an
+  add is undone by the #117 re-check within 30 s.
+- **#117 (PR #128):** every 30 s each server reads the participants of its rooms' chats
+  (`services.ChatMembers`, keys only) and takes out connections of users who aren't
+  members any more ([pub/sub](./PUBSUB_ARCHITECTURE.md#background-jobs)). Not done from the
+  code review: a member removed and re-added within one pass stays out until they
+  reconnect (#49); evicted connections get no event.
 - **#106 (PR #115):** `send_message` and `invite_user` read the chat once, in the same
   query that checks membership (`services.GetChatForMember`); replies are unchanged.
   `remove_user` still reads it twice.
