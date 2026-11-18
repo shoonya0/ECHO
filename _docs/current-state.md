@@ -12,8 +12,9 @@ and with a link to exactly one feature state.md. Updated by /close-increment and
 /feature-docs update. -->
 
 - **Feature:** none · bug #22 on `fix/22-hub-blocking-io`: the hub goroutine does no
-  MongoDB or Redis I/O; `verify.mjs --full` (`TEST_DB_REQUIRED=1`), contract test and a live
-  churn + MongoDB-outage check passed, not pushed. `main` at `eb5a820` (#69). #5 step 2 (enforce pending) waits for the
+  MongoDB or Redis I/O; code review fixed (pending connections, presence order, online
+  once per user, 32 registrations at most). `verify.mjs --full`, contract test, burst,
+  churn and MongoDB-outage checks passed, not pushed. `main` at `eb5a820` (#69). #5 step 2 (enforce pending) waits for the
   Android invite screen ([group-invites](./features/group-invites/state.md))
 - **Proposed from the #35 review, not filed:** a password check before deleting an
   account; a delete rate limit plus an index on `messages.senderId`; events to members
@@ -37,9 +38,10 @@ and with a link to exactly one feature state.md. Updated by /close-increment and
   `websocket-requests.md` and `websocket-events.md` (~199 lines) before adding to them
 - **#69 on Render (not checked yet):** the startup log shows `Removed chat entries of users
   who aren't participants` once (or nothing), and not on the next start
-- **Next step:** `/code-review` of #22, then PR (ask before merging). Not filed: a
-  `chat_added` arriving while a connection's chats load is still missed (#49)
-- **Updated:** 2026-11-18 on `fix/22-hub-blocking-io` at `a1d3c59`
+- **Next step:** push and PR for #22 (ask before merging). Not filed: a `chat_added`
+  arriving while a connection's chats load is still missed (#49); a connection's welcome
+  can still be dropped when its 10-message queue is full on arrival
+- **Updated:** 2026-11-18 on `fix/22-hub-blocking-io` at `90d94b0`
 
 ## Where things stand
 
