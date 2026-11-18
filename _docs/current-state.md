@@ -11,7 +11,7 @@ on `main`. To learn what the product does, read
 and with a link to exactly one feature state.md. Updated by /close-increment and
 /feature-docs update. -->
 
-- **Feature:** #5 group invites, starting on `feature/5-group-invite-accept`. `main` at
+- **Feature:** [group-invites](./features/group-invites/state.md) (#5, #17), on `feature/group-invites`, increment 1 task 1. `main` at
   `f022f2c`: #36's email changes (PR #140) are merged, so Render deploys them
 - **#36 on Render (not checked yet):** startup log shows `Indexes ensured` with `email_ci`,
   and any `Normalized emails` count or conflict warning (user IDs to merge by hand)
@@ -26,7 +26,7 @@ and with a link to exactly one feature state.md. Updated by /close-increment and
 - **Still open on #40:** a per-account WebSocket limit, mention lookups, `CheckOrigin`.
   Proposed, not filed: hide which emails have accounts (signup `409`, login timing). Split
   `websocket-requests.md` and `websocket-events.md` (~199 lines) before adding to them
-- **Updated:** 2026-11-18 on `feature/5-group-invite-accept`
+- **Updated:** 2026-11-18 on `feature/group-invites`
 
 ## Where things stand
 
