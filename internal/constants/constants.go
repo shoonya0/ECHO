@@ -14,6 +14,8 @@ const (
 	UserColl    Collection = "users"
 	ChatColl    Collection = "chats"
 	MessageColl Collection = "messages"
+	// MigrationColl holds one document per startup migration that needs state (#5).
+	MigrationColl Collection = "migrations"
 )
 
 // Contact relationship statuses.

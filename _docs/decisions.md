@@ -24,6 +24,19 @@ of the group (`POST groups/join/:inviteCode`), and owners and admins may `send` 
 A dedicated accept and decline action, tied to the person's own invitation, is built with
 #5 rather than added to the join route.
 
+## Where a pending group invite is stored (#5)
+
+Decided on 2026-11-18. A pending invite is the group's entry in the invitee's
+`users.chats`, written when they are added, so `GET groups/pending` reads chats by `_id`
+instead of scanning on the dynamic `participants.<id>` key. The hub skips a pending chat
+until it is accepted. Accept and decline are REST only for now. Members left pending
+before this, who were never asked and had full access, are accepted by a startup backfill,
+so they keep that access. "Before" is a cutoff stored in `migrations` on the first run (the
+start of the first server with this code), not a missing chats entry: a new invitee's
+entry can be missing too, and they must never be accepted for them. Such an invitee gets
+the entry instead. Accept-by-code
+(#103) still works and finishes the same way.
+
 ## Where chat membership is stored
 
 Decided on 2026-11-15. A chat's `participants` is the only record of who is in it.

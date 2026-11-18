@@ -56,7 +56,7 @@ One row per feature that has its own docs folder. Status: ⏳ planned · 🟡 in
 
 | Feature | Docs index | Code | Status | One line |
 |---|---|---|---|---|
-| *(none yet: `/feature-docs start <feature> <folder>` adds a row)* | | | | |
+| group-invites | [README](./features/group-invites/README.md) | `internal/services/group_invite*.go`, `internal/controller/group_invite*.go` | 🟡 | Accept or decline a group invite; pending members get no messages (#5, #17) |
 
 ## Rules for these docs
 

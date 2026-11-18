@@ -2,6 +2,18 @@
 
 Part of [server changes the app must handle](./README.md).
 
+## Accepting and declining group invites (#5, #17)
+
+- `GET groups/pending` lists the groups you are invited to. Show them as invites, with
+  `POST groups/:groupID/accept` and `POST groups/:groupID/decline`.
+- A pending member gets no live messages for the group until they accept; accepting
+  starts them at once. Soon (#5's next step) pending members will also lose history and
+  `send`: build the invite screen before that.
+- Members who were pending before this server change were accepted automatically.
+- `404` means the invite is gone (declined, removed, or never there): drop it from the list.
+
+Details: [groups.md](../../../_docs/rest-api/groups.md#groups).
+
 ## New chats are live without reconnecting (#49)
 
 - A new direct chat (either side), a group you create and a group you join with a code

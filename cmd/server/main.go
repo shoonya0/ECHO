@@ -24,6 +24,9 @@ import (
 )
 
 func main() {
+	// Before any request is served: the #5 backfill accepts only invites older than
+	// the first start of this code.
+	startedAt := time.Now()
 	envFile := flag.String("env", ".env", "optional KEY=VALUE file loaded before reading the environment")
 	flag.Parse()
 
@@ -89,6 +92,12 @@ func main() {
 			log.WithError(err).Error("Failed to backfill participant counts")
 		} else if n > 0 {
 			log.WithField("groups", n).Info("Backfilled participant counts")
+		}
+		// #5: members made pending before invites could be answered; idempotent.
+		if n, err := services.AcceptLegacyPendingMembers(indexCtx, startedAt); err != nil {
+			log.WithError(err).Error("Failed to accept legacy pending members")
+		} else if n > 0 {
+			log.WithField("members", n).Info("Accepted legacy pending group members")
 		}
 	}()
 	// Redis backs token revocation and WebSocket pub/sub, so it is required.
