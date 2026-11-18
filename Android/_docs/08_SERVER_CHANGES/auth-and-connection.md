@@ -88,11 +88,15 @@ says why. The reasons are the REST codes above.
 | `4401` | `TOKEN_EXPIRED` | The 7-day token ran out: log in again. |
 | `4401` | `ACCOUNT_NOT_FOUND` | Log out and clear local data. |
 | `4403` | `ACCOUNT_BANNED` / `ACCOUNT_INACTIVE` | Log out and show why. |
+| `1011` | `try again` | The server couldn't load the chats (#22). Reconnect with backoff. |
 | anything else | | Reconnect with backoff, as before. |
 
 - The reconnect logic must check the close code first: reconnecting after a `4401` or
   `4403` only gets a `401` or `403` at the upgrade.
 - A ban made in the database closes the socket within about a minute.
+- On connect, the app now also gets its own `presence` event (`online`), once per chat it
+  shares with the user; before #22 it was usually lost. Ignore presence for the user's
+  own ID if the app doesn't use it.
 
 Details: [WEBSOCKET_PROTOCOL.md](../../../_docs/WEBSOCKET_PROTOCOL.md#stay-connected).
 

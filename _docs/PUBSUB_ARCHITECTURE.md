@@ -32,8 +32,16 @@ The hub keeps four lookup tables:
 | `ClientChats` | Which chats does this connection follow? (A user's chats are the union over their connections.) |
 
 These maps must only be touched while holding `hub.Mutex`. To use one after unlocking, copy
-what you need first. Never wait on a hub channel while holding the lock. Registration,
-`JoinChat` and `LeaveChat` still publish to Redis under it, which can slow other work.
+what you need first. Never wait on a hub channel while holding the lock. `JoinChat` and
+`LeaveChat` still publish to Redis under it, which can slow other work.
+
+The hub goroutine (`runHub`) only changes maps; it never waits on MongoDB or Redis (#22).
+Each registration runs in its own goroutine: it reads the user's chats (at most 5
+seconds), changes the maps, subscribes, then publishes the user as online. If the chats
+can't be read, the connection is closed with `1011` and the app reconnects. A disconnect
+changes the maps on the hub goroutine and leaves the channel releases and the offline
+publish to a goroutine. Connections queue themselves with `QueueRegister` and
+`QueueUnregister`, which give up once the hub has stopped.
 
 ## The path of one message
 
@@ -112,7 +120,9 @@ connection closes, it also drops the `user:<id>` channel and tells others the us
 offline; the offline part doesn't work properly yet (#31). `leave_chat` and `remove_user`
 release a chat's channel the same way when they empty its room. A join always enters the
 room before it subscribes, and a release re-subscribes if someone joined while it was
-closing the channel, so a join is never left without a subscription (#55). The other
+closing the channel, so a join is never left without a subscription (#55). The
+`user:<id>` channel works the same way, since registrations and disconnects of one user
+can overlap (#22). The other
 way round, a join or registration checks the room again after subscribing and releases
 the channel if a removal emptied it meanwhile (#123). Messages published in that short
 gap are missed (#43). A connection that drops while its
