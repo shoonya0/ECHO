@@ -55,6 +55,22 @@ func main() {
 		defer cancel()
 		if err := database.EnsureIndexes(indexCtx); err != nil {
 			log.WithError(err).Error("Failed to ensure MongoDB indexes; queries will run without them")
+		} else {
+			// #36: emails stored with capitals; idempotent. Only with the unique email
+			// index in place, which is what stops it from making two accounts share one.
+			n, conflicts, err := services.NormalizeEmails(indexCtx)
+			if err != nil {
+				log.WithError(err).Error("Failed to normalize emails")
+			} else if n > 0 {
+				log.WithField("users", n).Info("Normalized emails")
+			}
+			if len(conflicts) > 0 {
+				ids := make([]string, len(conflicts))
+				for i, id := range conflicts {
+					ids[i] = id.Hex()
+				}
+				log.WithField("users", ids).Warn("Emails that differ only in case from another account; these users can't log in until merged by hand")
+			}
 		}
 		// #18: groups created before the fix have no owner role; idempotent.
 		n, err := services.BackfillGroupOwnerRoles(indexCtx)
