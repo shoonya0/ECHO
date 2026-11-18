@@ -11,7 +11,7 @@ on `main`. To learn what the product does, read
 and with a link to exactly one feature state.md. Updated by /close-increment and
 /feature-docs update. -->
 
-- **Feature:** none · on `fix/35-account-deletion` (#35, hard delete + scrub). `main` at
+- **Feature:** none · on `fix/35-account-deletion` (#35, hard delete + scrub): code, tests and docs done, `verify --full` and a live run passed; next `/code-review` + `/security-review`, then PR. `main` at
   `04ce392`: #5 step 1 (PR #141) is merged and #17 closed. #5 step 2 (enforce pending)
   waits for the Android invite screen ([group-invites](./features/group-invites/state.md))
 - **#5 on Render (not checked yet):** startup log shows `Accepted legacy pending group
