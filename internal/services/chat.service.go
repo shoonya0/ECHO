@@ -28,7 +28,7 @@ import (
 // user's chats list where the user is also a participant who has accepted (a
 // pending invite is listed too, #5, but not followed). The same query also
 // guards against an entry for a chat that doesn't list the user: forged invite
-// joins left those before #9, and RemoveForgedChatEntries removes them (#69).
+// joins left those before #9, and RemoveStaleChatEntries removes them on each start (#69).
 func GetUserChats(ctx context.Context, userID bson.ObjectID) ([]bson.ObjectID, error) {
 	log := logger.WithContext(ctx)
 
