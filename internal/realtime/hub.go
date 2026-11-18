@@ -5,6 +5,8 @@ import (
 	"errors"
 	"fmt"
 	"hash/fnv"
+	"maps"
+	"slices"
 	"sync"
 	"time"
 
@@ -47,9 +49,10 @@ type Hub struct {
 	// presenceLocks order each user's online and offline publishes; see
 	// presenceLock. slots bounds concurrent registrations; see registrationSlots.
 	presenceLocks [64]sync.Mutex
-	// announced holds the users this instance published as online, until it
-	// publishes them as offline. Changed under the user's presence lock.
-	announced sync.Map // userID -> struct{}
+	// announced holds the users this instance published as online, with the
+	// chats the online went to, until it publishes them as offline. Changed
+	// under the user's presence lock.
+	announced sync.Map // userID -> []string
 	slots     chan struct{}
 	slotsOnce sync.Once
 }
@@ -352,10 +355,12 @@ func (eh *Hub) publishOnline(client *models.Client) bool {
 
 	eh.Mutex.RLock()
 	_, registered := eh.Clients[client.ID]
+	chats := userActiveChats(eh.Hub, userID)
 	eh.Mutex.RUnlock()
 	if !registered || client.IsClosed() {
 		return false
 	}
+	eh.markOnline(userID) // for every connection, so a failed mark is retried (#31)
 	if _, already := eh.announced.Load(userID); already {
 		return true // another connection of the user announced it
 	}
@@ -363,11 +368,12 @@ func (eh *Hub) publishOnline(client *models.Client) bool {
 	if !ok || presence.Status != UserStatus(constants.UserStatusOnline) {
 		return true
 	}
-	eh.announced.Store(userID, struct{}{})
+	eh.announced.Store(userID, chats)
 	if err := eh.pubSubManager.PublishPresenceUpdate(&models.WSPresenceStatus{
 		UserID:   userID,
 		Status:   string(constants.UserStatusOnline),
 		LastSeen: time.Now(),
+		Chats:    chats,
 	}); err != nil {
 		eh.logger.WithError(err).Error("Failed to publish presence update")
 	}
@@ -398,7 +404,7 @@ func (eh *Hub) handleClientUnregistration(client *models.Client) {
 		if wasPending && !inUse {
 			// A connection that closed while this one was queued left the
 			// user's channel and offline status to it (#22).
-			eh.releaseInBackground(client.UserID, nil, true)
+			eh.releaseInBackground(client.UserID, nil, true, nil)
 		}
 		return
 	}
@@ -406,7 +412,9 @@ func (eh *Hub) handleClientUnregistration(client *models.Client) {
 	// Leave every room this connection is in. Rooms left empty are no longer
 	// needed on this instance, so their channels are released below (#20).
 	// Deleting from a map while ranging over it is safe in Go (unlike the
-	// slice this replaced, #116).
+	// slice this replaced, #116). The chats are kept for the offline event,
+	// which goes to their members (#31).
+	chats := slices.Collect(maps.Keys(eh.ClientChats[clientID]))
 	var emptyRooms []string
 	for chatID := range eh.ClientChats[clientID] {
 		if removeClientFromRoom(eh.Hub, client, chatID) {
@@ -433,15 +441,15 @@ func (eh *Hub) handleClientUnregistration(client *models.Client) {
 	eh.Mutex.Unlock()
 
 	client.CloseSend()
-	eh.releaseInBackground(client.UserID, emptyRooms, lastConnection)
+	eh.releaseInBackground(client.UserID, emptyRooms, lastConnection, chats)
 }
 
 // releaseInBackground runs releaseAfterDisconnect off the hub goroutine (#22).
-func (eh *Hub) releaseInBackground(userID bson.ObjectID, emptyRooms []string, lastConnection bool) {
+func (eh *Hub) releaseInBackground(userID bson.ObjectID, emptyRooms []string, lastConnection bool, chats []string) {
 	eh.background.Add(1)
 	go func() {
 		defer eh.background.Done()
-		eh.releaseAfterDisconnect(userID, emptyRooms, lastConnection)
+		eh.releaseAfterDisconnect(userID, emptyRooms, lastConnection, chats)
 	}()
 }
 
@@ -450,7 +458,10 @@ func (eh *Hub) releaseInBackground(userID bson.ObjectID, emptyRooms []string, la
 // release checks again, so a connection registering meanwhile keeps its channels.
 // The offline publish runs under the user's presence lock, and only while the
 // user has no connection, so it can't overtake a registration's online publish.
-func (eh *Hub) releaseAfterDisconnect(userID bson.ObjectID, emptyRooms []string, lastConnection bool) {
+// It goes to the members of chats, the closed connection's chats, and of the
+// chats the online went to; it is skipped while another server holds the user
+// (#31).
+func (eh *Hub) releaseAfterDisconnect(userID bson.ObjectID, emptyRooms []string, lastConnection bool, chats []string) {
 	eh.pubSubManager.releaseEmptyChats(emptyRooms)
 	if !lastConnection {
 		return
@@ -463,11 +474,23 @@ func (eh *Hub) releaseAfterDisconnect(userID bson.ObjectID, emptyRooms []string,
 	if eh.pubSubManager.userInUse(userID.Hex()) {
 		return // a connection registered meanwhile; it announces itself
 	}
-	eh.announced.Delete(userID.Hex())
+	if announced, ok := eh.announced.LoadAndDelete(userID.Hex()); ok {
+		chats = unionChats(chats, announced.([]string))
+	}
+	elsewhere, err := eh.markOffline(userID.Hex())
+	if err != nil {
+		// Publish anyway: one server is the usual case, and a user shown
+		// online forever is worse than a wrong offline.
+		eh.logger.WithError(err).Error("Could not check the user's other servers; publishing offline")
+	}
+	if elsewhere {
+		return // still connected to another server
+	}
 	if err := eh.pubSubManager.PublishPresenceUpdate(&models.WSPresenceStatus{
 		UserID:   userID.Hex(),
 		Status:   string(constants.UserStatusOffline),
 		LastSeen: time.Now(),
+		Chats:    chats,
 	}); err != nil {
 		eh.logger.WithError(err).Error("Failed to publish presence update")
 	}
@@ -654,32 +677,27 @@ func (eh *Hub) syncPresenceWithRedis(ctx context.Context) {
 	}
 }
 
-// performPresenceSync syncs local presence data with Redis
+// performPresenceSync renews this server's online entries for its connected
+// users (#31).
 func (eh *Hub) performPresenceSync() {
 	eh.Mutex.RLock()
-	userIDs := make([]string, 0, len(eh.UserClients))
-	for userID := range eh.UserClients {
-		userIDs = append(userIDs, userID)
-	}
+	userIDs := slices.Collect(maps.Keys(eh.UserClients))
 	eh.Mutex.RUnlock()
 
-	ctx := context.Background()
-	pipe := eh.redisClient.Pipeline()
+	if err := eh.refreshOnline(userIDs); err != nil {
+		eh.logger.WithError(err).Error("Failed to renew online entries in Redis")
+	}
+}
 
-	for _, userID := range userIDs {
-		presenceKey := fmt.Sprintf("presence:%s", userID)
-		presenceData := map[string]interface{}{
-			"status":     "online",
-			"lastSeen":   time.Now().Unix(),
-			"instanceId": eh.instanceID,
+// unionChats returns the chats in a or b, each once.
+func unionChats(a, b []string) []string {
+	out := slices.Clone(a)
+	for _, chatID := range b {
+		if !slices.Contains(out, chatID) {
+			out = append(out, chatID)
 		}
-		pipe.HSet(ctx, presenceKey, presenceData)
-		pipe.Expire(ctx, presenceKey, 2*time.Minute)
 	}
-
-	if _, err := pipe.Exec(ctx); err != nil {
-		eh.logger.WithError(err).Error("Failed to sync presence with Redis")
-	}
+	return out
 }
 
 // cleanupInactiveConnections removes inactive connections
