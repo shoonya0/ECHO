@@ -261,8 +261,8 @@ func TestDisconnectKeepsOtherConnectionOfUser(t *testing.T) {
 	addClient(hub, closing, "chat1")
 	addClient(hub, staying, "chat1")
 
-	hub.handleClientUnregistration(closing)
-	hub.handleClientUnregistration(closing) // a second unregister must do nothing
+	unregisterAndWait(hub, closing)
+	unregisterAndWait(hub, closing) // a second unregister must do nothing
 
 	if _, open := <-closing.Send; open {
 		t.Fatal("closing client's Send channel should be closed")
@@ -298,7 +298,7 @@ func TestDisconnectOfLastConnectionRemovesUser(t *testing.T) {
 	client := newTestClient("c1", bson.NewObjectID())
 	addClient(hub, client, "chat1")
 
-	hub.handleClientUnregistration(client)
+	unregisterAndWait(hub, client)
 
 	hub.Mutex.RLock()
 	_, inUsers := hub.UserClients[client.UserID.Hex()]
@@ -333,7 +333,7 @@ func TestDisconnectOfLastConnectionLeavesEveryChat(t *testing.T) {
 	}
 	pm.mu.Unlock()
 
-	hub.handleClientUnregistration(client)
+	unregisterAndWait(hub, client)
 
 	hub.Mutex.RLock()
 	left, ok := hub.ClientChats[client.ID]
@@ -365,6 +365,13 @@ func stubSubscriptions(hub *Hub, channels ...string) {
 	}
 }
 
+// unregisterAndWait handles client's disconnect and waits for the Redis work it
+// leaves running (#22), so a test can check the result.
+func unregisterAndWait(hub *Hub, client *models.Client) {
+	hub.handleClientUnregistration(client)
+	hub.background.Wait()
+}
+
 func inRoomUnlocked(hub *Hub, chatID, clientID string) bool {
 	hub.Mutex.RLock()
 	defer hub.Mutex.RUnlock()
@@ -381,7 +388,7 @@ func TestDisconnectWithNoChatsReleasesUserChannel(t *testing.T) {
 	addClient(hub, client)
 	stubSubscriptions(hub, pm.getUserChannel(client.UserID.Hex()))
 
-	hub.handleClientUnregistration(client)
+	unregisterAndWait(hub, client)
 
 	if pm.IsSubscribed(pm.getUserChannel(client.UserID.Hex())) {
 		t.Fatal("user channel is still subscribed")
@@ -403,7 +410,7 @@ func TestDisconnectLeavesChatJoinedBeforeAnotherDeviceConnected(t *testing.T) {
 	_ = hub.JoinChat(context.Background(), first, "chatB") // publish fails without Redis
 	addClient(hub, second, "chatA")
 
-	hub.handleClientUnregistration(first)
+	unregisterAndWait(hub, first)
 
 	if inRoomUnlocked(hub, "chatB", first.ID) {
 		t.Fatal("closed connection is still in the chat it joined")
@@ -429,7 +436,7 @@ func TestDisconnectAfterOtherDeviceLeftChat(t *testing.T) {
 	stubSubscriptions(hub, pm.getChatChannel("chatA"))
 
 	_ = hub.LeaveChat(leaving, "chatA") // publish fails without Redis
-	hub.handleClientUnregistration(closing)
+	unregisterAndWait(hub, closing)
 
 	if inRoomUnlocked(hub, "chatA", closing.ID) {
 		t.Fatal("closed connection is still in the room")
@@ -449,7 +456,7 @@ func TestDisconnectKeepsChatOtherUserFollows(t *testing.T) {
 	addClient(hub, staying, "chatA")
 	stubSubscriptions(hub, pm.getChatChannel("chatA"), pm.getUserChannel(closing.UserID.Hex()))
 
-	hub.handleClientUnregistration(closing)
+	unregisterAndWait(hub, closing)
 
 	if !pm.IsSubscribed(pm.getChatChannel("chatA")) {
 		t.Fatal("chat another user follows was unsubscribed")
@@ -498,7 +505,7 @@ func TestJoinChatAfterDisconnectIsIgnored(t *testing.T) {
 	client := newTestClient("c1", bson.NewObjectID())
 	addClient(hub, client)
 	stubSubscriptions(hub, pm.getChatChannel("chatA"))
-	hub.handleClientUnregistration(client)
+	unregisterAndWait(hub, client)
 
 	_ = hub.JoinChat(context.Background(), client, "chatA")
 
@@ -541,7 +548,7 @@ func TestJoinDuringChannelReleaseKeepsSubscription(t *testing.T) {
 		once.Do(func() { _ = hub.JoinChat(context.Background(), joining, chatID) })
 	}
 
-	hub.handleClientUnregistration(leaving)
+	unregisterAndWait(hub, leaving)
 
 	if !inRoomUnlocked(hub, chatID, joining.ID) {
 		t.Fatal("joiner is not in the room")
