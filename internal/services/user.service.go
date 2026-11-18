@@ -112,8 +112,32 @@ func DeleteProfile(ctx context.Context, userID string) error {
 	}
 
 	filter := bson.M{"_id": objectID}
+	users := database.DB.Collection(string(constants.UserColl))
 
-	result, err := database.DB.Collection(string(constants.UserColl)).DeleteOne(ctx, filter)
+	if n, err := users.CountDocuments(ctx, filter); err != nil {
+		return fmt.Errorf("failed to find profile: %w", err)
+	} else if n == 0 {
+		return fmt.Errorf("%w", ErrUserNotFound)
+	}
+
+	// Everything that points at the account goes first and the account last (#35):
+	// a delete that stops partway leaves a working account, and running it again
+	// finishes the job. Deleting the account first would leave its references for good.
+	if err := scrubContacts(ctx, objectID); err != nil {
+		return err
+	}
+	chatIDs, err := chatsWithParticipant(ctx, objectID)
+	if err != nil {
+		return err
+	}
+	if err := leaveChatsOnDelete(ctx, objectID, chatIDs); err != nil {
+		return err
+	}
+	if err := anonymizeMessages(ctx, objectID); err != nil {
+		return err
+	}
+
+	result, err := users.DeleteOne(ctx, filter)
 	if err != nil {
 		return fmt.Errorf("failed to delete profile: %w", err)
 	}
