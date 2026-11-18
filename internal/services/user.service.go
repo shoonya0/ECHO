@@ -112,8 +112,27 @@ func DeleteProfile(ctx context.Context, userID string) error {
 	}
 
 	filter := bson.M{"_id": objectID}
+	users := database.DB.Collection(string(constants.UserColl))
 
-	result, err := database.DB.Collection(string(constants.UserColl)).DeleteOne(ctx, filter)
+	if n, err := users.CountDocuments(ctx, filter); err != nil {
+		return fmt.Errorf("failed to find profile: %w", err)
+	} else if n == 0 {
+		return fmt.Errorf("%w", ErrUserNotFound)
+	}
+
+	// Lock the token out before the cleanup, so the account can't add references the
+	// cleanup has already passed (code review of #35). If the delete then fails, the
+	// lock lapses with the cache entry (AccountAccessCacheTTL) and it can be retried.
+	MarkAccountDeleted(ctx, objectID)
+
+	// Everything that points at the account goes first and the account last (#35):
+	// a delete that stops partway leaves the account, and running it again finishes
+	// the job. Deleting the account first would leave its references for good.
+	if err := scrubAccountReferences(ctx, objectID); err != nil {
+		return err
+	}
+
+	result, err := users.DeleteOne(ctx, filter)
 	if err != nil {
 		return fmt.Errorf("failed to delete profile: %w", err)
 	}
@@ -122,9 +141,16 @@ func DeleteProfile(ctx context.Context, userID string) error {
 		return fmt.Errorf("%w", ErrUserNotFound)
 	}
 
-	// Lock the token out now, not when the cached account check expires (#33).
+	// Lock it again, for the full cache lifetime from now (#33).
 	MarkAccountDeleted(ctx, objectID)
 
+	// Others could still add the account (to a group, as a contact) while it existed
+	// during the cleanup. Now that it's gone nothing can, so one more pass catches those.
+	// The account is deleted either way, so a failure here is logged, not returned.
+	if err := scrubAccountReferences(ctx, objectID); err != nil {
+		logger.WithContext(ctx).WithError(err).WithField("user", objectID.Hex()).
+			Error("References added during an account delete may remain")
+	}
 	return nil
 }
 

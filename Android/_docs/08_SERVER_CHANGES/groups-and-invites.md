@@ -26,7 +26,7 @@ Details: [groups.md](../../../_docs/rest-api/groups.md#groups).
 
 - A group holds at most 100 people. A create, add or join by code past that adds nobody:
   REST `409` `Group is full`, WebSocket `GROUP_FULL`. Show "group is full"; don't retry.
-- `stats.participantCount` is now correct, but counts pending members (#5) and deleted accounts (#35).
+- `stats.participantCount` is now correct, and counts pending members (#5).
 - A `pending` member accepts by joining with a code (`200`, invites cleared). Live messages start at once (#49).
 
 Details: [rest-api/](../../../_docs/rest-api/groups.md#groups).

@@ -4,6 +4,15 @@ Older entries moved here from
 [current-state.md](./current-state.md#recently-finished), newest first. Links point to
 the docs that describe each change today. Newer work is listed on that page.
 
+- **#16 (PR #109):** a group's `stats.participantCount` follows every add, join and
+  removal, and a startup backfill resets drifted groups (skipping malformed ones). It
+  counts pending members and deleted accounts ([app changes](../Android/_docs/08_SERVER_CHANGES/README.md)).
+  From the code review: #110 (derive the count instead of maintaining it).
+- **#62 (PR #108):** `GET users/contacts` leaves out people you blocked; `GET /blocked`
+  lists them ([REST](./rest-api/users.md#contacts), [app changes](../Android/_docs/08_SERVER_CHANGES/README.md)).
+- **#104 (PR #107):** creating an invite code returns it in `data`, shaped like an entry
+  of the group's list ([REST](./rest-api/groups.md#groups),
+  [app changes](../Android/_docs/08_SERVER_CHANGES/README.md)).
 - **#59 (PR #105):** a non-member gets the same answer whether or not a chat exists:
   `PERMISSION_DENIED` from `send_message`, `invite_user` and `remove_user`, `404` from
   REST `add-members` ([protocol](./WEBSOCKET_PROTOCOL.md#error-codes),

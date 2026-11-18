@@ -37,7 +37,7 @@ Checked against the code at `17ec08b`. Issue numbers were last updated on 2026-1
 | Feature | What people can do | Status | Known gaps |
 |---|---|---|---|
 | Accounts | Sign up, log in (lasts 7 days), log out | Works | A ban made in the database takes up to 30 seconds to apply, and about a minute to close an open WebSocket. Also #36, #65. |
-| Profiles | View, edit and delete your profile; view other people's | Works | Deleting a profile leaves old references behind (#35). |
+| Profiles | View, edit and delete your profile; view other people's | Works | Deleting removes you from contact lists and groups; your messages stay as "Deleted user" (#35). |
 | Finding people | Get suggestions of people to add | Works | The "nearby" and "popular" lists are empty placeholders. |
 | Contacts | Send, accept and decline requests; remove; favorites; block and unblock | Partly works | A block stops direct chats in both directions (#27). Also #39, #62, #63. |
 | Direct chats | Start a chat with one person | Works | A new chat reaches the open connections of both people at once (#49). |
