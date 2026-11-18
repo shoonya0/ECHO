@@ -38,3 +38,14 @@ func TestUpdateProfileKeepsEmail(t *testing.T) {
 		t.Fatalf("phone = %q, want the update applied", got.Phone)
 	}
 }
+
+// Only the email field itself is immutable, not every key that starts with
+// "email" (code review of #36).
+func TestIsImmutableUpdateKeyEmailIsExact(t *testing.T) {
+	if !isImmutableUpdateKey("email") {
+		t.Fatalf("email: want immutable")
+	}
+	if isImmutableUpdateKey("emailVerified") {
+		t.Fatalf("emailVerified: want it left to the whitelist")
+	}
+}

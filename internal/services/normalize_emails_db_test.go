@@ -24,12 +24,12 @@ func storedEmail(t *testing.T, id bson.ObjectID) string {
 // Emails stored before #36 keep their capitals; the startup migration lowers
 // them. One that would collide with an existing lower-case account is left as
 // it is and reported, since only a person can decide how to merge the two.
+// Run without indexes: the unique email index may be missing, and the
+// migration must still not give two accounts one email (code review of #36).
 func TestNormalizeEmails(t *testing.T) {
 	ctx := testutil.UseTestDB(t)
-	if err := database.EnsureIndexes(ctx); err != nil {
-		t.Fatalf("ensure indexes: %v", err)
-	}
 	mixed := insertAccount(t, ctx, bson.M{"email": " Mixed@Case.COM"})
+	unicode := insertAccount(t, ctx, bson.M{"email": "Ärger@X.de"})
 	plain := insertAccount(t, ctx, bson.M{"email": "plain@example.com"})
 	owner := insertAccount(t, ctx, bson.M{"email": "victim@example.com"})
 	lookalike := insertAccount(t, ctx, bson.M{"email": "VICTIM@example.com"})
@@ -38,11 +38,12 @@ func TestNormalizeEmails(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NormalizeEmails: %v", err)
 	}
-	if updated != 1 || len(conflicts) != 1 || conflicts[0] != lookalike {
-		t.Fatalf("updated %d, conflicts %v; want 1 and [%s]", updated, conflicts, lookalike.Hex())
+	if updated != 2 || len(conflicts) != 1 || conflicts[0] != lookalike {
+		t.Fatalf("updated %d, conflicts %v; want 2 and [%s]", updated, conflicts, lookalike.Hex())
 	}
 	for id, want := range map[bson.ObjectID]string{
 		mixed:     "mixed@case.com",
+		unicode:   "ärger@x.de",
 		plain:     "plain@example.com",
 		owner:     "victim@example.com",
 		lookalike: "VICTIM@example.com",

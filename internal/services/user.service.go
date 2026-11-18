@@ -380,10 +380,13 @@ func dropImmutableUpdateKeys(updateMap map[string]interface{}) {
 // isImmutableUpdateKey reports whether a dotted key targets a field the user
 // must not change directly.
 func isImmutableUpdateKey(key string) bool {
+	// Exact, not a prefix, so a later field such as emailVerified isn't caught.
+	// No password or address check exists for an email change yet (#36).
+	if key == "email" {
+		return true
+	}
 	immutablePrefixes := []string{
 		"accountStatus.",
-		// No password or address check exists for a change yet (#36).
-		"email",
 		"createdAt",
 		"updatedAt",
 		"passwordHash",

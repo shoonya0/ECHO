@@ -146,22 +146,21 @@ func BackfillParticipantCounts(ctx context.Context) (int64, error) {
 }
 
 // NormalizeEmails stores every email trimmed and in lower case, the form signup and login
-// use since #36. Before that, emails were stored as typed, so Alice@x.com couldn't log in
-// as alice@x.com. A user whose normalized email is already another account's is left as
-// it is and returned in conflicts: the unique email index refuses the change, and merging
-// two accounts is a person's call. Such an account can't log in until then. Idempotent.
-// Returns the number of users updated and the IDs of the conflicting ones.
+// use since #36. Signup and login already match emails ignoring case, so this is a cleanup,
+// not something logins wait for. A user whose normalized email is already another account's
+// is left as it is and returned in conflicts: merging two accounts is a person's call. That
+// is checked here, not left to the unique email index, which may be missing. The
+// comparison is done in Go, with the same function signup and login use, so it agrees with
+// them on every character. Idempotent. Returns the number of users updated and the IDs of
+// the conflicting ones.
 func NormalizeEmails(ctx context.Context) (updated int64, conflicts []bson.ObjectID, err error) {
 	users := database.DB.Collection(string(constants.UserColl))
 	cur, err := users.Find(ctx,
-		bson.M{
-			"email": bson.M{"$type": "string"},
-			"$expr": bson.M{"$ne": bson.A{"$email", bson.M{"$toLower": bson.M{"$trim": bson.M{"input": "$email"}}}}},
-		},
+		bson.M{"email": bson.M{"$type": "string"}},
 		options.Find().SetProjection(bson.M{"email": 1}),
 	)
 	if err != nil {
-		return 0, nil, fmt.Errorf("find emails to normalize: %w", err)
+		return 0, nil, fmt.Errorf("find emails: %w", err)
 	}
 	defer func() { _ = cur.Close(ctx) }() // read-only cursor; a close error changes nothing
 
@@ -173,12 +172,24 @@ func NormalizeEmails(ctx context.Context) (updated int64, conflicts []bson.Objec
 		if err := cur.Decode(&u); err != nil {
 			return updated, conflicts, fmt.Errorf("decode user: %w", err)
 		}
-		// Filtered on the old value, so a signup or change in between isn't overwritten.
+		normalized := utils.NormalizeEmail(u.Email)
+		if normalized == u.Email {
+			continue
+		}
+		taken, err := users.CountDocuments(ctx, bson.M{"email": normalized, "_id": bson.M{"$ne": u.ID}})
+		if err != nil {
+			return updated, conflicts, fmt.Errorf("check email of %s: %w", u.ID.Hex(), err)
+		}
+		if taken > 0 {
+			conflicts = append(conflicts, u.ID)
+			continue
+		}
+		// Filtered on the old value, so a change in between isn't overwritten.
 		res, err := users.UpdateOne(ctx,
 			bson.M{"_id": u.ID, "email": u.Email},
-			bson.M{"$set": bson.M{"email": utils.NormalizeEmail(u.Email)}},
+			bson.M{"$set": bson.M{"email": normalized}},
 		)
-		if mongo.IsDuplicateKeyError(err) {
+		if mongo.IsDuplicateKeyError(err) { // a signup took it since the check
 			conflicts = append(conflicts, u.ID)
 			continue
 		}
