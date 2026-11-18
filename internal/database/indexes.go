@@ -13,6 +13,12 @@ import (
 	"go.mongodb.org/mongo-driver/v2/mongo/options"
 )
 
+// EmailCollation compares emails without regard to case (#36). Signup and login
+// query users.email with it, so an email stored with capitals before #36 still
+// matches, whether or not the startup migration has lowered it yet. The
+// email_ci index has the same collation, so those queries can use it.
+var EmailCollation = &options.Collation{Locale: "en", Strength: 2}
+
 // collectionIndexes is the set of secondary indexes one collection needs.
 type collectionIndexes struct {
 	coll   constants.Collection
@@ -52,6 +58,19 @@ var indexSpecs = []collectionIndexes{
 			{
 				Keys:    bson.D{{Key: "email", Value: 1}},
 				Options: options.Index().SetName("email_1").SetUnique(true),
+			},
+		},
+	},
+	{
+		// Its own entry, so duplicate emails failing email_1 can't stop it.
+		coll: constants.UserColl,
+		models: []mongo.IndexModel{
+			// Signup and login match emails ignoring case (#36). Not unique: emails
+			// stored before #36 can differ only in case, and that mustn't stop the
+			// build. Uniqueness comes from storing emails lower case under email_1.
+			{
+				Keys:    bson.D{{Key: "email", Value: 1}},
+				Options: options.Index().SetName("email_ci").SetCollation(EmailCollation),
 			},
 		},
 	},

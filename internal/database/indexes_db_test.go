@@ -36,3 +36,30 @@ func TestEnsureIndexesBuildsTheInviteCodeIndex(t *testing.T) {
 	}
 	t.Fatalf("no inviteCode.inviteCode_1 index on chats; have %v", indexes)
 }
+
+// The case-insensitive email index (#36) is built even when emails stored
+// before #36 differ only in case, which makes the unique email_1 fail.
+func TestEnsureIndexesBuildsEmailCIDespiteCaseDuplicates(t *testing.T) {
+	ctx := testutil.UseTestDB(t)
+	users := database.DB.Collection(string(constants.UserColl))
+	if _, err := users.InsertMany(ctx, []any{
+		bson.M{"email": "dup@example.com"}, bson.M{"email": "dup@example.com"},
+		bson.M{"email": "Dup@Example.com"},
+	}); err != nil {
+		t.Fatalf("insert users: %v", err)
+	}
+	if err := database.EnsureIndexes(ctx); err == nil {
+		t.Fatalf("EnsureIndexes: want the email_1 error for the exact duplicates")
+	}
+
+	specs, err := users.Indexes().ListSpecifications(ctx)
+	if err != nil {
+		t.Fatalf("list indexes: %v", err)
+	}
+	for _, s := range specs {
+		if s.Name == "email_ci" {
+			return
+		}
+	}
+	t.Fatalf("email_ci missing; indexes: %v", specs)
+}

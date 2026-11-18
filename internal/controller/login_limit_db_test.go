@@ -11,14 +11,11 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
-	"golang.org/x/crypto/bcrypt"
 
 	"github.com/shoonya0/ECHO/internal/config"
-	"github.com/shoonya0/ECHO/internal/constants"
 	"github.com/shoonya0/ECHO/internal/database"
 	"github.com/shoonya0/ECHO/internal/services"
 	"github.com/shoonya0/ECHO/internal/testutil"
-	"github.com/shoonya0/ECHO/internal/utils"
 )
 
 // useLoginLimits sets small login limits for the test and clears any count an
@@ -174,31 +171,25 @@ func TestLoginUnknownEmailStoresNoCount(t *testing.T) {
 
 // An attacker's lookalike account must not reset the victim's count (security
 // review of #40). Since #36 signup refuses an email that differs only in case,
-// and login lowercases the email, so even a lookalike stored before #36 can't be
-// logged into: its password is checked against the victim's account and counted.
+// but one stored before #36 can still exist. Login prefers the account whose
+// stored email matches exactly, so its owner gets in, and the counts stay per
+// account: the lookalike's login doesn't clear the victim's.
 func TestLoginLookalikeAccountKeepsVictimCount(t *testing.T) {
 	setupVictim(t, 3, 100)
 	if w := postJSON(Signup, `{"email":"VICTIM@example.com","username":"decoy","password":"decoy-pass-1"}`); w.Code != http.StatusConflict {
 		t.Fatalf("decoy signup: status %d, want 409 (body %s)", w.Code, w.Body)
 	}
-	hash, err := bcrypt.GenerateFromPassword([]byte("decoy-pass-1"), bcrypt.MinCost)
-	if err != nil {
-		t.Fatalf("hash: %v", err)
-	}
-	legacy := utils.NewUserWithDefaults("VICTIM@example.com", "decoy", string(hash))
-	if _, err := database.DB.Collection(string(constants.UserColl)).InsertOne(context.Background(), legacy); err != nil {
-		t.Fatalf("insert legacy lookalike: %v", err)
-	}
+	insertLegacyUser(t, "VICTIM@example.com", "decoy-pass-1")
 	ip := "198.51.100.1"
 
 	for range 2 {
 		loginFrom(ip, victimWrong)
 	}
-	if w := loginFrom(ip, `{"email":"VICTIM@example.com","password":"decoy-pass-1"}`); w.Code != http.StatusUnauthorized {
-		t.Fatalf("login with the lookalike's password: status %d, want 401 (body %s)", w.Code, w.Body)
+	if w := loginFrom(ip, `{"email":"VICTIM@example.com","password":"decoy-pass-1"}`); w.Code != http.StatusOK {
+		t.Fatalf("legacy lookalike login: status %d, want 200 (body %s)", w.Code, w.Body)
 	}
-	// That was the third failure on the victim's account: at the limit.
+	loginFrom(ip, victimWrong) // third guess: at the limit
 	if w := loginFrom(ip, victimRight); w.Code != http.StatusTooManyRequests {
-		t.Fatalf("next try after the lookalike login: status %d, want 429", w.Code)
+		t.Fatalf("victim after the lookalike login: status %d, want 429", w.Code)
 	}
 }
