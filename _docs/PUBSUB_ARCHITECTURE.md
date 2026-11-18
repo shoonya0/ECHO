@@ -150,7 +150,7 @@ its connections live, though it is still in the chat history (#43).
 
 | What you see | What to check |
 |---|---|
-| A message is saved but doesn't arrive live | Does the person's connection follow the chat? A pending member gets nothing live (#17). Look for "may not follow a new chat" in the server log (#49). |
+| A message is saved but doesn't arrive live | Does the person's connection follow the chat? A pending member gets nothing live until they accept (#5). Look for "may not follow a new chat" in the server log (#49). |
 | Nobody gets live messages | Is Redis up? Look for publish errors in the server log. |
 | Memory or Redis connections keep growing | Known problem: #21 |
 | Online status is wrong | Known problem: #31 |
@@ -165,7 +165,6 @@ stats token. See
 |---|---|
 | #21 | Each Redis channel uses its own connection, so connections grow with users and chats |
 | #22 | Slow MongoDB or Redis calls hold up all connects and disconnects |
-| #17 | Pending group members don't get live messages |
 | #31 | Online status is unreliable |
 | #40 | Rate limits are per socket, not per account |
 | #43 | Apps can't detect or recover missed live messages |

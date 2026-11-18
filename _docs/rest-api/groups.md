@@ -13,6 +13,9 @@ Index: [REST API](./README.md). Shared rules: [the basics](./basics.md).
 | `DELETE groups/invites/:inviteID` | Deletes an invite code |
 | `GET groups/invites/:inviteID/joined` | Shows who joined with that code |
 | `POST groups/invites/:inviteID/:userID/send` | Sends a code to someone |
+| `GET groups/pending` | Lists groups you are invited to and haven't answered: `chatId`, `name`, `description`, `participantCount`, `invitedBy`, `invitedAt`, newest group first (#5) |
+| `POST groups/:groupID/accept` | Accepts your invite: you become an `accepted` member, get the group's live messages at once, and your invitations to it are cleared. `404` if you have no pending invite to that group (whether or not it exists), `409` if you are already a member (#5) |
+| `POST groups/:groupID/decline` | Declines your invite: you are taken out of the group and can be added again later. Same `404` and `409` (#5) |
 | `POST groups/join/:inviteCode` | Joins a group with a code, or accepts if you are a `pending` member (#103). Clears your invitations to the group. |
 
 `:inviteID` and `:inviteCode` are both the code itself. Creating, listing, deleting and
@@ -24,8 +27,11 @@ sending codes, and `joined`, are for owners and admins (#30): members `403`, oth
   one invite code.
 - People added when the group is created, or later with `add-members` or `invite_user`,
   become `member` with status `pending` and can read and write.
-- Pending members have full access (#5) but no live messages (#17) until they accept by
-  joining with any usable code (#103; `send` works for them). No decline yet.
+- Pending members accept with `accept` (or by joining with any usable code, #103; `send`
+  works for them) or decline with `decline`. Until they accept they get no live messages,
+  and they still pass the other membership checks until #5's next step
+  ([decided](../decisions.md#who-counts-as-a-chat-member)). Members left pending before
+  this change were accepted by a startup backfill.
 - `add-members` returns `403` for members who aren't an owner or admin, `404` if you aren't
   in the group (#59). People already in are skipped; if everyone is already in, `409`.
 - An invite code is 32 random hex characters (#15); codes made before 2026-11-14 are

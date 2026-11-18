@@ -147,7 +147,7 @@ Old messages are loaded [over REST](./rest-api/chats.md#messages), not over the 
 | Type | Who is in it | Who can send |
 |---|---|---|
 | `direct` | Two people | Both |
-| `group` | The creator plus at least one other person. At most 100 people; an add past that gets `GROUP_FULL` (#68). | Everyone in `participants`, including pending members (#5). If a member has a `permissions` list, it must include `write`, `send_message`, `admin` or `owner`. |
+| `group` | The creator plus at least one other person. At most 100 people; an add past that gets `GROUP_FULL` (#68). | Everyone in `participants`, including pending members until #5's next step; they get live events only once they accept. If a member has a `permissions` list, it must include `write`, `send_message`, `admin` or `owner`. |
 | `channel` | Planned. Nothing can create one yet. | The code would allow only `admin` and `owner`. |
 
 - Groups get a name and description when created. They can't be changed afterwards,
