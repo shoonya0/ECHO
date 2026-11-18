@@ -206,6 +206,137 @@ func NormalizeEmails(ctx context.Context) (updated int64, conflicts []bson.Objec
 	return updated, conflicts, nil
 }
 
+// forgedEntriesMarker is the migrations document that records RemoveForgedChatEntries
+// finished a run without errors.
+const forgedEntriesMarker = "remove-forged-chat-entries-69"
+
+// RemoveForgedChatEntries removes chats.<id> entries from users whose chat doesn't
+// list them in participants, or no longer exists (#69). Before #9 was fixed, a forged
+// invite code wrote such an entry without making the user a participant. Pending
+// members (#5) are participants, so their entries stay. Every write path adds the
+// participant before the entry, so an entry for a join in progress is kept; one that
+// a join adds while it is being removed is written back. It runs until one run
+// finishes without errors, then never again: the code that wrote these is gone. A
+// failure on one user doesn't stop the others; all failures are returned together.
+// Returns the number of entries removed, which also shows whether forged joins
+// happened.
+func RemoveForgedChatEntries(ctx context.Context) (int64, error) {
+	migrations := database.DB.Collection(string(constants.MigrationColl))
+	done, err := migrations.CountDocuments(ctx, bson.M{"_id": forgedEntriesMarker})
+	if err != nil {
+		return 0, fmt.Errorf("read the marker: %w", err)
+	}
+	if done > 0 {
+		return 0, nil
+	}
+
+	users := database.DB.Collection(string(constants.UserColl))
+	chats := database.DB.Collection(string(constants.ChatColl))
+	cur, err := users.Find(ctx,
+		bson.M{"chats": bson.M{"$type": "object", "$ne": bson.M{}}},
+		options.Find().SetProjection(bson.M{"chats": 1}),
+	)
+	if err != nil {
+		return 0, fmt.Errorf("find users with chats: %w", err)
+	}
+	defer func() { _ = cur.Close(ctx) }() // read-only cursor; a close error changes nothing
+
+	var removed int64
+	var errs []error
+	for cur.Next(ctx) {
+		var u struct {
+			ID    bson.ObjectID `bson:"_id"`
+			Chats bson.M        `bson:"chats"`
+		}
+		if err := cur.Decode(&u); err != nil {
+			errs = append(errs, fmt.Errorf("decode user: %w", err))
+			continue
+		}
+		listed := make([]bson.ObjectID, 0, len(u.Chats))
+		for key := range u.Chats {
+			if id, err := bson.ObjectIDFromHex(key); err == nil {
+				listed = append(listed, id)
+			}
+		}
+		if len(listed) == 0 {
+			continue
+		}
+		member, err := chatsListing(ctx, chats, listed, u.ID)
+		if err != nil {
+			errs = append(errs, fmt.Errorf("check chats of %s: %w", u.ID.Hex(), err))
+			continue
+		}
+		unset := bson.M{}
+		var stale []bson.ObjectID
+		for _, id := range listed {
+			if !member[id] {
+				unset["chats."+id.Hex()] = ""
+				stale = append(stale, id)
+			}
+		}
+		if len(stale) == 0 {
+			continue
+		}
+		if _, err := users.UpdateOne(ctx, bson.M{"_id": u.ID}, bson.M{"$unset": unset}); err != nil {
+			errs = append(errs, fmt.Errorf("remove entries of %s: %w", u.ID.Hex(), err))
+			continue
+		}
+		// A join that made the user a participant after the check above kept its
+		// entry ($max on one already there), so the unset took it: write it back.
+		joined, err := chatsListing(ctx, chats, stale, u.ID)
+		if err != nil {
+			errs = append(errs, fmt.Errorf("recheck chats of %s: %w", u.ID.Hex(), err))
+			continue
+		}
+		restore := bson.M{}
+		for id := range joined {
+			restore["chats."+id.Hex()] = 0
+		}
+		if len(restore) > 0 {
+			if _, err := users.UpdateOne(ctx, bson.M{"_id": u.ID}, bson.M{"$max": restore}); err != nil {
+				errs = append(errs, fmt.Errorf("restore entries of %s: %w", u.ID.Hex(), err))
+			}
+		}
+		removed += int64(len(stale) - len(joined))
+	}
+	if err := cur.Err(); err != nil {
+		errs = append(errs, fmt.Errorf("iterate users: %w", err))
+	}
+	if len(errs) > 0 {
+		return removed, errors.Join(errs...)
+	}
+	if _, err := migrations.UpdateOne(ctx,
+		bson.M{"_id": forgedEntriesMarker},
+		bson.M{"$setOnInsert": bson.M{"finishedAt": time.Now(), "removed": removed}},
+		options.UpdateOne().SetUpsert(true),
+	); err != nil {
+		return removed, fmt.Errorf("write the marker: %w", err)
+	}
+	return removed, nil
+}
+
+// chatsListing returns which of ids are chats that list userID in participants.
+func chatsListing(ctx context.Context, chats *mongo.Collection, ids []bson.ObjectID, userID bson.ObjectID) (map[bson.ObjectID]bool, error) {
+	cur, err := chats.Find(ctx,
+		bson.M{"_id": bson.M{"$in": ids}, participantField(userID): bson.M{"$exists": true}},
+		options.Find().SetProjection(bson.M{"_id": 1}),
+	)
+	if err != nil {
+		return nil, err
+	}
+	var found []struct {
+		ID bson.ObjectID `bson:"_id"`
+	}
+	if err := cur.All(ctx, &found); err != nil {
+		return nil, err
+	}
+	member := make(map[bson.ObjectID]bool, len(found))
+	for _, c := range found {
+		member[c.ID] = true
+	}
+	return member, nil
+}
+
 // legacyPendingMarker is the migrations document that stores the cutoff of
 // AcceptLegacyPendingMembers: the start of the first server that ran it.
 const legacyPendingMarker = "accept-legacy-pending-5"
