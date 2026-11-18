@@ -49,7 +49,7 @@ func UpdateProfile(ctx context.Context, userID bson.ObjectID, profileUpdate map[
 
 	// Before applying the update, fetch the existing document so we can
 	// prevent required fields from being overwritten with empty values.
-	// This protects identity/display fields (username, email, displayName)
+	// This protects identity/display fields (username, displayName)
 	// from being wiped by a partial request that omits them or sends "".
 	var existingDoc bson.M
 	err := database.DB.Collection(string(constants.UserColl)).FindOne(ctx, filter).Decode(&existingDoc)
@@ -380,6 +380,11 @@ func dropImmutableUpdateKeys(updateMap map[string]interface{}) {
 // isImmutableUpdateKey reports whether a dotted key targets a field the user
 // must not change directly.
 func isImmutableUpdateKey(key string) bool {
+	// Exact, not a prefix, so a later field such as emailVerified isn't caught.
+	// No password or address check exists for an email change yet (#36).
+	if key == "email" {
+		return true
+	}
 	immutablePrefixes := []string{
 		"accountStatus.",
 		"createdAt",
@@ -399,11 +404,10 @@ func isImmutableUpdateKey(key string) bool {
 
 // sanitizeUpdateFields walks a dotted-path update map and replaces any empty-
 // string/nil value for a required field with the previously stored value.
-// Required fields (never allowed to be empty): username, email, profile.displayName.
+// Required fields (never allowed to be empty): username, profile.displayName.
 func sanitizeUpdateFields(updateMap, existingDoc map[string]interface{}) {
 	required := map[string]bool{
 		"username":            true,
-		"email":               true,
 		"profile.displayName": true,
 	}
 
@@ -423,7 +427,7 @@ func sanitizeUpdateFields(updateMap, existingDoc map[string]interface{}) {
 			if defaultVal := defaultForRequired(key, existingDoc, updateMap); defaultVal != "" {
 				updateMap[key] = defaultVal
 			}
-			// username and email have no meaningful derivation; we leave
+			// username has no meaningful derivation; we leave
 			// the empty string so the caller/controller sees the error
 			// when it re-fetches the profile.
 		}

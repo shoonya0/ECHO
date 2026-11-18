@@ -46,8 +46,11 @@ func Signup(c *gin.Context) {
 		utils.ErrorResponse(c, http.StatusBadRequest, "invalid request", bindErrorDetail(err))
 		return
 	}
+	req.Email = utils.NormalizeEmail(req.Email)
 
-	count, err := database.DB.Collection(string(constants.UserColl)).CountDocuments(c.Request.Context(), bson.M{"email": req.Email})
+	count, err := database.DB.Collection(string(constants.UserColl)).CountDocuments(c.Request.Context(), bson.M{"email": req.Email},
+		// Also an email stored with capitals before #36, so nobody can sign up over it.
+		options.Count().SetCollation(database.EmailCollation))
 	if err != nil {
 		log.WithError(err).Error("failed to check email")
 		utils.ErrorResponse(c, http.StatusInternalServerError, "failed to check email", nil)
@@ -96,6 +99,8 @@ func Login(c *gin.Context) {
 		utils.ErrorResponse(c, http.StatusBadRequest, "invalid request", bindErrorDetail(err))
 		return
 	}
+	typed := strings.TrimSpace(req.Email)
+	req.Email = utils.NormalizeEmail(req.Email)
 
 	if req.Email == "" || req.Password == "" {
 		log.Debug("email and password are required")
@@ -116,8 +121,7 @@ func Login(c *gin.Context) {
 	}
 
 	// Decode into raw bson.M first to detect missing accountStatus field (legacy seed accounts).
-	var rawDoc bson.M
-	err := database.DB.Collection(string(constants.UserColl)).FindOne(c.Request.Context(), bson.M{"email": req.Email}, options.FindOne().SetProjection(userProjection)).Decode(&rawDoc)
+	rawDoc, err := findLoginUser(c.Request.Context(), typed, req.Email, userProjection)
 	if err == mongo.ErrNoDocuments {
 		log.Debug("invalid credentials")
 		utils.ErrorResponse(c, http.StatusUnauthorized, "invalid credentials", nil)
@@ -297,4 +301,38 @@ func normalizeDisplayName(displayName, username, email string) string {
 	}
 
 	return "User"
+}
+
+// findLoginUser finds the account for a login, matching the email without regard
+// to case (database.EmailCollation), so an email stored with capitals before #36
+// is found even before the startup migration lowers it. Emails stored before #36
+// can differ only in case; then the one stored exactly as typed wins, then the
+// lower-case one, then the oldest. Returns mongo.ErrNoDocuments for no match.
+func findLoginUser(ctx context.Context, typed, normalized string, projection bson.M) (bson.M, error) {
+	cur, err := database.DB.Collection(string(constants.UserColl)).Find(ctx,
+		bson.M{"email": normalized},
+		options.Find().
+			SetCollation(database.EmailCollation).
+			SetProjection(projection).
+			SetSort(bson.D{{Key: "_id", Value: 1}}).
+			SetLimit(10),
+	)
+	if err != nil {
+		return nil, err
+	}
+	var docs []bson.M
+	if err := cur.All(ctx, &docs); err != nil {
+		return nil, err
+	}
+	if len(docs) == 0 {
+		return nil, mongo.ErrNoDocuments
+	}
+	for _, want := range []string{typed, normalized} {
+		for _, d := range docs {
+			if email, _ := d["email"].(string); email == want {
+				return d, nil
+			}
+		}
+	}
+	return docs[0], nil
 }

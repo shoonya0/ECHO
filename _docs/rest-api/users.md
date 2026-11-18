@@ -6,8 +6,8 @@ Index: [REST API](./README.md). Shared rules: [the basics](./basics.md).
 
 | Route | What it does |
 |---|---|
-| `POST signup` | Creates an account. Send `email`, `username` and `password` (8 characters or more). `409` if the email is taken. The server picks the new user's ID and returns it as `data._id`. An `_id` in the request is ignored. `429` after 10 signups from one IP in an hour (#40). |
-| `POST login` | Send `email` and `password`. Returns `data.token` (valid for 7 days) and `data.user`. `401` for a wrong password, `403` for a banned or inactive account. `429` after 10 attempts on one account from one IP in 15 minutes, 100 on one account from all IPs in an hour, or 50 logins from one IP in 10 minutes, even with the right password. A successful login clears the account's counts (#40). |
+| `POST signup` | Creates an account. Send `email`, `username` and `password` (8 characters or more). The email is stored trimmed and in lower case, so `409` if it is taken in any case (#36). The server picks the new user's ID and returns it as `data._id`. An `_id` in the request is ignored. `429` after 10 signups from one IP in an hour (#40). |
+| `POST login` | Send `email` and `password`. The email's case doesn't matter (#36). Returns `data.token` (valid for 7 days) and `data.user`. `401` for a wrong password, `403` for a banned or inactive account. `429` after 10 attempts on one account from one IP in 15 minutes, 100 on one account from all IPs in an hour, or 50 logins from one IP in 10 minutes, even with the right password. A successful login clears the account's counts (#40). |
 | `POST auth/logout` | Cancels the token you are using |
 | `GET /health` | Returns `{"status":"ok"}`. It sits at the root, not under `/echo/v1/`, and needs no login. |
 
@@ -16,7 +16,7 @@ Index: [REST API](./README.md). Shared rules: [the basics](./basics.md).
 | Route | What it does |
 |---|---|
 | `GET profile/` | Your profile |
-| `PUT profile/` | Updates your profile. Only your username, email, phone, profile, presence and settings fields can change. Anything else is ignored. |
+| `PUT profile/` | Updates your profile. Only your username, phone, profile, presence and settings fields can change. Anything else is ignored, `email` included: it can't be changed yet ([decided](../decisions.md#changing-the-email-36)). |
 | `DELETE profile/delete` | Deletes your profile (see #35) |
 
 ## Finding people

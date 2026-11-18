@@ -11,25 +11,26 @@ on `main`. To learn what the product does, read
 and with a link to exactly one feature state.md. Updated by /close-increment and
 /feature-docs update. -->
 
-- **Feature:** none · **#40, login and signup limits** on `fix/40-auth-rate-limit`: login
-  attempts per IP + account (10 in 15 min) and per account (100 an hour), counted before
-  bcrypt and cleared on success; 50 logins per IP in 10 min, 10 signups per IP an hour; `429` `RATE_LIMITED` with `Retry-After`
-  ([REST](./rest-api/users.md#accounts), [decided](./decisions.md#how-login-and-signup-limits-find-the-client-40)).
-  IP from `CLIENT_IP_HEADER` (Render: `True-Client-IP`). Verified: `verify.mjs --full`,
-  `TEST_DB_REQUIRED=1 go test ./...`, local server (11th login and signup get `429`)
+- **Feature:** none · on `fix/36-email-case` (not pushed): #36 parts 1 and 3. Emails are
+  stored trimmed and lower case; signup and login match them ignoring case (`email_ci`
+  collation index), so legacy capitals work before the startup `NormalizeEmails` lowers
+  them. `PUT profile/` no longer changes `email` ([decided](./decisions.md#changing-the-email-36)).
+  Code + security review fixed (5 findings); `verify --full` passed with
+  `TEST_DB_REQUIRED=1`. Left on #36: unique usernames, stale display copies
+- **Next step:** push, PR, ask before merge. Propose an issue for a change-email flow. On
+  Render after deploy: `email_ci` built, and any `Normalized emails` / conflict log lines
+- **#40 on Render (not checked yet):** a login loop with a forged `True-Client-IP` and
+  `X-Forwarded-For` must still get `429`, and two real clients mustn't share a count. If
+  Render's edge doesn't set `True-Client-IP`, unset `CLIENT_IP_HEADER` and note it on #40.
+  The user runs this check (it sends traffic to production). Details:
+  [decided](./decisions.md#how-login-and-signup-limits-find-the-client-40)
 - **#72 on Render (paused 2026-11-15):** `/health` answers `200`, but no chat with a message
   saved before PR #74 (`reactions: null`) is left to react to. Continue later, for example
   by setting `reactions: null` on a test message in Atlas first
-- **Code review fixed:** concurrent guesses, the lockout of other users, typos adding up,
-  Redis filling with made-up emails, non-IP header values, Redis < 7. Security review fixed:
-  counts are keyed by account ID, so a lookalike account (case differs) can't clear them.
-  Left: emails that
-  differ only in case are separate accounts (#36); a fixed window allows ~2x at its edge
-- **Next step:** PR; ask before merging. After
-  deploy: on Render, a login loop with a forged `X-Forwarded-For` must still get `429`, and
-  two real clients mustn't share a bucket (else unset `CLIENT_IP_HEADER`, note it on #40).
-  Split `websocket-requests.md` and `websocket-events.md` (~199 lines) before adding to them
-- **Updated:** 2026-11-17 on `fix/40-auth-rate-limit` from `77fc8f5`
+- **Still open on #40:** a per-account WebSocket limit, mention lookups, `CheckOrigin`.
+  Proposed, not filed: hide which emails have accounts (signup `409`, login timing). Split
+  `websocket-requests.md` and `websocket-events.md` (~199 lines) before adding to them
+- **Updated:** 2026-11-18 on `fix/36-email-case`
 
 ## Where things stand
 
@@ -44,6 +45,14 @@ declining a group invite. The full list is in
 
 ## Recently finished
 
+- **#40, login and signup (PR #139):** login attempts are counted per IP + account (10 in
+  15 min) and per account (100 an hour), before bcrypt, by account ID, and cleared on
+  success; 50 logins per IP in 10 min, 10 signups per IP an hour. Over that: `429`
+  `RATE_LIMITED` with `Retry-After` ([REST](./rest-api/users.md#accounts),
+  [decided](./decisions.md#how-login-and-signup-limits-find-the-client-40),
+  [app changes](../Android/_docs/08_SERVER_CHANGES/auth-and-connection.md)). The client IP
+  comes from `CLIENT_IP_HEADER`; `X-Forwarded-For` is no longer trusted. Code and security
+  reviews fixed; left: case-sensitive emails (#36), ~2x at a window's edge.
 - **#79 (PR #138):** `Hub.Restart` and the WebSocket controller's cancelled-context check
   are removed: nothing cancels the hub in production, and the path started duplicate loops
   and raced on `hub.Ctx`. Each background loop gets its context from `startLoops`.
@@ -127,16 +136,7 @@ declining a group invite. The full list is in
 - **#104 (PR #107):** creating an invite code returns it in `data`, shaped like an entry
   of the group's list ([REST](./rest-api/groups.md#groups),
   [app changes](../Android/_docs/08_SERVER_CHANGES/README.md)).
-- **#59 (PR #105):** a non-member gets the same answer whether or not a chat exists:
-  `PERMISSION_DENIED` from `send_message`, `invite_user` and `remove_user`, `404` from
-  REST `add-members` ([protocol](./WEBSOCKET_PROTOCOL.md#error-codes),
-  [app changes](../Android/_docs/08_SERVER_CHANGES/README.md)). Security review: nothing found.
-  From the code review: #106.
-- **#30 (PR #102):** only owners and admins create, list, delete or send invite codes or
-  see who joined: other members get `403`, anyone not in the group `404`
-  ([REST](./rest-api/groups.md#groups), [app changes](../Android/_docs/08_SERVER_CHANGES/README.md)).
-  Security review: nothing found. From the code review: #103, #104.
-Older work, from #67 (PR #101) back: [finished-work.md](./finished-work.md).
+Older work, from #59 (PR #105) back: [finished-work.md](./finished-work.md).
 
 ## How to build, run, test
 
@@ -182,7 +182,7 @@ There are 15 open issues. Where each risk sits in the code: [architecture-overvi
 | Live connections | The server can leak resources or stall under load, missed live messages can't be detected, and open connections miss new chats | #21, #22, #43, #49, #117 |
 | Groups | Members are never asked to accept, pending members get no live messages, and the participant count is maintained by hand | #5, #17, #110 |
 | Invite codes | Entries left by forged joins before #9 was fixed are still stored | #69 |
-| Accounts | Deleting an account leaves old references, emails are case-sensitive, and usernames aren't unique | #35, #36 |
+| Accounts | Deleting an account leaves old references, usernames aren't unique, and display copies go stale | #35, #36 |
 | Contacts and blocking | Contact lists aren't cut to `limit`, and blocks written during a deploy can be missed | #39, #63 |
 | Online status and privacy | Online status is unreliable, and privacy settings aren't applied | #31, #32 |
 | Messages and data | Writes can half-finish, and some lists grow without limit | #37, #42 |

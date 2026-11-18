@@ -6,6 +6,7 @@ import (
 
 	"github.com/shoonya0/ECHO/internal/constants"
 	"github.com/shoonya0/ECHO/internal/database"
+	"github.com/shoonya0/ECHO/internal/utils"
 
 	"go.mongodb.org/mongo-driver/v2/bson"
 	"go.mongodb.org/mongo-driver/v2/mongo"
@@ -142,4 +143,63 @@ func BackfillParticipantCounts(ctx context.Context) (int64, error) {
 		return 0, fmt.Errorf("backfill participant counts: %w", err)
 	}
 	return res.ModifiedCount, nil
+}
+
+// NormalizeEmails stores every email trimmed and in lower case, the form signup and login
+// use since #36. Signup and login already match emails ignoring case, so this is a cleanup,
+// not something logins wait for. A user whose normalized email is already another account's
+// is left as it is and returned in conflicts: merging two accounts is a person's call. That
+// is checked here, not left to the unique email index, which may be missing. The
+// comparison is done in Go, with the same function signup and login use, so it agrees with
+// them on every character. Idempotent. Returns the number of users updated and the IDs of
+// the conflicting ones.
+func NormalizeEmails(ctx context.Context) (updated int64, conflicts []bson.ObjectID, err error) {
+	users := database.DB.Collection(string(constants.UserColl))
+	cur, err := users.Find(ctx,
+		bson.M{"email": bson.M{"$type": "string"}},
+		options.Find().SetProjection(bson.M{"email": 1}),
+	)
+	if err != nil {
+		return 0, nil, fmt.Errorf("find emails: %w", err)
+	}
+	defer func() { _ = cur.Close(ctx) }() // read-only cursor; a close error changes nothing
+
+	for cur.Next(ctx) {
+		var u struct {
+			ID    bson.ObjectID `bson:"_id"`
+			Email string        `bson:"email"`
+		}
+		if err := cur.Decode(&u); err != nil {
+			return updated, conflicts, fmt.Errorf("decode user: %w", err)
+		}
+		normalized := utils.NormalizeEmail(u.Email)
+		if normalized == u.Email {
+			continue
+		}
+		taken, err := users.CountDocuments(ctx, bson.M{"email": normalized, "_id": bson.M{"$ne": u.ID}})
+		if err != nil {
+			return updated, conflicts, fmt.Errorf("check email of %s: %w", u.ID.Hex(), err)
+		}
+		if taken > 0 {
+			conflicts = append(conflicts, u.ID)
+			continue
+		}
+		// Filtered on the old value, so a change in between isn't overwritten.
+		res, err := users.UpdateOne(ctx,
+			bson.M{"_id": u.ID, "email": u.Email},
+			bson.M{"$set": bson.M{"email": normalized}},
+		)
+		if mongo.IsDuplicateKeyError(err) { // a signup took it since the check
+			conflicts = append(conflicts, u.ID)
+			continue
+		}
+		if err != nil {
+			return updated, conflicts, fmt.Errorf("normalize email of %s: %w", u.ID.Hex(), err)
+		}
+		updated += res.ModifiedCount
+	}
+	if err := cur.Err(); err != nil {
+		return updated, conflicts, fmt.Errorf("iterate users: %w", err)
+	}
+	return updated, conflicts, nil
 }

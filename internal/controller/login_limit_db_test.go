@@ -169,24 +169,27 @@ func TestLoginUnknownEmailStoresNoCount(t *testing.T) {
 	}
 }
 
-// Two accounts whose emails differ only in case are separate accounts (#36), so
-// a correct login to one must not clear the other's count (security review of
-// #40: an attacker's own lookalike account could reset the victim's count).
+// An attacker's lookalike account must not reset the victim's count (security
+// review of #40). Since #36 signup refuses an email that differs only in case,
+// but one stored before #36 can still exist. Login prefers the account whose
+// stored email matches exactly, so its owner gets in, and the counts stay per
+// account: the lookalike's login doesn't clear the victim's.
 func TestLoginLookalikeAccountKeepsVictimCount(t *testing.T) {
 	setupVictim(t, 3, 100)
-	if w := postJSON(Signup, `{"email":"VICTIM@example.com","username":"decoy","password":"decoy-pass-1"}`); w.Code != http.StatusOK {
-		t.Fatalf("decoy signup: status %d (body %s)", w.Code, w.Body)
+	if w := postJSON(Signup, `{"email":"VICTIM@example.com","username":"decoy","password":"decoy-pass-1"}`); w.Code != http.StatusConflict {
+		t.Fatalf("decoy signup: status %d, want 409 (body %s)", w.Code, w.Body)
 	}
+	insertLegacyUser(t, "VICTIM@example.com", "decoy-pass-1")
 	ip := "198.51.100.1"
 
 	for range 2 {
 		loginFrom(ip, victimWrong)
 	}
 	if w := loginFrom(ip, `{"email":"VICTIM@example.com","password":"decoy-pass-1"}`); w.Code != http.StatusOK {
-		t.Fatalf("decoy login: status %d, want 200 (body %s)", w.Code, w.Body)
+		t.Fatalf("legacy lookalike login: status %d, want 200 (body %s)", w.Code, w.Body)
 	}
 	loginFrom(ip, victimWrong) // third guess: at the limit
-	if w := loginFrom(ip, victimWrong); w.Code != http.StatusTooManyRequests {
-		t.Fatalf("fourth guess after the decoy login: status %d, want 429", w.Code)
+	if w := loginFrom(ip, victimRight); w.Code != http.StatusTooManyRequests {
+		t.Fatalf("victim after the lookalike login: status %d, want 429", w.Code)
 	}
 }

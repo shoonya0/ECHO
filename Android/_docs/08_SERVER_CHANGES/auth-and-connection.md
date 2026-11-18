@@ -2,6 +2,15 @@
 
 Part of [server changes the app must handle](./README.md).
 
+## Emails ignore case; profile can't change the email (#36)
+
+- `signup` and `login` lowercase the email, so `Alice@x.com` and `alice@x.com` are one
+  account. A signup with other capitals of a taken email gets `409`.
+- `PUT profile/` ignores `email` (it still answers `200` for the other fields). Hide or
+  disable email editing in the profile screen until a change-email flow exists.
+
+Details: [users.md](../../../_docs/rest-api/users.md#accounts).
+
 ## Unknown chats look like chats you aren't in (#59)
 
 - `send_message`, `invite_user` and `remove_user` now answer `PERMISSION_DENIED` for a chat
@@ -26,7 +35,7 @@ Details: [WEBSOCKET_PROTOCOL.md](../../../_docs/WEBSOCKET_PROTOCOL.md#error-code
 
 Details: [websocket-requests.md](../../../_docs/websocket-requests.md#join_chat).
 
-## Login and signup limits (#40, not deployed yet)
+## Login and signup limits (#40, PR #139, merged 2026-11-18)
 
 - `login` and `signup` can answer `429` with `error` `RATE_LIMITED` and a `Retry-After`
   header (seconds). After 10 attempts on one account from the same network in 15

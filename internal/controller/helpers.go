@@ -35,9 +35,8 @@ func ReduceGinContextToContext(ctx *gin.Context) (context.Context, logrus.Entry,
 // (account state, timestamps, credentials, contact graph, chat state) and is
 // dropped before the update reaches MongoDB.
 var userMutableKeys = map[string]bool{
-	// Identity
+	// Identity. Not email: changing it needs a password and address check (#36).
 	"username": true,
-	"email":    true,
 	"phone":    true,
 
 	// Profile
