@@ -6,7 +6,7 @@
 - [x] 2. `AcceptGroupInvite`, `DeclineGroupInvite`, `PendingGroupInvites` → check: service DB tests
 - [x] 3. REST `POST groups/:groupID/accept`, `POST groups/:groupID/decline`, `GET groups/pending` → check: controller tests
 - [x] 4. Startup backfill: legacy pending members (no chats entry) accepted → check: migration DB test
-- [ ] 5. Docs: REST groups, decisions, Android log; local server check → check: `node scripts/verify.mjs --full`, live run
+- [x] 5. Docs: REST groups, decisions, Android log; local server check → check: `node scripts/verify.mjs --full`, live run
 - [ ] 6. `/code-review` + `/security-review`, PR
 
 ## Increment 2: enforce pending (separate PR)

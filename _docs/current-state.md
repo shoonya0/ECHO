@@ -11,7 +11,7 @@ on `main`. To learn what the product does, read
 and with a link to exactly one feature state.md. Updated by /close-increment and
 /feature-docs update. -->
 
-- **Feature:** [group-invites](./features/group-invites/state.md) (#5, #17), on `feature/group-invites`, increment 1 task 1. `main` at
+- **Feature:** [group-invites](./features/group-invites/state.md) (#5, #17), on `feature/group-invites`, increment 1 ready for review (accept, decline, pending list, legacy backfill). `main` at
   `f022f2c`: #36's email changes (PR #140) are merged, so Render deploys them
 - **#36 on Render (not checked yet):** startup log shows `Indexes ensured` with `email_ci`,
   and any `Normalized emails` count or conflict warning (user IDs to merge by hand)
@@ -182,7 +182,7 @@ There are 15 open issues. Where each risk sits in the code: [architecture-overvi
 | Area | The problem, in short | Issues |
 |---|---|---|
 | Live connections | The server can leak resources or stall under load, missed live messages can't be detected, and open connections miss new chats | #21, #22, #43, #49, #117 |
-| Groups | Members are never asked to accept, pending members get no live messages, and the participant count is maintained by hand | #5, #17, #110 |
+| Groups | Pending members still pass membership checks (#5 step 2), and the participant count is maintained by hand | #5, #110 |
 | Invite codes | Entries left by forged joins before #9 was fixed are still stored | #69 |
 | Accounts | Deleting an account leaves old references, usernames aren't unique, and display copies go stale | #35, #36 |
 | Contacts and blocking | Contact lists aren't cut to `limit`, and blocks written during a deploy can be missed | #39, #63 |

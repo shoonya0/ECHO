@@ -1,16 +1,24 @@
 # Group invites: state
 
-## Now (updated 2026-11-18 at `f022f2c`)
+## Now (updated 2026-11-18 at `89f9264`)
 
-- **Status:** 🟡 in progress
-- **Current task:** 3 in [tasks.md](./tasks.md) (REST routes)
-- **Stopped at:** services done and tested (`internal/services/group_invites.go`); no routes yet
-- **Open questions / blockers:** none. Decided with the user: REST only for now; legacy
-  pending members are auto-accepted
+- **Status:** 🟡 in progress (increment 1 code and docs done, not pushed)
+- **Current task:** 6 in [tasks.md](./tasks.md) (`/code-review` + `/security-review`, PR)
+- **Stopped at:** `TEST_DB_REQUIRED=1 node scripts/verify.mjs --full` passed; live local
+  run passed (pending member gets nothing live, accept starts live messages, 409 again,
+  decline 200 then 404)
+- **Open questions / blockers:** none
 - **Don't forget:** a pending invite is stored as the invitee's `users.chats.<groupId>`
-  entry, so the backfill tells legacy pending members (no entry) from new ones (entry)
+  entry, so the backfill tells legacy pending members (no entry) from new ones (entry).
+  `websocket-requests.md` is at 200 lines: split it before adding to it
 
 ## Recent sessions (newest first, keep 5)
+
+### 2026-11-18: routes, backfill, docs
+
+- Changed: `group_invites.controller.go`, `chat.routes.go`, `migrations.go`, `main.go`, docs
+- Verified: `verify --full` passed; live local accept/decline run passed
+- Docs touched: REST groups, decisions, Android log, protocol, pub/sub, overview
 
 ### 2026-11-18: services for accept, decline, pending list
 
