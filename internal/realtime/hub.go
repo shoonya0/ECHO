@@ -311,9 +311,8 @@ func (eh *Hub) handleClientRegistration(client *models.Client) {
 		return
 	}
 
-	// Without the hub lock, so a slow Redis can't block every broadcast, and
-	// after the subscribe: presence reaches the user's chats through their
-	// channels, which must be followed first.
+	// Without the hub lock, so a slow Redis can't block every broadcast. It
+	// reaches the members of the user's chats over presence:global (#31).
 	if !eh.publishOnline(client) {
 		return // closed during the subscribe: no welcome, no session check
 	}
@@ -355,12 +354,17 @@ func (eh *Hub) publishOnline(client *models.Client) bool {
 
 	eh.Mutex.RLock()
 	_, registered := eh.Clients[client.ID]
+	first := len(eh.UserClients[userID]) == 1
 	chats := userActiveChats(eh.Hub, userID)
 	eh.Mutex.RUnlock()
 	if !registered || client.IsClosed() {
 		return false
 	}
-	eh.markOnline(userID) // for every connection, so a failed mark is retried (#31)
+	if first {
+		// Later connections leave it to the sync loop, which also retries a
+		// failed mark, so a slow Redis holds the lock once per user (#31).
+		eh.markOnline(userID)
+	}
 	if _, already := eh.announced.Load(userID); already {
 		return true // another connection of the user announced it
 	}
@@ -464,6 +468,7 @@ func (eh *Hub) releaseInBackground(userID bson.ObjectID, emptyRooms []string, la
 func (eh *Hub) releaseAfterDisconnect(userID bson.ObjectID, emptyRooms []string, lastConnection bool, chats []string) {
 	eh.pubSubManager.releaseEmptyChats(emptyRooms)
 	if !lastConnection {
+		eh.rememberOfflineChats(userID.Hex(), chats)
 		return
 	}
 	eh.pubSubManager.UnsubscribeUser(userID)
@@ -477,15 +482,60 @@ func (eh *Hub) releaseAfterDisconnect(userID bson.ObjectID, emptyRooms []string,
 	if announced, ok := eh.announced.LoadAndDelete(userID.Hex()); ok {
 		chats = unionChats(chats, announced.([]string))
 	}
-	elsewhere, err := eh.markOffline(userID.Hex())
+	heldUntil, elsewhere, err := eh.markOffline(userID.Hex())
 	if err != nil {
 		// Publish anyway: one server is the usual case, and a user shown
 		// online forever is worse than a wrong offline.
 		eh.logger.WithError(err).Error("Could not check the user's other servers; publishing offline")
 	}
 	if elsewhere {
-		return // still connected to another server
+		// Still connected to another server, or that server stopped without
+		// removing its mark; check again once the mark has expired.
+		eh.recheckOfflineAt(userID, chats, heldUntil)
+		return
 	}
+	eh.publishOffline(userID, chats)
+}
+
+// rememberOfflineChats adds a closed connection's chats to those the user's
+// offline goes to, so chats it joined after the online aren't missed (#31).
+func (eh *Hub) rememberOfflineChats(userID string, chats []string) {
+	if len(chats) == 0 {
+		return
+	}
+	lock := eh.presenceLock(userID)
+	lock.Lock()
+	defer lock.Unlock()
+	if announced, ok := eh.announced.Load(userID); ok {
+		eh.announced.Store(userID, unionChats(announced.([]string), chats))
+	}
+}
+
+// recheckOfflineAt publishes the offline skipped for another server's mark
+// once that mark has expired, unless the user is connected again here or a
+// server still holds them. A server that stopped without removing its mark,
+// as in a deploy, can't otherwise leave the user online forever (#31).
+func (eh *Hub) recheckOfflineAt(userID bson.ObjectID, chats []string, heldUntil time.Time) {
+	time.AfterFunc(time.Until(heldUntil)+offlineRecheckMargin, func() {
+		if eh.Ctx.Err() != nil {
+			return
+		}
+		lock := eh.presenceLock(userID.Hex())
+		lock.Lock()
+		defer lock.Unlock()
+		if eh.pubSubManager.userInUse(userID.Hex()) {
+			return // connected here again; that connection's close publishes it
+		}
+		if _, elsewhere, err := eh.markOffline(userID.Hex()); err != nil || elsewhere {
+			return // the server holding the user publishes it when they leave
+		}
+		eh.publishOffline(userID, chats)
+	})
+}
+
+// publishOffline publishes userID as offline to the members of chats. The
+// caller holds the user's presence lock.
+func (eh *Hub) publishOffline(userID bson.ObjectID, chats []string) {
 	if err := eh.pubSubManager.PublishPresenceUpdate(&models.WSPresenceStatus{
 		UserID:   userID.Hex(),
 		Status:   string(constants.UserStatusOffline),

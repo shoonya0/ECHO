@@ -187,11 +187,70 @@ func TestExpiredOnlineEntryIsNotOnlineElsewhere(t *testing.T) {
 
 	other.markOnline(userID)
 	hub.markOnline(userID)
-	if elsewhere, err := hub.markOffline(userID); err != nil || !elsewhere {
+	if _, elsewhere, err := hub.markOffline(userID); err != nil || !elsewhere {
 		t.Fatalf("live entry: online elsewhere = %v, %v; want true", elsewhere, err)
 	}
 	time.Sleep(100 * time.Millisecond)
-	if elsewhere, err := hub.markOffline(userID); err != nil || elsewhere {
+	if _, elsewhere, err := hub.markOffline(userID); err != nil || elsewhere {
 		t.Fatalf("expired entry: online elsewhere = %v, %v; want false", elsewhere, err)
+	}
+}
+
+// A server that stopped without removing its mark, as in a deploy, delays the
+// offline until the mark expires instead of suppressing it for good (code
+// review of #31).
+func TestOfflineAfterStoppedServersMarkExpires(t *testing.T) {
+	redisClient := testutil.UseTestRedis(t)
+	prevTTL, prevMargin := presenceTTL, offlineRecheckMargin
+	presenceTTL, offlineRecheckMargin = 300*time.Millisecond, 50*time.Millisecond
+	t.Cleanup(func() { presenceTTL, offlineRecheckMargin = prevTTL, prevMargin })
+
+	hub := newPresenceHub(t, redisClient, "one")
+	stopped := newPresenceHub(t, redisClient, "stopped")
+	chat := bson.NewObjectID().Hex()
+	a1 := bufferedClient("a1", bson.NewObjectID())
+	b1 := bufferedClient("b1", bson.NewObjectID())
+	addClient(hub, b1, chat)
+	stopped.markOnline(a1.UserID.Hex()) // held the user, then stopped
+	connectOnline(t, hub, a1, chat)
+	wantStatus(t, nextPresence(t, b1, a1.UserID), constants.UserStatusOnline)
+
+	unregisterAndWait(hub, a1)
+	wantStatus(t, nextPresence(t, b1, a1.UserID), constants.UserStatusOffline)
+}
+
+// The offline also reaches the chats an earlier connection of the user joined
+// after the online, not only the last connection's (code review of #31).
+func TestOfflineReachesChatsJoinedByEarlierConnection(t *testing.T) {
+	hub := newPresenceHub(t, testutil.UseTestRedis(t), "one")
+	chatX, chatY := bson.NewObjectID().Hex(), bson.NewObjectID().Hex()
+	userA := bson.NewObjectID()
+	a1, a2 := bufferedClient("a1", userA), bufferedClient("a2", userA)
+	b1 := bufferedClient("b1", bson.NewObjectID())
+	addClient(hub, b1, chatY)
+	connectOnline(t, hub, a1, chatX)
+	connectOnline(t, hub, a2, chatX)
+	hub.Mutex.Lock()
+	addClientToRoom(hub.Hub, a1, chatY) // a1 joins Y after the online
+	hub.Mutex.Unlock()
+
+	unregisterAndWait(hub, a1)
+	unregisterAndWait(hub, a2)
+	wantStatus(t, nextPresence(t, b1, userA), constants.UserStatusOffline)
+}
+
+// A renewal from a snapshot taken before the user's last disconnect doesn't
+// bring back the mark the disconnect removed (code review of #31).
+func TestRenewalSkipsUsersNoLongerHeld(t *testing.T) {
+	redisClient := testutil.UseTestRedis(t)
+	hub := newPresenceHub(t, redisClient, "one")
+	gone := bson.NewObjectID().Hex()
+	t.Cleanup(func() { _ = redisClient.Del(context.Background(), onlineKey(gone)).Err() })
+
+	if err := hub.refreshOnline([]string{gone}); err != nil {
+		t.Fatalf("refresh: %v", err)
+	}
+	if n := redisClient.Exists(context.Background(), onlineKey(gone)).Val(); n != 0 {
+		t.Fatal("the renewal marked a user this server no longer holds")
 	}
 }

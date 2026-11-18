@@ -161,7 +161,10 @@ func TestPresenceUpdateDuringLeave(t *testing.T) {
 	client := newTestClient("c1", bson.NewObjectID())
 	userID := client.UserID.Hex()
 	addClient(hub, client, "chat1", "chat2", "chat3")
-	message := &models.WebSocketMessage{Type: "presence", UserID: userID}
+	// As it arrives from Redis, so the handler reads the rooms (#31).
+	message := &models.WebSocketMessage{Type: "presence", UserID: userID, Data: map[string]any{
+		"userId": userID, "status": "online", "chats": []any{"chat1", "chat2", "chat3"},
+	}}
 
 	runTogether(
 		func(int) { hub.pubSubManager.handlePresenceMessage(message) },
