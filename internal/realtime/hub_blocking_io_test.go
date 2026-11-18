@@ -3,6 +3,8 @@ package realtime
 import (
 	"context"
 	"errors"
+	"fmt"
+	"sync"
 	"testing"
 	"time"
 
@@ -111,7 +113,7 @@ func TestRegistrationPublishesPresenceWithoutTheLock(t *testing.T) {
 	})
 
 	published, lockFree, subscribed := false, false, false
-	pm.beforePresencePublish = func() {
+	pm.beforePresencePublish = func(string) {
 		published = true
 		subscribed = pm.IsSubscribed(pm.getChatChannel(chatID))
 		if hub.Mutex.TryLock() {
@@ -195,5 +197,166 @@ func TestUserChannelReleasedWhenTheConnectionClosedBeforeTheSubscribe(t *testing
 
 	if pm.IsSubscribed(channel) {
 		t.Fatal("user channel subscribed for a user with no connection")
+	}
+}
+
+// recordPresence records the presence statuses the hub publishes, in order.
+func recordPresence(pm *PubSubManager) func() []string {
+	var mu sync.Mutex
+	var got []string
+	pm.beforePresencePublish = func(status string) {
+		mu.Lock()
+		got = append(got, status)
+		mu.Unlock()
+	}
+	return func() []string {
+		mu.Lock()
+		defer mu.Unlock()
+		return append([]string(nil), got...)
+	}
+}
+
+// Code review of #22: a connection that closes while its registration subscribes
+// must not be published as online after its disconnect published it as offline.
+// Needs Redis: run with TEST_DB_REQUIRED=1.
+func TestRegistrationRacingItsDisconnectEndsOffline(t *testing.T) {
+	hub := newRedisTestHub(t)
+	stubRegistration(hub)
+	pm := hub.pubSubManager
+	client := newTestClient("c1", bson.NewObjectID())
+	t.Cleanup(func() { _ = pm.unsubscribeFromChannel(pm.getUserChannel(client.UserID.Hex())) })
+	GetPresenceInstance().Set(UserPresence{UserID: client.UserID, Status: UserStatus(constants.UserStatusOnline), ClientID: client.ID})
+	t.Cleanup(func() { GetPresenceInstance().Delete(client.UserID) })
+	published := recordPresence(pm)
+
+	pm.beforeUserSubscribe = func(bson.ObjectID) {
+		unregisterAndWait(hub, client) // the socket drops during the subscribe
+	}
+	hub.handleClientRegistration(client)
+
+	if got := published(); len(got) == 0 || got[len(got)-1] != string(constants.UserStatusOffline) {
+		t.Fatalf("published %v; want offline last", got)
+	}
+	if client.TrySend(models.WebSocketMessage{}) {
+		t.Fatal("closed connection can still be sent to")
+	}
+}
+
+// Code review of #22: while a second connection of the user is registering, the
+// first one closing isn't the user's last: their presence, user channel and online
+// status stay, and the new connection announces online once registered.
+func TestDisconnectDuringAnotherRegistrationIsNotTheLast(t *testing.T) {
+	hub := newTestHub(t)
+	stubRegistration(hub)
+	pm := hub.pubSubManager
+	userID := bson.NewObjectID()
+	first, second := newTestClient("first", userID), newTestClient("second", userID)
+	addClient(hub, first)
+	stubSubscriptions(hub, pm.getUserChannel(userID.Hex()))
+	published := recordPresence(pm)
+
+	hub.QueueRegister(second) // queued, not handled yet
+	GetPresenceInstance().Set(UserPresence{UserID: userID, Status: UserStatus(constants.UserStatusOnline), ClientID: second.ID})
+	t.Cleanup(func() { GetPresenceInstance().Delete(userID) })
+
+	unregisterAndWait(hub, first)
+	if _, ok := GetPresenceInstance().Get(userID); !ok {
+		t.Fatal("presence of the registering connection was deleted")
+	}
+	if !pm.IsSubscribed(pm.getUserChannel(userID.Hex())) {
+		t.Fatal("user channel released while a connection is registering")
+	}
+	if got := published(); len(got) != 0 {
+		t.Fatalf("published %v while a connection is registering; want nothing", got)
+	}
+
+	hub.handleClientRegistration(<-hub.Register)
+	if got := published(); len(got) != 1 || got[0] != string(constants.UserStatusOnline) {
+		t.Fatalf("published %v; want [online]", got)
+	}
+}
+
+// Code review of #22: a reconnect storm runs at most maxRegistrations chat loads
+// at once, so MongoDB isn't flooded.
+func TestRegistrationsAreBounded(t *testing.T) {
+	old := maxRegistrations
+	maxRegistrations = 2
+	t.Cleanup(func() { maxRegistrations = old })
+	hub := newTestHub(t)
+	stubRegistration(hub)
+	var mu sync.Mutex
+	running, peak := 0, 0
+	release := make(chan struct{})
+	hub.loadChats = func(context.Context, bson.ObjectID) ([]string, error) {
+		mu.Lock()
+		running++
+		peak = max(peak, running)
+		mu.Unlock()
+		<-release
+		mu.Lock()
+		running--
+		mu.Unlock()
+		return nil, nil
+	}
+
+	var wg sync.WaitGroup
+	for i := range 5 {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			hub.handleClientRegistration(newTestClient(fmt.Sprint("c", i), bson.NewObjectID()))
+		}()
+	}
+	time.Sleep(100 * time.Millisecond)
+	close(release)
+	wg.Wait()
+	if peak > 2 {
+		t.Fatalf("%d chat loads ran at once; want at most 2", peak)
+	}
+}
+
+// Code review of #22: a connection whose user channel can't be subscribed gets no
+// direct events, so it is closed with 1011 like a failed chat load.
+func TestFailedSubscribeClosesTheConnection(t *testing.T) {
+	hub := newTestHub(t) // its Redis refuses every connection
+	stubRegistration(hub, "chat1")
+	client := newTestClient("c1", bson.NewObjectID())
+
+	hub.handleClientRegistration(client)
+
+	if code, _ := client.CloseReason(); code != websocket.CloseInternalServerErr {
+		t.Fatalf("close code %d; want %d", code, websocket.CloseInternalServerErr)
+	}
+}
+
+// Live check of #22: a user already online is not announced again by each new
+// connection. Twenty connections of one user at once used to send each other
+// twenty presence events, filling their queues so some were dropped as slow and
+// others never got the welcome. Needs Redis: run with TEST_DB_REQUIRED=1.
+func TestOnlineIsAnnouncedOncePerUser(t *testing.T) {
+	hub := newRedisTestHub(t)
+	stubRegistration(hub)
+	pm := hub.pubSubManager
+	userID := bson.NewObjectID()
+	t.Cleanup(func() { _ = pm.unsubscribeFromChannel(pm.getUserChannel(userID.Hex())) })
+	GetPresenceInstance().Set(UserPresence{UserID: userID, Status: UserStatus(constants.UserStatusOnline)})
+	t.Cleanup(func() { GetPresenceInstance().Delete(userID) })
+	published := recordPresence(pm)
+
+	first, second := newTestClient("first", userID), newTestClient("second", userID)
+	hub.handleClientRegistration(first)
+	hub.handleClientRegistration(second)
+	unregisterAndWait(hub, second)
+	if got := published(); len(got) != 1 || got[0] != string(constants.UserStatusOnline) {
+		t.Fatalf("published %v; want [online] once", got)
+	}
+
+	unregisterAndWait(hub, first)
+	third := newTestClient("third", userID)
+	GetPresenceInstance().Set(UserPresence{UserID: userID, Status: UserStatus(constants.UserStatusOnline), ClientID: third.ID})
+	hub.handleClientRegistration(third)
+	want := []string{"online", "offline", "online"}
+	if got := published(); fmt.Sprint(got) != fmt.Sprint(want) {
+		t.Fatalf("published %v; want %v", got, want)
 	}
 }

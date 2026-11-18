@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"hash/fnv"
 	"sync"
 	"time"
 
@@ -43,6 +44,14 @@ type Hub struct {
 	// background tracks the Redis work a disconnect leaves running, so tests can
 	// wait for it (#22).
 	background sync.WaitGroup
+	// presenceLocks order each user's online and offline publishes; see
+	// presenceLock. slots bounds concurrent registrations; see registrationSlots.
+	presenceLocks [64]sync.Mutex
+	// announced holds the users this instance published as online, until it
+	// publishes them as offline. Changed under the user's presence lock.
+	announced sync.Map // userID -> struct{}
+	slots     chan struct{}
+	slotsOnce sync.Once
 }
 
 // GetHubInstance returns the process-wide hub, creating it on first use.
@@ -113,13 +122,26 @@ func (eh *Hub) startLoops() {
 // variable so tests can shorten it.
 var chatLoadTimeout = 5 * time.Second
 
-// QueueRegister hands client to the hub for registration. It gives up once the
-// hub has stopped, so the connection's goroutine can't wait forever (#22);
-// WaitRegistered then reports the stop.
+// maxRegistrations is how many registrations may load chats and subscribe at
+// once, so a reconnect storm can't flood MongoDB and Redis (#22). A variable so
+// tests can lower it before the hub's first registration.
+var maxRegistrations = 32
+
+// QueueRegister hands client to the hub for registration. Until the hub adds it
+// to the maps, the connection counts as pending, so a disconnect of the user's
+// other connection isn't taken as their last (#22). It gives up once the hub
+// has stopped, so the connection's goroutine can't wait forever; WaitRegistered
+// then reports the stop.
 func (eh *Hub) QueueRegister(client *models.Client) {
+	eh.Mutex.Lock()
+	addPending(eh.Hub, client)
+	eh.Mutex.Unlock()
 	select {
 	case eh.Register <- client:
 	case <-eh.Ctx.Done():
+		eh.Mutex.Lock()
+		removePending(eh.Hub, client)
+		eh.Mutex.Unlock()
 	}
 }
 
@@ -130,6 +152,53 @@ func (eh *Hub) QueueUnregister(client *models.Client) {
 	case eh.Unregister <- client:
 	case <-eh.Ctx.Done():
 	}
+}
+
+// addPending marks client as queued for registration. The caller holds h.Mutex.
+func addPending(h *models.Hub, client *models.Client) {
+	userID := client.UserID.Hex()
+	if h.PendingClients == nil {
+		h.PendingClients = make(map[string]map[string]struct{})
+	}
+	if h.PendingClients[userID] == nil {
+		h.PendingClients[userID] = make(map[string]struct{})
+	}
+	h.PendingClients[userID][client.ID] = struct{}{}
+}
+
+// removePending unmarks client and reports whether it was pending. The caller
+// holds h.Mutex.
+func removePending(h *models.Hub, client *models.Client) bool {
+	userID := client.UserID.Hex()
+	if _, ok := h.PendingClients[userID][client.ID]; !ok {
+		return false
+	}
+	delete(h.PendingClients[userID], client.ID)
+	if len(h.PendingClients[userID]) == 0 {
+		delete(h.PendingClients, userID)
+	}
+	return true
+}
+
+// userInUseLocked says whether the user has a connection registered or queued
+// for registration. The caller holds h.Mutex (read or write).
+func userInUseLocked(h *models.Hub, userID string) bool {
+	return len(h.UserClients[userID]) > 0 || len(h.PendingClients[userID]) > 0
+}
+
+// presenceLock returns the lock that orders one user's online and offline
+// publishes, so a registration and a disconnect of the same user can't publish
+// them in the wrong order (#22). Users share 64 locks.
+func (eh *Hub) presenceLock(userID string) *sync.Mutex {
+	h := fnv.New32a()
+	_, _ = h.Write([]byte(userID)) // never fails
+	return &eh.presenceLocks[h.Sum32()%uint32(len(eh.presenceLocks))]
+}
+
+// registrationSlots returns the semaphore that bounds concurrent registrations.
+func (eh *Hub) registrationSlots() chan struct{} {
+	eh.slotsOnce.Do(func() { eh.slots = make(chan struct{}, maxRegistrations) })
+	return eh.slots
 }
 
 // runHub manages the main hub operations
@@ -171,6 +240,19 @@ func (eh *Hub) handleClientRegistration(client *models.Client) {
 	defer client.MarkRegistered()
 	eh.logger.WithFields(logrus.Fields{"clientID": client.ID, "userID": client.UserID.Hex()}).Info("Registering new client")
 
+	// At most maxRegistrations at once. A connection that waits too long is
+	// closed with 1011 so the app reconnects later (#22).
+	slots := eh.registrationSlots()
+	select {
+	case slots <- struct{}{}:
+		defer func() { <-slots }()
+	case <-time.After(chatLoadTimeout):
+		eh.closeForRetry(client, errors.New("too many registrations at once"))
+		return
+	case <-eh.Ctx.Done():
+		return
+	}
+
 	// Read the chats before taking the lock, with a time limit (#22).
 	loadChats := eh.loadChats
 	if loadChats == nil {
@@ -181,10 +263,8 @@ func (eh *Hub) handleClientRegistration(client *models.Client) {
 	cancel()
 	if err != nil {
 		// Registered without its chats, the connection would stay open and get
-		// no messages. Closed with 1011, the app reconnects with backoff. The
-		// read loop's disconnect then finds it unregistered and cleans up.
-		eh.logger.WithError(err).WithFields(logrus.Fields{"clientID": client.ID}).Error("Failed to load the chats of a new connection; closing it")
-		client.Revoke(websocket.CloseInternalServerErr, "try again")
+		// no messages.
+		eh.closeForRetry(client, fmt.Errorf("load chats: %w", err))
 		return
 	}
 
@@ -201,6 +281,7 @@ func (eh *Hub) handleClientRegistration(client *models.Client) {
 
 	// Add client to hub
 	eh.Clients[client.ID] = client
+	removePending(eh.Hub, client)
 
 	// Add to user mapping
 	userID := client.UserID.Hex()
@@ -216,28 +297,22 @@ func (eh *Hub) handleClientRegistration(client *models.Client) {
 		eh.logger.WithFields(logrus.Fields{"clientID": client.ID, "chatID": chatID}).Debug("Added client to chat")
 	}
 
-	presence, ok := GetPresenceInstance().Get(client.UserID)
-	online := ok && presence.Status == UserStatus(constants.UserStatusOnline)
-
 	eh.Mutex.Unlock()
 
 	// Subscribe after joining the rooms, never before (#55, #123): see
-	// subscribeChats.
+	// subscribeChats. Without its user channel the connection would miss direct
+	// events, so it is closed like a failed chat load; its disconnect then takes
+	// it out of the maps.
 	if err := eh.pubSubManager.SubscribeUserToChannels(client.UserID, userChats); err != nil {
-		eh.logger.WithError(err).Error("Failed to subscribe to channels")
+		eh.closeForRetry(client, fmt.Errorf("subscribe: %w", err))
+		return
 	}
 
-	// Without the lock, so a slow Redis can't block every broadcast (#22), and
+	// Without the hub lock, so a slow Redis can't block every broadcast, and
 	// after the subscribe: presence reaches the user's chats through their
 	// channels, which must be followed first.
-	if online {
-		if err := eh.pubSubManager.PublishPresenceUpdate(&models.WSPresenceStatus{
-			UserID:   userID,
-			Status:   string(constants.UserStatusOnline),
-			LastSeen: time.Now(),
-		}); err != nil {
-			eh.logger.WithError(err).Error("Failed to publish presence update")
-		}
+	if !eh.publishOnline(client) {
+		return // closed during the subscribe: no welcome, no session check
 	}
 
 	// Off the hub goroutine, so registrations don't wait on Redis (#22, #76).
@@ -256,28 +331,77 @@ func (eh *Hub) handleClientRegistration(client *models.Client) {
 	}
 }
 
+// closeForRetry closes a connection the hub couldn't set up with 1011, so the app
+// reconnects with backoff (#22). Its disconnect then cleans up.
+func (eh *Hub) closeForRetry(client *models.Client, err error) {
+	eh.logger.WithError(err).WithFields(logrus.Fields{"clientID": client.ID}).Error("Could not set up a new connection; closing it")
+	client.Revoke(websocket.CloseInternalServerErr, "try again")
+}
+
+// publishOnline publishes the user as online if their presence says so and no
+// other connection of theirs has announced it, and reports whether the
+// connection is still registered. Announcing once per user keeps a burst of
+// connections from flooding each other with presence events. Under the user's presence
+// lock, the check and the publish can't interleave with the offline publish of a
+// disconnect (#22).
+func (eh *Hub) publishOnline(client *models.Client) bool {
+	userID := client.UserID.Hex()
+	lock := eh.presenceLock(userID)
+	lock.Lock()
+	defer lock.Unlock()
+
+	eh.Mutex.RLock()
+	_, registered := eh.Clients[client.ID]
+	eh.Mutex.RUnlock()
+	if !registered || client.IsClosed() {
+		return false
+	}
+	if _, already := eh.announced.Load(userID); already {
+		return true // another connection of the user announced it
+	}
+	presence, ok := GetPresenceInstance().Get(client.UserID)
+	if !ok || presence.Status != UserStatus(constants.UserStatusOnline) {
+		return true
+	}
+	eh.announced.Store(userID, struct{}{})
+	if err := eh.pubSubManager.PublishPresenceUpdate(&models.WSPresenceStatus{
+		UserID:   userID,
+		Status:   string(constants.UserStatusOnline),
+		LastSeen: time.Now(),
+	}); err != nil {
+		eh.logger.WithError(err).Error("Failed to publish presence update")
+	}
+	return true
+}
+
 // handleClientUnregistration handles client disconnections with pub/sub cleanup
 func (eh *Hub) handleClientUnregistration(client *models.Client) {
 	eh.logger.WithFields(logrus.Fields{"clientID": client.ID, "userID": client.UserID.Hex()}).Info("Unregistering client")
 
+	clientID := client.ID
+	userID := client.UserID.Hex()
+
 	eh.Mutex.Lock()
 
-	if _, ok := eh.Clients[client.ID]; !ok {
-		_, userConnected := eh.UserClients[client.UserID.Hex()]
-		eh.Mutex.Unlock()
+	if _, ok := eh.Clients[clientID]; !ok {
 		// Not registered yet, or already removed. Closing Send marks it
 		// closed, so a registration still queued skips it (#54).
+		wasPending := removePending(eh.Hub, client)
+		inUse := userInUseLocked(eh.Hub, userID)
+		if !inUse {
+			// The controller stored presence for this connection before
+			// queueing it; with the registration skipped, nothing else removes it.
+			GetPresenceInstance().DeleteForClient(client.UserID, clientID)
+		}
+		eh.Mutex.Unlock()
 		client.CloseSend()
-		// The controller stored presence for this connection before queueing
-		// it; with the registration skipped, nothing else removes it.
-		if !userConnected {
-			GetPresenceInstance().DeleteForClient(client.UserID, client.ID)
+		if wasPending && !inUse {
+			// A connection that closed while this one was queued left the
+			// user's channel and offline status to it (#22).
+			eh.releaseInBackground(client.UserID, nil, true)
 		}
 		return
 	}
-
-	clientID := client.ID
-	userID := client.UserID.Hex()
 
 	// Leave every room this connection is in. Rooms left empty are no longer
 	// needed on this instance, so their channels are released below (#20).
@@ -291,46 +415,55 @@ func (eh *Hub) handleClientUnregistration(client *models.Client) {
 	}
 
 	delete(eh.Clients, clientID)
-
-	lastConnection := false
 	if userClients, exists := eh.UserClients[userID]; exists {
 		delete(userClients, clientID)
 		if len(userClients) == 0 {
-			lastConnection = true
 			delete(eh.UserClients, userID)
 		}
 	}
 
-	eh.Mutex.Unlock()
-
+	// The last connection counts the ones still registering (#22). Presence is
+	// removed under the lock, so a registration can't add a connection between
+	// this check and the delete.
+	lastConnection := !userInUseLocked(eh.Hub, userID)
 	if lastConnection {
 		GetPresenceInstance().Delete(client.UserID) // in memory, no I/O
 	}
-	client.CloseSend()
 
-	// The Redis calls run off the hub goroutine (#22); each takes the lock itself
-	// and checks again, so a connection registering meanwhile keeps its channels.
+	eh.Mutex.Unlock()
+
+	client.CloseSend()
+	eh.releaseInBackground(client.UserID, emptyRooms, lastConnection)
+}
+
+// releaseInBackground runs releaseAfterDisconnect off the hub goroutine (#22).
+func (eh *Hub) releaseInBackground(userID bson.ObjectID, emptyRooms []string, lastConnection bool) {
 	eh.background.Add(1)
 	go func() {
 		defer eh.background.Done()
-		eh.releaseAfterDisconnect(client.UserID, emptyRooms, lastConnection)
+		eh.releaseAfterDisconnect(userID, emptyRooms, lastConnection)
 	}()
 }
 
 // releaseAfterDisconnect releases the Redis channels a closed connection left
-// unused and, after the user's last connection, publishes them as offline. A
-// connection of the same user that registered meanwhile keeps the user channel
-// and isn't shown as offline; an offline publish that races a registration can
-// still land after its online one (#31).
+// unused and, after the user's last connection, publishes them as offline. Each
+// release checks again, so a connection registering meanwhile keeps its channels.
+// The offline publish runs under the user's presence lock, and only while the
+// user has no connection, so it can't overtake a registration's online publish.
 func (eh *Hub) releaseAfterDisconnect(userID bson.ObjectID, emptyRooms []string, lastConnection bool) {
 	eh.pubSubManager.releaseEmptyChats(emptyRooms)
 	if !lastConnection {
 		return
 	}
 	eh.pubSubManager.UnsubscribeUser(userID)
+
+	lock := eh.presenceLock(userID.Hex())
+	lock.Lock()
+	defer lock.Unlock()
 	if eh.pubSubManager.userInUse(userID.Hex()) {
-		return
+		return // a connection registered meanwhile; it announces itself
 	}
+	eh.announced.Delete(userID.Hex())
 	if err := eh.pubSubManager.PublishPresenceUpdate(&models.WSPresenceStatus{
 		UserID:   userID.Hex(),
 		Status:   string(constants.UserStatusOffline),
@@ -592,11 +725,7 @@ func (eh *Hub) performCleanup() {
 	// waiting on a full queue while holding it would deadlock.
 	for _, client := range toRemove {
 		eh.logger.WithFields(logrus.Fields{"clientID": client.ID}).Info("Removing inactive client")
-		select {
-		case eh.Unregister <- client:
-		case <-eh.Ctx.Done():
-			return
-		}
+		eh.QueueUnregister(client)
 	}
 }
 

@@ -42,8 +42,11 @@ type PubSubManager struct {
 	// PublishPresenceUpdate (#22).
 	beforeUserRelease     func(userID bson.ObjectID)
 	beforeUserSubscribe   func(userID bson.ObjectID)
-	beforePresencePublish func()
+	beforePresencePublish func(status string)
 }
+
+// redisSubscribeTimeout bounds the wait for Redis to confirm a subscribe (#22).
+const redisSubscribeTimeout = 5 * time.Second
 
 // Channel naming conventions for pub/sub
 const (
@@ -191,11 +194,12 @@ func (pm *PubSubManager) releaseEmptyChats(chatIDs []string) {
 	}
 }
 
-// userInUse says whether the user has a connection in the hub's maps.
+// userInUse says whether the user has a connection registered, or queued for
+// registration (#22).
 func (pm *PubSubManager) userInUse(userID string) bool {
 	pm.hub.Mutex.RLock()
 	defer pm.hub.Mutex.RUnlock()
-	return len(pm.hub.UserClients[userID]) > 0
+	return userInUseLocked(pm.hub, userID)
 }
 
 func (pm *PubSubManager) roomInUse(chatID string) bool {
@@ -214,7 +218,7 @@ func (pm *PubSubManager) PublishToChat(chatID string, message *models.WebSocketM
 // PublishPresenceUpdate publishes presence updates to the global presence channel
 func (pm *PubSubManager) PublishPresenceUpdate(status *models.WSPresenceStatus) error {
 	if pm.beforePresencePublish != nil {
-		pm.beforePresencePublish()
+		pm.beforePresencePublish(status.Status)
 	}
 	message := &models.WebSocketMessage{
 		Type:      models.WSMessageTypePresence,
@@ -239,9 +243,13 @@ func (pm *PubSubManager) subscribeToChannel(channel string) error {
 	// Create new subscription
 	pubsub := pm.redisClient.Subscribe(pm.ctx, channel)
 
-	// Wait for subscription confirmation
-	_, err := pubsub.Receive(pm.ctx)
+	// Wait for the confirmation, at most redisSubscribeTimeout: pm.mu is held,
+	// so a hung Redis would otherwise stall every subscribe and release (#22).
+	ctx, cancel := context.WithTimeout(pm.ctx, redisSubscribeTimeout)
+	_, err := pubsub.Receive(ctx)
+	cancel()
 	if err != nil {
+		_ = pubsub.Close() // not confirmed; nothing reads from it
 		return fmt.Errorf("failed to confirm subscription: %w", err)
 	}
 

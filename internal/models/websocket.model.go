@@ -294,7 +294,10 @@ type Hub struct {
 	UserInfoCache map[string]*UserDisplayInfo    `json:"-"` // User display info cache (TTL: 5 minutes){UserID -> UserDisplayInfo}
 	CacheExpiry   map[string]time.Time           `json:"-"` // Cache expiry time{UserID -> time.Time}
 	ClientChats   map[string]map[string]struct{} `json:"-"` // Rooms each connection is in, the inverse of ChatClients{ClientID -> ChatID}
-	Mutex         sync.RWMutex                   `json:"-"` // Mutex for thread safety
+	// PendingClients holds connections queued for registration but not added to
+	// the maps yet, so a disconnect meanwhile isn't taken as the user's last (#22).
+	PendingClients map[string]map[string]struct{} `json:"-"` // {UserID -> ClientID}
+	Mutex          sync.RWMutex                   `json:"-"` // Mutex for thread safety
 }
 
 // HubMessage represents a message to be broadcasted
