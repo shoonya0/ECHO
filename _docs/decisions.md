@@ -71,9 +71,12 @@ have no status, so the check must allow for that.
 
 Decided on 2026-11-18. `PUT profile/` no longer changes `email`. It took any string, with
 no password or format check, so a stolen token could move the account to another
-address, and a taken email answered `500`. Emails are stored trimmed and in lower case,
-and signup and login compare them that way. A change-email flow, with the current password
-and a check of the new address, is a separate issue.
+address, and a taken email answered `500`. Emails are stored trimmed and in lower case.
+Signup and login match them ignoring case (a collation index, `email_ci`), so emails
+stored with capitals before #36 work without waiting for the startup migration that lowers
+them. Two old accounts whose emails differ only in case are both kept: login picks the one
+stored exactly as typed, and the migration logs them for a manual merge. A change-email
+flow, with the current password and a check of the new address, is a separate issue.
 
 ## How login and signup limits find the client (#40)
 
