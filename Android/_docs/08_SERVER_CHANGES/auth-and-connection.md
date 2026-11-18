@@ -26,7 +26,7 @@ Details: [WEBSOCKET_PROTOCOL.md](../../../_docs/WEBSOCKET_PROTOCOL.md#error-code
 
 Details: [websocket-requests.md](../../../_docs/websocket-requests.md#join_chat).
 
-## Login and signup limits (#40, not deployed yet)
+## Login and signup limits (#40, PR #139, merged 2026-11-18)
 
 - `login` and `signup` can answer `429` with `error` `RATE_LIMITED` and a `Retry-After`
   header (seconds). After 10 attempts on one account from the same network in 15

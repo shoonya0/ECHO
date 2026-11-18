@@ -4,6 +4,10 @@ Older entries moved here from
 [current-state.md](./current-state.md#recently-finished), newest first. Links point to
 the docs that describe each change today. Newer work is listed on that page.
 
+- **#30 (PR #102):** only owners and admins create, list, delete or send invite codes or
+  see who joined: other members get `403`, anyone not in the group `404`
+  ([REST](./rest-api/groups.md#groups), [app changes](../Android/_docs/08_SERVER_CHANGES/README.md)).
+  Security review: nothing found. From the code review: #103, #104.
 - **#39 (PR #129):** the five contact lists come in pages: `page` 1 to 10000, cut to
   `limit`, sorted by username ignoring case, with the real `total`
   ([REST](./rest-api/users.md#contacts), [app changes](../Android/_docs/08_SERVER_CHANGES/contacts-and-blocking.md)).
