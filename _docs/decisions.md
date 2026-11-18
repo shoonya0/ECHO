@@ -67,6 +67,14 @@ enforcing it now would lock those members out. The order is: build accept and de
 backfill existing members, then enforce it in `chatMemberFilter`. Direct-chat participants
 have no status, so the check must allow for that.
 
+## Changing the email (#36)
+
+Decided on 2026-11-18. `PUT profile/` no longer changes `email`. It took any string, with
+no password or format check, so a stolen token could move the account to another
+address, and a taken email answered `500`. Emails are stored trimmed and in lower case,
+and signup and login compare them that way. A change-email flow, with the current password
+and a check of the new address, is a separate issue.
+
 ## How login and signup limits find the client (#40)
 
 Decided on 2026-11-17. Login attempts on an account are counted per IP and account (10
