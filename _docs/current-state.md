@@ -11,9 +11,14 @@ on `main`. To learn what the product does, read
 and with a link to exactly one feature state.md. Updated by /close-increment and
 /feature-docs update. -->
 
-- **Feature:** none · nothing in progress. `main` at `cbd75c0`: #22 (PR #144) is merged,
-  so Render deploys it. #5 step 2 (enforce pending) waits for the
-  Android invite screen ([group-invites](./features/group-invites/state.md))
+- **Feature:** #31 increment 1 (live presence) on `fix/31-presence-delivery`: code, tests
+  and docs done, verified, not pushed. Next: `/code-review`, then PR. Increment 2 (REST
+  presence: contacts and profiles read `online:<id>`, `lastSeen` written on offline, status
+  not from the JWT) is its own branch. #5 step 2 waits for the Android invite screen
+  ([group-invites](./features/group-invites/state.md))
+- **Not filed, from #31:** a crashed server sends no offline for its users (its entry
+  expires in 2 min); two servers connecting and disconnecting one user within
+  milliseconds can order online and offline wrongly
 - **Proposed from the #35 review, not filed:** a password check before deleting an
   account; a delete rate limit plus an index on `messages.senderId`; events to members
   when someone accepts, declines, leaves or is deleted
@@ -41,9 +46,9 @@ and with a link to exactly one feature state.md. Updated by /close-increment and
   losing messages
 - **Not filed, from #22:** a `chat_added` arriving while a connection's chats load is
   missed; a connection's welcome is dropped when its 10-message queue is already full
-- **Next step:** pick from the open issues (`gh issue list`); the Render checks above are
-  the user's
-- **Updated:** 2026-11-18 on `main` at `cbd75c0` (not committed yet: rides on the next branch)
+- **Next step:** `/code-review` of #31 increment 1, then push and open the PR; the Render
+  checks above are the user's
+- **Updated:** 2026-11-18 on `fix/31-presence-delivery` (verify `--full` passed)
 
 ## Where things stand
 
@@ -135,14 +140,8 @@ Not built yet: editing or deleting messages, and changing chat settings. The ful
   removal (disconnect, `leave_chat`, `remove_user`) releases the chat channels left
   unused, a user's last connection releases `user:<id>`, and a join racing a release keeps
   its subscription ([pub/sub](./PUBSUB_ARCHITECTURE.md#connecting-and-disconnecting)).
-- **#116 (PR #119):** a user's last connection closing leaves every chat and unsubscribes
-  each of their chat channels (the loop used to skip some).
-- **#14 (PR #118):** a member removed with `remove_user` gets the `chat_updated` and then
-  no more live events from the group, on every server: a hub-internal message on the
-  chat's Redis channel takes their connections out of the room
-  ([events](./websocket-events.md), [app changes](../Android/_docs/08_SERVER_CHANGES/groups-and-invites.md)).
-  The Android log is split into topic pages. Security review: nothing found; code review: #116, #117.
-Older work, from #49 (PR #130) back: [finished-work.md](./finished-work.md).
+
+Older work, from #116 (PR #119) and #49 (PR #130) back: [finished-work.md](./finished-work.md).
 
 ## How to build, run, test
 
@@ -189,7 +188,7 @@ There are 11 open issues. Where each risk sits in the code: [architecture-overvi
 | Groups | Pending members still pass membership checks (#5 step 2), and the participant count is maintained by hand | #5, #110 |
 | Accounts | Usernames aren't unique, and display copies go stale | #36 |
 | Contacts and blocking | Contact lists aren't cut to `limit`, and blocks written during a deploy can be missed | #39, #63 |
-| Online status and privacy | Online status is unreliable, and privacy settings aren't applied | #31, #32 |
+| Online status and privacy | Contacts and profiles show a stored online status (live events fixed on the #31 branch), and privacy settings aren't applied | #31, #32 |
 | Messages and data | Writes can half-finish, and some lists grow without limit | #37, #42 |
 | Limits and errors | WebSocket limits are per connection, not per user; mention lookups are one read each; `CheckOrigin` allows any origin | #40 |
 
