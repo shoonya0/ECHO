@@ -2,6 +2,16 @@
 
 Part of [server changes the app must handle](./README.md).
 
+## At most 20 invite codes a day per group (#42)
+
+- `POST groups/:groupID/invites` answers `409` once the group holds 20 codes that haven't
+  expired; deleted ones count until they expire (codes last 24 hours). Show the message
+  and don't retry.
+- Expired codes are removed when a new one is created, so `GET groups/:groupID/invites`
+  and `.../joined` stop finding them. Don't keep an expired code's ID to look up later.
+
+Details: [groups.md](../../../_docs/rest-api/groups.md).
+
 ## Accepting and declining group invites (#5, #17)
 
 - `GET groups/pending` lists the groups you are invited to. Show them as invites, with
