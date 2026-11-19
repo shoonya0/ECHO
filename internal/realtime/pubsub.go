@@ -459,7 +459,9 @@ func (pm *PubSubManager) handlePresenceMessage(message *models.WebSocketMessage)
 	pm.hub.Mutex.RUnlock()
 
 	for _, client := range recipients {
-		if contactsOnly && !audience[client.UserID.Hex()] {
+		// The user's own other connections get it too: they aren't in their
+		// own contacts.
+		if contactsOnly && !audience[client.UserID.Hex()] && client.UserID.Hex() != data["userId"] {
 			continue
 		}
 		if !client.TrySend(event) {

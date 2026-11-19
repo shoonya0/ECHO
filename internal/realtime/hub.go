@@ -46,6 +46,9 @@ type Hub struct {
 	// saveLastSeen stores when a user's last connection closed; nil means
 	// services.RecordLastSeen.
 	saveLastSeen func(ctx context.Context, userID bson.ObjectID, at time.Time) error
+	// loadPresence reads a user's status and privacy settings for their
+	// offline; nil means services.GetPresenceSettings.
+	loadPresence func(ctx context.Context, userID bson.ObjectID) (services.PresenceSettings, error)
 	// background tracks the Redis work a disconnect leaves running, so tests can
 	// wait for it (#22).
 	background sync.WaitGroup
@@ -500,6 +503,7 @@ func (eh *Hub) releaseAfterDisconnect(userID bson.ObjectID, emptyRooms []string,
 		return
 	}
 	eh.pubSubManager.UnsubscribeUser(userID)
+	current, known := eh.currentPresence(userID)
 
 	lock := eh.presenceLock(userID.Hex())
 	lock.Lock()
@@ -512,7 +516,8 @@ func (eh *Hub) releaseAfterDisconnect(userID bson.ObjectID, emptyRooms []string,
 		chats = unionChats(chats, announced.([]string))
 	}
 	stored, _ := eh.audiences.LoadAndDelete(userID.Hex())
-	audience, _ := stored.(presenceAudience)
+	announcedTo, _ := stored.(presenceAudience)
+	audience := announcedTo.forOffline(current, known)
 	_, wasWithheld := eh.withheld.LoadAndDelete(userID.Hex())
 	heldUntil, elsewhere, err := eh.markOffline(userID.Hex())
 	if wasWithheld && !wasAnnounced {
@@ -589,18 +594,66 @@ type presenceAudience struct {
 // is announced to nobody: they chose to hide (#31), show their status to
 // nobody, or to contacts only and have none (#32).
 func audienceOf(presence UserPresence) (presenceAudience, bool) {
-	if hidesPresence(presence.Status) || !services.ShowsOnlineTo(presence.ShowOnline, services.ViewerContact) {
+	if hidesPresence(presence.Status) {
 		return presenceAudience{}, false
 	}
 	audience := presenceAudience{showLastSeen: presence.ShowLastSeen}
-	if constants.PrivacyScope(presence.ShowOnline) == constants.PrivacyContacts {
-		if len(presence.Contacts) == 0 {
-			return presenceAudience{}, false
-		}
+	switch scope := constants.PrivacyScope(presence.ShowOnline); {
+	case scope == constants.PrivacyContacts && len(presence.Contacts) > 0:
 		audience.contactsOnly = true
 		audience.contacts = presence.Contacts
+	case !scope.Lets(false):
+		return presenceAudience{}, false // none, unknown, or contacts with none
 	}
 	return audience, true
+}
+
+// forOffline is the audience of the offline for a user announced to a, now
+// that their settings are current (known false: they couldn't be read). The
+// offline reaches everyone the online did, so nobody is left showing them
+// online; it shows lastSeen only if the current settings still let all of
+// those people see it, so a change made while connected is respected (#32).
+func (a presenceAudience) forOffline(current UserPresence, known bool) presenceAudience {
+	now, shown := audienceOf(current)
+	if !known || !shown || !now.showLastSeen {
+		a.showLastSeen = false
+		return a
+	}
+	if now.contactsOnly && (!a.contactsOnly || !subsetOf(a.contacts, now.contacts)) {
+		a.showLastSeen = false
+	}
+	return a
+}
+
+// subsetOf reports whether every ID in ids is in of.
+func subsetOf(ids, of []string) bool {
+	set := make(map[string]bool, len(of))
+	for _, id := range of {
+		set[id] = true
+	}
+	for _, id := range ids {
+		if !set[id] {
+			return false
+		}
+	}
+	return true
+}
+
+// currentPresence reads userID's settings for their offline, outside the
+// presence lock, which other users share.
+func (eh *Hub) currentPresence(userID bson.ObjectID) (UserPresence, bool) {
+	load := eh.loadPresence
+	if load == nil {
+		load = services.GetPresenceSettings
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), lastSeenTimeout)
+	defer cancel()
+	settings, err := load(ctx, userID)
+	if err != nil {
+		eh.logger.WithError(err).WithField("userID", userID.Hex()).Warn("Could not read the user's privacy settings; offline sent without lastSeen")
+		return UserPresence{}, false
+	}
+	return PresenceFromSettings(userID, settings), true
 }
 
 // event applies the audience to a presence event: who it reaches, and no
