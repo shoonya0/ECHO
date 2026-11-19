@@ -51,12 +51,16 @@ type TypingIndicator struct {
 // WSPresenceStatus represents user online status for WebSocket messages
 type WSPresenceStatus struct {
 	UserID     string    `json:"userId"`
-	Status     string    `json:"status"` // "online", "away", "busy", "offline"
-	LastSeen   time.Time `json:"lastSeen"`
+	Status     string    `json:"status"`            // "online", "away", "busy", "offline"
+	LastSeen   time.Time `json:"lastSeen,omitzero"` // left out when the user hides it (#32)
 	CustomText string    `json:"customText,omitempty"`
 	// Chats routes the event between servers: each one delivers it to its
 	// connections in these chats. Removed before it reaches a client (#31).
 	Chats []string `json:"chats,omitempty"`
+	// Audience, when ContactsOnly, limits delivery to these users: the user
+	// shows their status to contacts only. Both removed before delivery (#32).
+	ContactsOnly bool     `json:"contactsOnly,omitempty"`
+	Audience     []string `json:"audience,omitempty"`
 }
 
 // UserJoinLeave represents user joining/leaving events

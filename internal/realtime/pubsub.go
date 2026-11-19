@@ -429,9 +429,20 @@ func (pm *PubSubManager) handlePresenceMessage(message *models.WebSocketMessage)
 	if len(rawChats) == 0 {
 		return
 	}
+	// A user who shows their status to contacts only: deliver to those users
+	// alone. An empty audience reaches nobody (#32).
+	contactsOnly, _ := data["contactsOnly"].(bool)
+	audience := make(map[string]bool)
+	if rawAudience, ok := data["audience"].([]any); ok {
+		for _, item := range rawAudience {
+			if id, ok := item.(string); ok {
+				audience[id] = true
+			}
+		}
+	}
 	out := make(map[string]any, len(data))
 	for key, value := range data {
-		if key != "chats" {
+		if key != "chats" && key != "contactsOnly" && key != "audience" {
 			out[key] = value
 		}
 	}
@@ -448,6 +459,9 @@ func (pm *PubSubManager) handlePresenceMessage(message *models.WebSocketMessage)
 	pm.hub.Mutex.RUnlock()
 
 	for _, client := range recipients {
+		if contactsOnly && !audience[client.UserID.Hex()] {
+			continue
+		}
 		if !client.TrySend(event) {
 			pm.dropSlowClient(client)
 		}

@@ -41,10 +41,19 @@ func connectOnline(t *testing.T, hub *Hub, client *models.Client, chatIDs ...str
 	connectWithStatus(t, hub, client, constants.UserStatusOnline, chatIDs...)
 }
 
-// connectWithStatus is connectOnline for a user who chose status.
+// connectWithStatus is connectOnline for a user who chose status, with the
+// default privacy settings (everyone sees them, lastSeen shown).
 func connectWithStatus(t *testing.T, hub *Hub, client *models.Client, status constants.UserStatus, chatIDs ...string) {
 	t.Helper()
-	GetPresenceInstance().Set(UserPresence{UserID: client.UserID, Status: UserStatus(status), ClientID: client.ID})
+	connectWithPresence(t, hub, client, UserPresence{Status: UserStatus(status), ShowLastSeen: true}, chatIDs...)
+}
+
+// connectWithPresence is connectOnline for a user with presence; its UserID
+// and ClientID are filled in from client.
+func connectWithPresence(t *testing.T, hub *Hub, client *models.Client, presence UserPresence, chatIDs ...string) {
+	t.Helper()
+	presence.UserID, presence.ClientID = client.UserID, client.ID
+	GetPresenceInstance().Set(presence)
 	t.Cleanup(func() { GetPresenceInstance().Delete(client.UserID) })
 	t.Cleanup(func() { _ = hub.redisClient.Del(context.Background(), onlineKey(client.UserID.Hex())).Err() })
 	addClient(hub, client, chatIDs...)

@@ -59,7 +59,10 @@ type Hub struct {
 	// withheld holds the users this instance didn't announce because they
 	// chose to hide, until their offline would be due; it is skipped too (#31).
 	// Changed under the user's presence lock.
-	withheld  sync.Map // userID -> struct{}
+	withheld sync.Map // userID -> struct{}
+	// audiences holds, for each user in announced, who their presence events
+	// reach and whether they show lastSeen (#32). Changed with announced.
+	audiences sync.Map // userID -> presenceAudience
 	slots     chan struct{}
 	slotsOnce sync.Once
 }
@@ -387,7 +390,8 @@ func (eh *Hub) publishOnline(client *models.Client) bool {
 	if !ok {
 		return true
 	}
-	if hidesPresence(presence.Status) {
+	audience, shown := audienceOf(presence)
+	if !shown {
 		eh.withheld.Store(userID, struct{}{})
 		return true
 	}
@@ -396,12 +400,13 @@ func (eh *Hub) publishOnline(client *models.Client) bool {
 		status = UserStatus(constants.UserStatusOnline)
 	}
 	eh.announced.Store(userID, chats)
-	if err := eh.pubSubManager.PublishPresenceUpdate(&models.WSPresenceStatus{
+	eh.audiences.Store(userID, audience)
+	if err := eh.pubSubManager.PublishPresenceUpdate(audience.event(&models.WSPresenceStatus{
 		UserID:   userID,
 		Status:   string(status), // the chosen one, as REST shows it (#31)
 		LastSeen: time.Now(),
 		Chats:    chats,
-	}); err != nil {
+	})); err != nil {
 		eh.logger.WithError(err).Error("Failed to publish presence update")
 	}
 	return true
@@ -506,6 +511,8 @@ func (eh *Hub) releaseAfterDisconnect(userID bson.ObjectID, emptyRooms []string,
 	if wasAnnounced {
 		chats = unionChats(chats, announced.([]string))
 	}
+	stored, _ := eh.audiences.LoadAndDelete(userID.Hex())
+	audience, _ := stored.(presenceAudience)
 	_, wasWithheld := eh.withheld.LoadAndDelete(userID.Hex())
 	heldUntil, elsewhere, err := eh.markOffline(userID.Hex())
 	if wasWithheld && !wasAnnounced {
@@ -522,10 +529,10 @@ func (eh *Hub) releaseAfterDisconnect(userID bson.ObjectID, emptyRooms []string,
 	if elsewhere {
 		// Still connected to another server, or that server stopped without
 		// removing its mark; check again once the mark has expired.
-		eh.recheckOfflineAt(userID, chats, heldUntil)
+		eh.recheckOfflineAt(userID, chats, audience, heldUntil)
 		return
 	}
-	eh.publishOffline(userID, chats)
+	eh.publishOffline(userID, chats, audience)
 }
 
 // rememberOfflineChats adds a closed connection's chats to those the user's
@@ -546,7 +553,7 @@ func (eh *Hub) rememberOfflineChats(userID string, chats []string) {
 // once that mark has expired, unless the user is connected again here or a
 // server still holds them. A server that stopped without removing its mark,
 // as in a deploy, can't otherwise leave the user online forever (#31).
-func (eh *Hub) recheckOfflineAt(userID bson.ObjectID, chats []string, heldUntil time.Time) {
+func (eh *Hub) recheckOfflineAt(userID bson.ObjectID, chats []string, audience presenceAudience, heldUntil time.Time) {
 	time.AfterFunc(time.Until(heldUntil)+offlineRecheckMargin, func() {
 		if eh.Ctx.Err() != nil {
 			return
@@ -560,7 +567,7 @@ func (eh *Hub) recheckOfflineAt(userID bson.ObjectID, chats []string, heldUntil 
 		if _, elsewhere, err := eh.markOffline(userID.Hex()); err != nil || elsewhere {
 			return // the server holding the user publishes it when they leave
 		}
-		eh.publishOffline(userID, chats)
+		eh.publishOffline(userID, chats, audience)
 	})
 }
 
@@ -570,16 +577,54 @@ func hidesPresence(status UserStatus) bool {
 	return constants.UserStatus(status).Hidden()
 }
 
-// publishOffline publishes userID as offline to the members of chats and
-// stores the time as their lastSeen. The caller holds the user's presence lock.
-func (eh *Hub) publishOffline(userID bson.ObjectID, chats []string) {
+// presenceAudience is who a user's presence events reach and what they show,
+// from their privacy settings (#32).
+type presenceAudience struct {
+	contactsOnly bool
+	contacts     []string // with contactsOnly, the only users the events reach
+	showLastSeen bool
+}
+
+// audienceOf returns who presence's events reach, and false when the user
+// is announced to nobody: they chose to hide (#31), show their status to
+// nobody, or to contacts only and have none (#32).
+func audienceOf(presence UserPresence) (presenceAudience, bool) {
+	if hidesPresence(presence.Status) || !services.ShowsOnlineTo(presence.ShowOnline, services.ViewerContact) {
+		return presenceAudience{}, false
+	}
+	audience := presenceAudience{showLastSeen: presence.ShowLastSeen}
+	if constants.PrivacyScope(presence.ShowOnline) == constants.PrivacyContacts {
+		if len(presence.Contacts) == 0 {
+			return presenceAudience{}, false
+		}
+		audience.contactsOnly = true
+		audience.contacts = presence.Contacts
+	}
+	return audience, true
+}
+
+// event applies the audience to a presence event: who it reaches, and no
+// lastSeen when the user hides it.
+func (a presenceAudience) event(e *models.WSPresenceStatus) *models.WSPresenceStatus {
+	e.ContactsOnly = a.contactsOnly
+	e.Audience = a.contacts
+	if !a.showLastSeen {
+		e.LastSeen = time.Time{}
+	}
+	return e
+}
+
+// publishOffline publishes userID as offline to the members of chats that
+// audience reaches, and stores the time as their lastSeen. The caller holds
+// the user's presence lock.
+func (eh *Hub) publishOffline(userID bson.ObjectID, chats []string, audience presenceAudience) {
 	at := time.Now()
-	if err := eh.pubSubManager.PublishPresenceUpdate(&models.WSPresenceStatus{
+	if err := eh.pubSubManager.PublishPresenceUpdate(audience.event(&models.WSPresenceStatus{
 		UserID:   userID.Hex(),
 		Status:   string(constants.UserStatusOffline),
 		LastSeen: at,
 		Chats:    chats,
-	}); err != nil {
+	})); err != nil {
 		eh.logger.WithError(err).Error("Failed to publish presence update")
 	}
 	eh.recordLastSeen(userID, at)
