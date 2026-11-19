@@ -11,9 +11,10 @@ on `main`. To learn what the product does, read
 and with a link to exactly one feature state.md. Updated by /close-increment and
 /feature-docs update. -->
 
-- **Feature:** #37 step 2b-2 on `fix/37-join-transactions`: join by code, accept and
-  decline in transactions; verified, PR next. #5 step 2 waits for the Android invite
-  screen ([group-invites](./features/group-invites/state.md))
+- **Feature:** none · #37 step 3 on `fix/37-read-receipts-reactions-context`, verified,
+  PR not opened yet. `main` at `03a04d2`: #37 step 2 (PRs #151 to #154) is merged, so
+  Render deploys it. #5 step 2 waits for the Android invite screen
+  ([group-invites](./features/group-invites/state.md))
 - **#37 part 1 on Render (not checked yet):** the startup log shows `Backfilled direct chat
   keys` once (not on the next start), any `Second direct chats of a pair` (chat IDs to merge
   by hand), and `Indexes ensured` with `directKey_1`
@@ -58,13 +59,13 @@ and with a link to exactly one feature state.md. Updated by /close-increment and
   missed; a connection's welcome is dropped when its 10-message queue is already full
 - **Not filed:** #63 can't happen any more (no deployed version writes `blockedChats`);
   proposed to close it
-- **Next step:** #37 step 3: read receipts and reactions take the request's context and
-  return their write errors ([decided](./decisions/data-writes.md#mongodb-transactions)).
-  Direct-chat gating and live status changes are decided against for now
+- **Next step:** open the PR for #37 step 3 (read receipts and reactions take the request's
+  context; the chat's read receipt returns its error,
+  [decided](./decisions/data-writes.md#mongodb-transactions)), then decide whether #37 can
+  close (the review items under "Left open" there stay). Direct-chat gating and live status changes are decided against for now
   ([decided](./decisions/accounts-and-privacy.md#how-privacy-settings-apply-32)). The Render
   checks above are the user's
-- **Updated:** 2026-11-19 on `fix/37-join-transactions` from `21dee86`. Commits on `main`
-  must keep the author `shoonya0`
+- **Updated:** 2026-11-19 on `fix/37-read-receipts-reactions-context` from `03a04d2`. Commits on `main` must keep the author `shoonya0`
 
 ## Where things stand
 
@@ -78,6 +79,12 @@ Not built yet: editing or deleting messages, and changing chat settings. The ful
 
 ## Recently finished
 
+- **#37 part 2 (PRs #151 to #154):** MongoDB runs as a one-node replica set in compose and
+  CI, and the server won't start on a standalone one. Contact, group, join, invite and
+  message writes each commit as a whole (`database.WithTransaction`, chat first, users in
+  ID order); a request A→B and B→A at once no longer leaves both pending. Rollback tests
+  use `testutil.FailCommand` ([decided](./decisions/data-writes.md#mongodb-transactions)).
+  Four code reviews; open items are in that decision. Left: step 3 (read receipts, reactions).
 - **#37 part 1 (PR #150):** a pair has one direct chat: `directKey` under a unique index,
   the race loser returns the winner's chat, and a startup backfill keys older chats and
   logs duplicates ([decided](./decisions/data-writes.md#one-direct-chat-per-pair-37)). Contact list
@@ -133,16 +140,6 @@ Not built yet: editing or deleting messages, and changing chat settings. The ful
   [app changes](../Android/_docs/08_SERVER_CHANGES/auth-and-connection.md)). The client IP
   comes from `CLIENT_IP_HEADER`; `X-Forwarded-For` is no longer trusted. Code and security
   reviews fixed; left: case-sensitive emails (#36), ~2x at a window's edge.
-- **#79 (PR #138):** `Hub.Restart` and the WebSocket controller's cancelled-context check
-  are removed: nothing cancels the hub in production, and the path started duplicate loops
-  and raced on `hub.Ctx`. Each background loop gets its context from `startLoops`.
-- **#50 (PR #137):** `message` events carry `data.sender` and `data.mentions` from the
-  saved message; `join` and `leave` carry the username and avatar the connection loaded
-  at connect ([events](./websocket-events.md)). A rename shows on the next connect.
-- **#48 (PR #136):** `join_chat` with `chatId` follows any chat you are in (block rule
-  included), `senderId` still opens a direct chat, and both answer with a `response`
-  holding `chatId`. A repeated join isn't announced again
-  ([requests](./websocket-requests.md#join_chat)).
 
 ## How to build, run, test
 
@@ -151,7 +148,7 @@ to remember is `node scripts/verify.mjs`.
 
 ## Test baseline
 
-Run on 2026-11-18 on `main` at `417cd55`, on Windows, with MongoDB and Redis running and
+Run on 2026-11-19 on `main` at `03a04d2`, on Windows, with MongoDB and Redis running and
 `TEST_DB_REQUIRED=1`, through `node scripts/verify.mjs --full` after `go clean -testcache`.
 The lint row is from 2026-11-07 at `90b2f73`. Compare new runs against this table by test
 name.
@@ -161,12 +158,13 @@ name.
 | `go build ./...` | 2s | pass | — |
 | `go vet ./...` | <1s | pass | — |
 | `gofmt -l cmd internal` | <1s | pass (no files) | — |
-| `go test ./...` | 8s | pass, none skipped | — |
-| `go test -race ./...` | 35s | pass, none skipped | — |
+| `go test ./...` | 18s | pass, none skipped | — |
+| `go test -race ./...` | 40s | pass, none skipped | — |
 | `golangci-lint run ./...` (v2.14) | 11s | **27 issues**: errcheck 20, staticcheck 7 | not blocking: verify lints only new code (`--new-from-merge-base=origin/main`) |
 
 - Tests that need MongoDB skip when it isn't running, unless `TEST_DB_REQUIRED` is set. CI
-  sets it.
+  sets it. MongoDB must be the compose replica set with `enableTestCommands`: the rollback
+  tests (`testutil.FailCommand`) skip without it.
 - `internal/realtime/hub_race_test.go` uses the hub from several goroutines at once. It only
   catches races under `go test -race`.
 - The contract test (`scripts/contract-test`) isn't part of verify; it needs a running
@@ -190,7 +188,7 @@ There are 8 open issues. Where each risk sits in the code: [architecture-overvie
 | Accounts | Usernames aren't unique, and display copies go stale | #36 |
 | Contacts and blocking | Contact lists aren't cut to `limit`, and blocks written during a deploy can be missed | #39, #63 |
 | Online status and privacy | A status or privacy change reaches live events only at the next connect (decided) | none |
-| Messages and data | Writes can half-finish, and some lists grow without limit | #37, #42 |
+| Messages and data | Some lists grow without limit | #42 |
 | Limits and errors | WebSocket limits are per connection, not per user; mention lookups are one read each; `CheckOrigin` allows any origin | #40 |
 
 ## Next task

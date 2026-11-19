@@ -40,7 +40,7 @@ func TestReactionEmojiMustBeOneFieldName(t *testing.T) {
 	// Both members react with 👍, so the message has reactions.👍.count, .users
 	// and .details. The issue used "ok", which is now refused for being letters.
 	for _, id := range []bson.ObjectID{alice, bob} {
-		if _, err := AddMessageReaction(chatID, messageID, id, "👍"); err != nil {
+		if _, err := AddMessageReaction(ctx, chatID, messageID, id, "👍"); err != nil {
 			t.Fatalf("seed reaction: %v", err)
 		}
 	}
@@ -72,8 +72,11 @@ func TestReactionEmojiMustBeOneFieldName(t *testing.T) {
 		name string
 		call func(emoji string) error
 	}{
-		{"add", func(emoji string) error { _, err := AddMessageReaction(chatID, messageID, bob, emoji); return err }},
-		{"remove", func(emoji string) error { _, err := RemoveMessageReaction(chatID, messageID, bob, emoji); return err }},
+		{"add", func(emoji string) error { _, err := AddMessageReaction(ctx, chatID, messageID, bob, emoji); return err }},
+		{"remove", func(emoji string) error {
+			_, err := RemoveMessageReaction(ctx, chatID, messageID, bob, emoji)
+			return err
+		}},
 	}
 	for _, c := range calls {
 		for _, tc := range bad {
@@ -103,13 +106,13 @@ func TestReactionEmojiMustBeOneFieldName(t *testing.T) {
 	good := []string{"😂", "👍🏽", "❤️", "\U0001F937\u200d\u2640\ufe0f" /* 🤷‍♀️, 13 bytes */}
 	for _, emoji := range good {
 		t.Run("real emoji works: "+emoji, func(t *testing.T) {
-			if _, err := AddMessageReaction(chatID, messageID, alice, emoji); err != nil {
+			if _, err := AddMessageReaction(ctx, chatID, messageID, alice, emoji); err != nil {
 				t.Fatalf("add: %v", err)
 			}
 			if _, ok := reactionKeys(t)[emoji]; !ok {
 				t.Fatalf("reaction %q not stored: %v", emoji, reactionKeys(t))
 			}
-			if _, err := RemoveMessageReaction(chatID, messageID, alice, emoji); err != nil {
+			if _, err := RemoveMessageReaction(ctx, chatID, messageID, alice, emoji); err != nil {
 				t.Fatalf("remove: %v", err)
 			}
 			if _, ok := reactionKeys(t)[emoji]; ok {

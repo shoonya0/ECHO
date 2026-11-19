@@ -29,10 +29,10 @@ func TestReactionOnMissingMessageIsErrMessageNotFound(t *testing.T) {
 	}
 	missing := bson.NewObjectID()
 
-	if _, err := AddMessageReaction(chatID, missing, alice, "👍"); !errors.Is(err, ErrMessageNotFound) {
+	if _, err := AddMessageReaction(ctx, chatID, missing, alice, "👍"); !errors.Is(err, ErrMessageNotFound) {
 		t.Errorf("AddMessageReaction on a missing message = %v, want ErrMessageNotFound", err)
 	}
-	if _, err := RemoveMessageReaction(chatID, missing, alice, "👍"); !errors.Is(err, ErrMessageNotFound) {
+	if _, err := RemoveMessageReaction(ctx, chatID, missing, alice, "👍"); !errors.Is(err, ErrMessageNotFound) {
 		t.Errorf("RemoveMessageReaction on a missing message = %v, want ErrMessageNotFound", err)
 	}
 }

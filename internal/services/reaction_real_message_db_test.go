@@ -73,14 +73,14 @@ func TestReactionsWorkOnRealMessages(t *testing.T) {
 	}
 	for _, m := range messages {
 		t.Run(m.name, func(t *testing.T) {
-			if _, err := AddMessageReaction(chatID, m.id, bob, "👍"); err != nil {
+			if _, err := AddMessageReaction(ctx, chatID, m.id, bob, "👍"); err != nil {
 				t.Fatalf("add: %v", err)
 			}
 			got, ok := reactions(t, m.id)["👍"]
 			if !ok || got.Count != 1 || len(got.Users) != 1 || got.Users[0] != bob {
 				t.Fatalf("after add, reactions = %+v, want 👍 with count 1 by bob", reactions(t, m.id))
 			}
-			if _, err := RemoveMessageReaction(chatID, m.id, bob, "👍"); err != nil {
+			if _, err := RemoveMessageReaction(ctx, chatID, m.id, bob, "👍"); err != nil {
 				t.Fatalf("remove: %v", err)
 			}
 			if _, ok := reactions(t, m.id)["👍"]; ok {

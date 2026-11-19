@@ -77,7 +77,7 @@ func TestReactionCountFollowsUsers(t *testing.T) {
 	}
 	add := func(t *testing.T, messageID, userID bson.ObjectID, wantChanged bool) {
 		t.Helper()
-		changed, err := AddMessageReaction(chatID, messageID, userID, "👍")
+		changed, err := AddMessageReaction(ctx, chatID, messageID, userID, "👍")
 		if err != nil {
 			t.Fatalf("add: %v", err)
 		}
@@ -87,7 +87,7 @@ func TestReactionCountFollowsUsers(t *testing.T) {
 	}
 	remove := func(t *testing.T, messageID, userID bson.ObjectID, wantChanged bool) {
 		t.Helper()
-		changed, err := RemoveMessageReaction(chatID, messageID, userID, "👍")
+		changed, err := RemoveMessageReaction(ctx, chatID, messageID, userID, "👍")
 		if err != nil {
 			t.Fatalf("remove: %v", err)
 		}

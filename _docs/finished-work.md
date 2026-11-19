@@ -4,6 +4,16 @@ Older entries moved here from
 [current-state.md](./current-state.md#recently-finished), newest first. Links point to
 the docs that describe each change today. Newer work is listed on that page.
 
+- **#79 (PR #138):** `Hub.Restart` and the WebSocket controller's cancelled-context check
+  are removed: nothing cancels the hub in production, and the path started duplicate loops
+  and raced on `hub.Ctx`. Each background loop gets its context from `startLoops`.
+- **#50 (PR #137):** `message` events carry `data.sender` and `data.mentions` from the
+  saved message; `join` and `leave` carry the username and avatar the connection loaded
+  at connect ([events](./websocket-events.md)). A rename shows on the next connect.
+- **#48 (PR #136):** `join_chat` with `chatId` follows any chat you are in (block rule
+  included), `senderId` still opens a direct chat, and both answer with a `response`
+  holding `chatId`. A repeated join isn't announced again
+  ([requests](./websocket-requests.md#join_chat)).
 - **#132 (PR #135):** a new direct chat is kept only when both users got their `chats`
   entry (else `404` / `INVALID_USER_ID`, chat and entries removed), and opening an existing
   one writes back a missing entry ([REST](./rest-api/chats.md#chats)).
