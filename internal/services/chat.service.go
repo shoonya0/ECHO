@@ -300,6 +300,10 @@ func GetChatMessages(ctx context.Context, userID bson.ObjectID, chatID bson.Obje
 	}
 
 	messages, hasMore = trimMessagePage(messages, limit)
+	// The stored names are from when the message was written (#36).
+	if err := fillMessageNames(ctx, messages); err != nil {
+		return nil, false, err
+	}
 	return messages, hasMore, nil
 }
 
@@ -308,6 +312,10 @@ func CreateDirectChat(ctx context.Context, targetUserID bson.ObjectID) (*models.
 	user := ctx.Value(constants.UserDataKey).(models.LoginUserResponse)
 	if user == (models.LoginUserResponse{}) {
 		return nil, fmt.Errorf("invalid user data")
+	}
+	user, err := WithCurrentDisplayInfo(ctx, user) // copied into the chat, so not the JWT's (#36)
+	if err != nil {
+		return nil, err
 	}
 	// A chat with yourself would have one participant: both entries share
 	// one map key (#38).
@@ -516,12 +524,16 @@ func CreateGroupChat(ctx context.Context, chatName, description string, particip
 	if creator == (models.LoginUserResponse{}) {
 		return nil, fmt.Errorf("invalid user data")
 	}
+	creator, err := WithCurrentDisplayInfo(ctx, creator) // copied into the group, so not the JWT's (#36)
+	if err != nil {
+		return nil, err
+	}
 
 	// The group, its members' chats entries and the invitations are written in
 	// one transaction (#37): a failed invitation used to return 500 with the
 	// group saved, and the client's retry made a second one.
 	var chat models.Chat
-	err := database.WithTransaction(ctx, func(ctx context.Context) error {
+	err = database.WithTransaction(ctx, func(ctx context.Context) error {
 		var err error
 		chat, err = createGroupChat(ctx, creator, chatName, description, participantIDs)
 		return err
