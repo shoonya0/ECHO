@@ -15,18 +15,58 @@ import (
 	"go.mongodb.org/mongo-driver/v2/mongo/options"
 )
 
-// BackfillDirectKeys gives direct chats without a directKey theirs (#37): chats from
-// before #37, and any an older server copy creates during a deploy, so it runs on every
-// start. Oldest first, so a pair's first chat gets the key. A later chat of a pair
-// that already has one is left without and returned in duplicates: merging two chats'
-// messages is a person's call. That is checked here too, not only by the unique index,
-// which may be missing. A chat without exactly two participants is skipped. Returns the
-// number of chats keyed and the IDs of the duplicates.
+// BackfillDirectKeys keeps one keyed direct chat per pair (#37), and runs on every start
+// before the indexes are built.
+//
+// First, it takes the key off the newer of two chats with the same key: they can only
+// exist if directKey_1 was missing when they were made (a fresh deploy creates it after
+// the server starts serving), and they would stop it from ever being built. Then it keys
+// direct chats that have none: chats from before #37, and any an older server copy
+// creates during a deploy. Both passes go oldest first, so a pair keeps its first chat.
+// A pair's later chats stay unkeyed and are returned in duplicates: merging two chats'
+// messages is a person's call. Keys in use are tracked in memory, so this needs neither
+// the index nor a query per chat. A chat without exactly two participants is skipped.
+// Returns the number of chats keyed and the IDs of the duplicates.
 func BackfillDirectKeys(ctx context.Context) (keyed int64, duplicates []bson.ObjectID, err error) {
 	chats := database.DB.Collection(string(constants.ChatColl))
-	cur, err := chats.Find(ctx,
+	oldestFirst := bson.D{{Key: "_id", Value: 1}}
+
+	used := make(map[string]bool)
+	cur, err := chats.Find(ctx, bson.M{"directKey": bson.M{"$type": "string"}},
+		options.Find().SetProjection(bson.M{"directKey": 1}).SetSort(oldestFirst))
+	if err != nil {
+		return 0, nil, fmt.Errorf("find keyed chats: %w", err)
+	}
+	var clashing []bson.ObjectID
+	for cur.Next(ctx) {
+		var c struct {
+			ID        bson.ObjectID `bson:"_id"`
+			DirectKey string        `bson:"directKey"`
+		}
+		if err := cur.Decode(&c); err != nil {
+			_ = cur.Close(ctx)
+			return 0, nil, fmt.Errorf("decode keyed chat: %w", err)
+		}
+		if used[c.DirectKey] {
+			clashing = append(clashing, c.ID)
+		}
+		used[c.DirectKey] = true
+	}
+	err = cur.Err()
+	_ = cur.Close(ctx) // read-only cursor; a close error changes nothing
+	if err != nil {
+		return 0, nil, fmt.Errorf("iterate keyed chats: %w", err)
+	}
+	if len(clashing) > 0 {
+		if _, err := chats.UpdateMany(ctx, bson.M{"_id": bson.M{"$in": clashing}},
+			bson.M{"$unset": bson.M{"directKey": ""}}); err != nil {
+			return 0, nil, fmt.Errorf("unkey duplicate direct chats: %w", err)
+		}
+	}
+
+	cur, err = chats.Find(ctx,
 		bson.M{"chatType": "direct", "directKey": bson.M{"$exists": false}},
-		options.Find().SetProjection(bson.M{"participants": 1}).SetSort(bson.D{{Key: "_id", Value: 1}}),
+		options.Find().SetProjection(bson.M{"participants": 1}).SetSort(oldestFirst),
 	)
 	if err != nil {
 		return 0, nil, fmt.Errorf("find direct chats: %w", err)
@@ -51,12 +91,7 @@ func BackfillDirectKeys(ctx context.Context) (keyed int64, duplicates []bson.Obj
 			continue
 		}
 		key := directChatKey(pair[0], pair[1])
-
-		taken, err := chats.CountDocuments(ctx, bson.M{"directKey": key})
-		if err != nil {
-			return keyed, duplicates, fmt.Errorf("check key of chat %s: %w", c.ID.Hex(), err)
-		}
-		if taken > 0 {
+		if used[key] {
 			duplicates = append(duplicates, c.ID)
 			continue
 		}
@@ -64,13 +99,14 @@ func BackfillDirectKeys(ctx context.Context) (keyed int64, duplicates []bson.Obj
 			bson.M{"_id": c.ID, "directKey": bson.M{"$exists": false}},
 			bson.M{"$set": bson.M{"directKey": key}},
 		)
-		if mongo.IsDuplicateKeyError(err) { // a new chat of the pair took it since the check
+		if mongo.IsDuplicateKeyError(err) { // a new chat of the pair took it meanwhile
 			duplicates = append(duplicates, c.ID)
 			continue
 		}
 		if err != nil {
 			return keyed, duplicates, fmt.Errorf("key chat %s: %w", c.ID.Hex(), err)
 		}
+		used[key] = true
 		keyed += res.ModifiedCount
 	}
 	if err := cur.Err(); err != nil {

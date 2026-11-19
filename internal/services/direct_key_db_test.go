@@ -4,7 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"strings"
-	"sync"
+	"sync/atomic"
 	"testing"
 
 	"go.mongodb.org/mongo-driver/v2/bson"
@@ -50,27 +50,19 @@ func TestConcurrentDirectChatCreatesOne(t *testing.T) {
 	const calls = 10
 	ids := make(chan bson.ObjectID, calls)
 	errs := make(chan error, calls)
-	var start, done sync.WaitGroup
-	start.Add(1)
-	for i := range calls {
+	var n atomic.Int32
+	concurrently(calls, func() {
 		caller, target := alice, bob
-		if i%2 == 1 {
+		if n.Add(1)%2 == 0 { // both sides at once
 			caller, target = bob, alice
 		}
-		done.Add(1)
-		go func() {
-			defer done.Done()
-			start.Wait()
-			chat, err := CreateDirectChat(as(caller), target)
-			if err != nil {
-				errs <- err
-				return
-			}
-			ids <- chat.ChatID
-		}()
-	}
-	start.Done()
-	done.Wait()
+		chat, err := CreateDirectChat(as(caller), target)
+		if err != nil {
+			errs <- err
+			return
+		}
+		ids <- chat.ChatID
+	})
 	close(ids)
 	close(errs)
 
@@ -109,18 +101,21 @@ func TestDirectKeyIsOrderFreeAndHidden(t *testing.T) {
 // Idempotent.
 func TestBackfillDirectKeys(t *testing.T) {
 	ctx := useTestDB(t)
-	ensureIndexes(t, ctx)
 	chats := database.DB.Collection(string(constants.ChatColl))
-	a, b, c, d := bson.NewObjectID(), bson.NewObjectID(), bson.NewObjectID(), bson.NewObjectID()
+	a, b, c, d, e, f := bson.NewObjectID(), bson.NewObjectID(), bson.NewObjectID(), bson.NewObjectID(), bson.NewObjectID(), bson.NewObjectID()
 	pair := func(x, y bson.ObjectID) bson.M { return bson.M{x.Hex(): bson.M{}, y.Hex(): bson.M{}} }
 
 	older, newer, single, broken, group := bson.NewObjectID(), bson.NewObjectID(), bson.NewObjectID(), bson.NewObjectID(), bson.NewObjectID()
+	// Two chats keyed alike: made while directKey_1 was missing.
+	keyedFirst, keyedSecond := bson.NewObjectID(), bson.NewObjectID()
 	for _, doc := range []bson.M{
 		{"_id": older, "chatType": "direct", "participants": pair(a, b)},
 		{"_id": newer, "chatType": "direct", "participants": pair(b, a)},
 		{"_id": single, "chatType": "direct", "participants": pair(c, d)},
 		{"_id": broken, "chatType": "direct", "participants": bson.M{a.Hex(): bson.M{}}},
 		{"_id": group, "chatType": "group", "participants": pair(c, d)},
+		{"_id": keyedFirst, "chatType": "direct", "participants": pair(e, f), "directKey": directChatKey(e, f)},
+		{"_id": keyedSecond, "chatType": "direct", "participants": pair(e, f), "directKey": directChatKey(e, f)},
 	} {
 		if _, err := chats.InsertOne(ctx, doc); err != nil {
 			t.Fatalf("insert chat: %v", err)
@@ -144,14 +139,56 @@ func TestBackfillDirectKeys(t *testing.T) {
 		if want := int64(2 * (1 - run)); n != want {
 			t.Errorf("run %d: keyed %d chats, want %d", run, n, want)
 		}
-		if len(duplicates) != 1 || duplicates[0] != newer {
-			t.Errorf("run %d: duplicates %v, want [%s]", run, duplicates, newer.Hex())
+		got := map[bson.ObjectID]bool{}
+		for _, id := range duplicates {
+			got[id] = true
+		}
+		if len(duplicates) != 2 || !got[newer] || !got[keyedSecond] {
+			t.Errorf("run %d: duplicates %v, want %s and %s", run, duplicates, newer.Hex(), keyedSecond.Hex())
 		}
 	}
-	if keyOf(older) != directChatKey(a, b) || keyOf(single) != directChatKey(c, d) {
-		t.Error("a pair's oldest chat didn't get its key")
+	if keyOf(older) != directChatKey(a, b) || keyOf(single) != directChatKey(c, d) || keyOf(keyedFirst) != directChatKey(e, f) {
+		t.Error("a pair's oldest chat doesn't have its key")
 	}
-	if keyOf(newer) != "" || keyOf(broken) != "" || keyOf(group) != "" {
-		t.Error("a duplicate, a chat without two participants or a group got a key")
+	if keyOf(newer) != "" || keyOf(keyedSecond) != "" || keyOf(broken) != "" || keyOf(group) != "" {
+		t.Error("a duplicate, a chat without two participants or a group has a key")
+	}
+	// With the clash gone, the unique index builds.
+	if err := database.EnsureIndexes(ctx); err != nil {
+		t.Fatalf("EnsureIndexes after the backfill: %v", err)
+	}
+}
+
+// A pair with a keyed chat and a later unkeyed duplicate keeps using the keyed
+// one, and with only unkeyed duplicates, the oldest.
+func TestDirectChatLookupPrefersKeyedThenOldest(t *testing.T) {
+	ctx := useTestDB(t)
+	ensureIndexes(t, ctx)
+	chats := database.DB.Collection(string(constants.ChatColl))
+	alice := insertAccount(t, ctx, bson.M{"email": "alice@example.com"})
+	bob := insertAccount(t, ctx, bson.M{"email": "bob@example.com"})
+	carol := insertAccount(t, ctx, bson.M{"email": "carol@example.com"})
+	pair := func(x, y bson.ObjectID) bson.M { return bson.M{x.Hex(): bson.M{}, y.Hex(): bson.M{}} }
+	as := models.LoginUserResponse{ID: alice, Username: "alice"}
+
+	first, keyed, second := bson.NewObjectID(), bson.NewObjectID(), bson.NewObjectID()
+	for _, doc := range []bson.M{
+		{"_id": first, "chatType": "direct", "participants": pair(alice, carol)},
+		{"_id": keyed, "chatType": "direct", "participants": pair(alice, bob), "directKey": directChatKey(alice, bob)},
+		{"_id": second, "chatType": "direct", "participants": pair(alice, carol)},
+		{"_id": bson.NewObjectID(), "chatType": "direct", "participants": pair(bob, alice)}, // unkeyed, newer than keyed
+	} {
+		if _, err := chats.InsertOne(ctx, doc); err != nil {
+			t.Fatalf("insert chat: %v", err)
+		}
+	}
+
+	got, err := findOrCreateDirectChat(ctx, as, bob)
+	if err != nil || got.created || got.chat.ChatID != keyed {
+		t.Fatalf("alice-bob: got %+v, %v; want the keyed chat %s", got.chat, err, keyed.Hex())
+	}
+	got, err = findOrCreateDirectChat(ctx, as, carol)
+	if err != nil || got.created || got.chat.ChatID != first {
+		t.Fatalf("alice-carol: got %+v, %v; want the oldest chat %s", got.chat, err, first.Hex())
 	}
 }

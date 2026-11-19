@@ -322,56 +322,77 @@ func CreateDirectChat(ctx context.Context, targetUserID bson.ObjectID) (*models.
 		return nil, fmt.Errorf("%w", ErrBlocked)
 	}
 
-	filter := bson.M{
-		"chatType": "direct",
-		"$and": []bson.M{
-			{"participants." + user.ID.Hex(): bson.M{"$exists": true}},
-			{"participants." + targetUserID.Hex(): bson.M{"$exists": true}},
-		},
-	}
-
-	chatProjection := bson.M{
-		"_id":          1,
-		"chatType":     1,
-		"participants": 1,
-	}
-
-	existingChat := models.Chat{}
-
-	chats := database.DB.Collection(string(constants.ChatColl))
-	err = chats.FindOne(ctx, filter, options.FindOne().SetProjection(chatProjection)).Decode(&existingChat)
-	if errors.Is(err, mongo.ErrNoDocuments) {
-		var chat *models.Chat
-		chat, err = insertDirectChat(ctx, user, targetUserID)
-		if !mongo.IsDuplicateKeyError(err) {
-			return chat, err
-		}
-		// A concurrent call for the same pair inserted first (#37): use its
-		// chat. Its entries may still be on their way; the repair below writes
-		// them if they aren't.
-		err = chats.FindOne(ctx, bson.M{"directKey": directChatKey(user.ID, targetUserID)},
-			options.FindOne().SetProjection(chatProjection)).Decode(&existingChat)
-	}
-	if err != nil {
-		return nil, fmt.Errorf("failed to fetch existing chat: %w", err)
+	found, err := findOrCreateDirectChat(ctx, user, targetUserID)
+	if err != nil || found.created {
+		return found.chat, err
 	}
 
 	// Write back an entry a failed or partial earlier write left out (#132).
+	chatID := found.chat.ChatID
 	repaired, err := database.DB.Collection(string(constants.UserColl)).UpdateMany(ctx,
 		bson.M{
-			"_id":                                bson.M{"$in": []bson.ObjectID{user.ID, targetUserID}},
-			"chats." + existingChat.ChatID.Hex(): bson.M{"$exists": false},
+			"_id":                   bson.M{"$in": []bson.ObjectID{user.ID, targetUserID}},
+			"chats." + chatID.Hex(): bson.M{"$exists": false},
 		},
-		bson.M{"$set": bson.M{"chats." + existingChat.ChatID.Hex(): 0}},
+		bson.M{"$set": bson.M{"chats." + chatID.Hex(): 0}},
 	)
 	if err != nil {
 		return nil, fmt.Errorf("failed to repair chat entries: %w", err)
 	}
 	if repaired.ModifiedCount > 0 {
-		AddMembersToLiveChat(ctx, existingChat.ChatID, user.ID, targetUserID)
+		AddMembersToLiveChat(ctx, chatID, user.ID, targetUserID)
 	}
 
-	return &existingChat, nil
+	return found.chat, nil
+}
+
+// directChatLookup is the result of findOrCreateDirectChat: the pair's chat, and
+// whether this call created it (with both users' entries).
+type directChatLookup struct {
+	chat    *models.Chat
+	created bool
+}
+
+// directChatAttempts bounds how often findOrCreateDirectChat starts over when
+// the chat a concurrent call created is gone again: that call's entries failed
+// and it removed the chat (#132).
+const directChatAttempts = 3
+
+// findOrCreateDirectChat returns the pair's direct chat, creating it if there is
+// none. The keyed chat comes first: a pair with a duplicate from before #37 keeps
+// using the one the backfill keyed. Then the oldest unkeyed one. A create that
+// loses the race on directKey uses the winner's chat (#37).
+func findOrCreateDirectChat(ctx context.Context, user models.LoginUserResponse, targetUserID bson.ObjectID) (directChatLookup, error) {
+	chats := database.DB.Collection(string(constants.ChatColl))
+	fields := bson.M{"_id": 1, "chatType": 1, "participants": 1}
+	key := directChatKey(user.ID, targetUserID)
+	legacy := bson.M{
+		"chatType":                           "direct",
+		"participants." + user.ID.Hex():      bson.M{"$exists": true},
+		"participants." + targetUserID.Hex(): bson.M{"$exists": true},
+	}
+
+	for range directChatAttempts {
+		var existing models.Chat
+		err := chats.FindOne(ctx, bson.M{"directKey": key}, options.FindOne().SetProjection(fields)).Decode(&existing)
+		if errors.Is(err, mongo.ErrNoDocuments) {
+			err = chats.FindOne(ctx, legacy,
+				options.FindOne().SetProjection(fields).SetSort(bson.D{{Key: "_id", Value: 1}})).Decode(&existing)
+		}
+		if err == nil {
+			return directChatLookup{chat: &existing}, nil
+		}
+		if !errors.Is(err, mongo.ErrNoDocuments) {
+			return directChatLookup{}, fmt.Errorf("failed to fetch existing chat: %w", err)
+		}
+
+		chat, err := insertDirectChat(ctx, user, targetUserID)
+		if !errors.Is(err, errDirectChatTaken) {
+			return directChatLookup{chat: chat, created: err == nil}, err
+		}
+		// A concurrent call inserted first: look again.
+	}
+	return directChatLookup{}, fmt.Errorf("failed to fetch existing chat: the concurrently created chat kept disappearing")
 }
 
 // directChatKey is the directKey of the direct chat between a and b: both IDs,
@@ -384,9 +405,12 @@ func directChatKey(a, b bson.ObjectID) string {
 	return x + "_" + y
 }
 
+// errDirectChatTaken: the pair already has a keyed direct chat.
+var errDirectChatTaken = errors.New("the pair already has a direct chat")
+
 // insertDirectChat creates the direct chat between the user and the target, with
 // both users' entries, and puts their connections in it. If the pair already
-// has a keyed chat, it returns the insert's duplicate key error unwrapped.
+// has a keyed chat, it returns errDirectChatTaken.
 func insertDirectChat(ctx context.Context, user models.LoginUserResponse, targetUserID bson.ObjectID) (*models.Chat, error) {
 	targetUser, err := GetUserByID(ctx, targetUserID)
 	if err != nil {
@@ -415,8 +439,10 @@ func insertDirectChat(ctx context.Context, user models.LoginUserResponse, target
 	}
 
 	_, err = database.DB.Collection(string(constants.ChatColl)).InsertOne(ctx, chat)
-	if mongo.IsDuplicateKeyError(err) {
-		return nil, err
+	// Only a clash on directKey_1 means the pair's chat exists; any other
+	// duplicate key is a real failure.
+	if mongo.IsDuplicateKeyError(err) && strings.Contains(err.Error(), "directKey_1") {
+		return nil, errDirectChatTaken
 	}
 	if err != nil {
 		return nil, fmt.Errorf("failed to insert chat: %w", err)
