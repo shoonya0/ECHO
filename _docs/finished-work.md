@@ -4,6 +4,15 @@ Older entries moved here from
 [current-state.md](./current-state.md#recently-finished), newest first. Links point to
 the docs that describe each change today. Newer work is listed on that page.
 
+- **#51 (PR #133):** a message `content` is limited to 4000 characters (code points), not
+  bytes, so Hindi or emoji text is no longer cut at about a third
+  ([decided](./decisions.md#how-the-message-length-limit-counts-51),
+  [app changes](../Android/_docs/08_SERVER_CHANGES/messages.md)).
+- **#123 + #124 (PR #127):** a join or registration releases the chat channel again after
+  subscribing if a removal emptied the room meanwhile, and no `join` is announced for a
+  member removed during the join. The release test hooks are `PubSubManager` fields
+  ([pub/sub](./PUBSUB_ARCHITECTURE.md#connecting-and-disconnecting)). Not done from the
+  code review: a removal before the room entry (#117), one per-chat reconcile step.
 - **CI race (PR #146):** a #22 test returned before its slow registration finished, which
   then raced the next test on `chatLoadTimeout`; it failed `main` after #145, now fixed.
 - **#22 (PR #144):** the hub goroutine only changes maps. Each connection registers in its
