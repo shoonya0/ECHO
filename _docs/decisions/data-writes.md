@@ -16,14 +16,23 @@ checks too, not only the writes, because the driver runs the function again afte
 conflict and the retry must see what the other side committed. Writes to two users go
 smaller ID first (`writeInIDOrder`): in the other order, a request A→B and B→A at once each
 held one user and aborted the other thousands of times until the request timed out. The
-contact writes (request, accept or decline, remove, block) run this way; the group and
-message writes are next. A transaction that finally fails in MongoDB (commit, retries run
-out, context ended) is logged at error by `WithTransaction`; the callers' own errors aren't.
+contact writes (request, accept or decline, remove, block) run this way. A transaction that
+finally fails in MongoDB (commit, retries run out, context ended) is logged at error by
+`WithTransaction`; the callers' own errors aren't.
 
-Left for step 2b (from the PR review of step 2a):
-- **Order for more than two users.** A group write touches a chat and N users;
-  `writeInIDOrder` takes two. Write the chat first, then the users sorted by ID, through
-  one helper, or two group operations can livelock as A→B and B→A did.
+Group and message writes (step 2b, 2026-11-19): creating a group, adding and removing
+members, and sending a message each commit as a whole. They write the chat first, then the
+users through one `UpdateMany` over `_id` (`$in`), which goes through the `_id` index in ID
+order, so they meet other writes in the same order (`TestConcurrentGroupCreatesWithSharedUsers`).
+Work outside the database (joining the live hub, broadcasting) runs after the commit. A
+send keeps its reads outside the transaction, since every message writes its chat and
+concurrent sends rerun; `lastMessageId` is set with `$max`, so a rerun can't set an older
+message. Tests make one write fail with `testutil.FailCommand` (`enableTestCommands`, local
+and CI only) to check the rollback. Join by code and accept or decline an invite are next
+(step 2b-2): their "already a member" path repairs a missing chats entry and then returns
+an error, which a transaction would roll back.
+
+Left open (from the PR review of step 2a):
 - **No backoff.** The driver reruns a conflicting transaction at once, reads included, so
   many writes to one popular user or chat repeat reads until the first commits. Only worth
   our own retry loop with jitter if it shows up in load or logs.

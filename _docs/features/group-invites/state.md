@@ -1,19 +1,27 @@
 # Group invites: state
 
-## Now (updated 2026-11-18 at `89f9264`)
+## Now (updated 2026-11-19 at `118520d`)
 
-- **Status:** 🟡 in progress (increment 1 code and docs done, not pushed)
-- **Current task:** 6 in [tasks.md](./tasks.md) (`/code-review` + `/security-review`, PR)
-- **Stopped at:** `TEST_DB_REQUIRED=1 node scripts/verify.mjs --full` passed; live local
-  run passed (pending member gets nothing live, accept starts live messages, 409 again,
-  decline 200 then 404)
-- **Open questions / blockers:** none
+- **Status:** 🟡 increment 1 merged; increment 2 waits for the Android invite screen
+- **Current task:** none here. #37 step 2b-1 changed `group_invites.go`:
+  `giveInviteesChatEntry` is now `giveChatEntry`, returns its error and runs inside the
+  group write's transaction, so a failed entry fails the create or add instead of being
+  logged ([decided](../../decisions/data-writes.md#mongodb-transactions))
+- **Stopped at:** `TEST_DB_REQUIRED=1 node scripts/verify.mjs --full` passed
+- **Open questions / blockers:** #37 step 2b-2 puts accept, decline and join in
+  transactions next; their "already a member" repair must survive the rollback
 - **Don't forget:** a pending invite is stored as the invitee's `users.chats.<groupId>`
   entry. The backfill tells legacy pending members from new ones by the cutoff in the
   `migrations` doc `accept-legacy-pending-5`, never by the entry (code review).
   `websocket-requests.md` is at 200 lines: split it before adding to it
 
 ## Recent sessions (newest first, keep 5)
+
+### 2026-11-19: #37 step 2b-1 (group writes in transactions)
+
+- Changed: `group_invites.go` (`giveChatEntry`), `chat.service.go`
+- Verified: `verify --full` passed; rollback tests with `testutil.FailCommand`
+- Docs touched: this file, decisions/data-writes, current-state
 
 ### 2026-11-18: routes, backfill, docs
 
