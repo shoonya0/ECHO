@@ -49,6 +49,11 @@ func main() {
 	if err := database.ConnectMongo(ctx); err != nil {
 		log.WithError(err).Fatal("Failed to connect to MongoDB")
 	}
+	// Multi-document writes run in transactions (#37); on a standalone server
+	// every one of them would fail, so stop here instead.
+	if err := database.RequireTransactions(ctx); err != nil {
+		log.WithError(err).Fatal("MongoDB can't run transactions")
+	}
 	// Build indexes in the background so a long first build on a large
 	// collection doesn't delay the port binding. A failure here is usually
 	// duplicate emails blocking the unique index; the server still works
