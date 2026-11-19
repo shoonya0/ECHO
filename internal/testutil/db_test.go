@@ -15,12 +15,6 @@ import (
 // "Transaction numbers are only allowed on a replica set member or mongos".
 func TestTestDBSupportsTransactions(t *testing.T) {
 	ctx := UseTestDB(t)
-	// Transactions can't create collections on MongoDB < 4.4; create them first.
-	for _, name := range []string{"tx_a", "tx_b"} {
-		if err := database.DB.CreateCollection(ctx, name); err != nil {
-			t.Fatalf("create %s: %v", name, err)
-		}
-	}
 
 	sess, err := database.DB.Client().StartSession()
 	if err != nil {

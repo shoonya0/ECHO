@@ -56,7 +56,12 @@ jobs:
       # One-node replica set; --wait returns once the healthcheck has initiated it and
       # this node is the primary.
       - name: MongoDB (replica set)
-        run: docker compose -f docker/docker-compose.yml up -d --wait mongodb
+        run: docker compose -f docker/docker-compose.yml up -d --wait --wait-timeout 120 mongodb
+      - name: MongoDB logs (on failure)
+        if: failure()
+        run: |
+          docker compose -f docker/docker-compose.yml logs --tail 200 mongodb
+          docker inspect --format '{{json .State.Health}}' echo-mongodb
 
       # --- Docs tree (playbook 11): PRs only, once per run -----------------
       # Fails when the PR changes a feature's code without updating its state.md / tasks.md,

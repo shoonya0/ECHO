@@ -22,8 +22,11 @@ services:
       - mongodb_data:/data/db
     restart: unless-stopped
     # Initiates the replica set on the first check (a no-op afterwards) and is healthy
-    # once this node is the primary. The member host is localhost:27017, the address
-    # clients on the host (go run, tests, CI) use.
+    # once this node is the primary. Any other rs.status() error is rethrown, so
+    # `docker inspect echo-mongodb` shows it instead of a failed rs.initiate.
+    # The member host is localhost:27017, the address clients on the host (go run,
+    # tests, CI) use. Clients that reach it by another address (another container,
+    # a remapped port) must add directConnection=true to their URI.
     healthcheck:
       test:
         - CMD
@@ -34,7 +37,7 @@ services:
         - -p
         - echo
         - --eval
-        - "try { rs.status() } catch (e) { rs.initiate({ _id: 'rs0', members: [{ _id: 0, host: 'localhost:27017' }] }) }; quit(db.hello().isWritablePrimary ? 0 : 1)"
+        - "try { rs.status() } catch (e) { if (e.codeName !== 'NotYetInitialized') throw e; rs.initiate({ _id: 'rs0', members: [{ _id: 0, host: 'localhost:27017' }] }) }; quit(db.hello().isWritablePrimary ? 0 : 1)"
       interval: 5s
       timeout: 10s
       retries: 20
