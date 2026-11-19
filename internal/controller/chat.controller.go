@@ -36,6 +36,9 @@ func CreateDirectChatHTTP(ctx *gin.Context) {
 	}
 
 	chat, err := services.CreateDirectChat(reqCtx, targetObjectID)
+	if err == nil {
+		err = services.FillParticipantInfo(reqCtx, chat) // current names, not the stored copies (#36)
+	}
 	if err != nil {
 		log.Debug("failed to create direct chat: " + err.Error())
 		statusCode, msg := MapServiceErrorToHTTP(err)
@@ -79,6 +82,9 @@ func CreateGroupChatHTTP(ctx *gin.Context) {
 	}
 
 	chat, err := services.CreateGroupChat(reqCtx, request.Name, request.Description, participantIDs)
+	if err == nil {
+		err = services.FillParticipantInfo(reqCtx, chat) // current names, not the stored copies (#36)
+	}
 	if err != nil {
 		log.Debug("failed to create group chat: " + err.Error())
 		statusCode, msg := MapServiceErrorToHTTP(err)

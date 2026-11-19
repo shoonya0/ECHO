@@ -147,6 +147,14 @@ func HandleWebSocketChat(ctx *gin.Context) {
 		return
 	}
 
+	// The JWT's name is from login and it has no avatar; join and leave events show
+	// these (#36). A failed read keeps the JWT's: a name isn't worth refusing the connection.
+	if current, err := services.WithCurrentDisplayInfo(reqCtx, user); err != nil {
+		log.WithError(err).Warn("Could not read the user's current name; using the token's")
+	} else {
+		user = current
+	}
+
 	client := &models.Client{ // Create new client with unique ID for each connection
 		ID:         uuid.New().String(), // Generate unique ID for each WebSocket connection
 		UserID:     user.ID,
