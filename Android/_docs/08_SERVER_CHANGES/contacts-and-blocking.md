@@ -40,3 +40,19 @@ Details: [rest-api/](../../../_docs/rest-api/users.md#contacts).
 - Group chats aren't affected.
 
 Details: [websocket-requests.md](../../../_docs/websocket-requests.md).
+
+## Privacy settings now apply (#32)
+
+- `settings.privacy.showOnlineStatus`: `contacts` shows you online only to accepted
+  contacts, `none` to nobody, in contact lists and in `presence` events. A contact who
+  hides from you looks `offline`, with no `lastSeen`.
+- `showLastSeen`: `false` hides `lastSeen` (and `lastActivity`). `presence` events then have
+  no `lastSeen` key: handle it missing. It is now on for everyone; offer it as a switch.
+- `allowContactBy`: `POST users/contacts/:id` answers `403` when the target accepts
+  requests from nobody, or only from people sharing a group with them. Tell the user the
+  person doesn't accept requests.
+- `PUT profile/` answers `400` for a `showOnlineStatus` or `allowContactBy` other than
+  `everyone`, `contacts` or `none`.
+
+Details: [users.md](../../../_docs/rest-api/users.md#contacts),
+[decided](../../../_docs/decisions.md#how-privacy-settings-apply-32).
