@@ -76,7 +76,7 @@ func NewUserWithDefaults(email, username, passwordHash string) models.User {
 			},
 			Privacy: models.PrivacySettingsEmbed{
 				ShowOnlineStatus: "everyone",
-				ShowLastSeen:     false,
+				ShowLastSeen:     true, // on unless the user turns it off (#32)
 				AllowContactBy:   "everyone",
 			},
 			MessagePreferences: models.MessagePrefsEmbed{

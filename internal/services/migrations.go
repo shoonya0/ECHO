@@ -496,3 +496,40 @@ func AcceptLegacyPendingMembers(ctx context.Context, startedAt time.Time) (int64
 	}
 	return accepted, errors.Join(errs...)
 }
+
+// showLastSeenMarker is the migrations document that records that
+// EnableShowLastSeen ran.
+const showLastSeenMarker = "show-last-seen-default-32"
+
+// EnableShowLastSeen turns settings.privacy.showLastSeen on for every account,
+// once. Accounts were created with it off while nothing read it, so nobody
+// chose it; applying it as stored would have hidden everyone's lastSeen (#32).
+// The marker is written after the update, so a run stopped in between is
+// repeated. A user who turned it off during that run may have it turned back
+// on. Once the marker exists, it does nothing: later choices are the user's.
+// Returns the number of accounts changed.
+func EnableShowLastSeen(ctx context.Context) (int64, error) {
+	markers := database.DB.Collection(string(constants.MigrationColl))
+	if n, err := markers.CountDocuments(ctx, bson.M{"_id": showLastSeenMarker}); err != nil {
+		return 0, fmt.Errorf("read the marker: %w", err)
+	} else if n > 0 {
+		return 0, nil
+	}
+	res, err := database.DB.Collection(string(constants.UserColl)).UpdateMany(ctx,
+		bson.M{
+			"settings.privacy.showLastSeen": bson.M{"$ne": true},
+			// A null settings or privacy can't take the field; leave those.
+			"settings":         bson.M{"$not": bson.M{"$type": "null"}},
+			"settings.privacy": bson.M{"$not": bson.M{"$type": "null"}},
+		},
+		bson.M{"$set": bson.M{"settings.privacy.showLastSeen": true}},
+	)
+	if err != nil {
+		return 0, fmt.Errorf("turn on showLastSeen: %w", err)
+	}
+	if _, err := markers.UpdateOne(ctx, bson.M{"_id": showLastSeenMarker},
+		bson.M{"$setOnInsert": bson.M{"doneAt": time.Now()}}, options.UpdateOne().SetUpsert(true)); err != nil {
+		return res.ModifiedCount, fmt.Errorf("write the marker: %w", err)
+	}
+	return res.ModifiedCount, nil
+}

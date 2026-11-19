@@ -99,6 +99,13 @@ func main() {
 		} else if n > 0 {
 			log.WithField("members", n).Info("Accepted legacy pending group members")
 		}
+		// #32: showLastSeen was stored off for everyone while nothing read it;
+		// turned on once, then left to the users.
+		if n, err := services.EnableShowLastSeen(indexCtx); err != nil {
+			log.WithError(err).Error("Failed to turn on showLastSeen")
+		} else if n > 0 {
+			log.WithField("users", n).Info("Turned on showLastSeen")
+		}
 		// #69: chats entries of users who aren't participants (forged joins before #9,
 		// failed cleanups); idempotent. After #5's backfill, which writes the entries
 		// of pending invitees.
