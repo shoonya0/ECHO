@@ -163,7 +163,7 @@ app can add or take away one for `userId` without checking (#25).
 ```
 
 These are about live connections, not group membership. `username` and `avatar` are the
-profile as it was when that connection opened (#50); `avatar` is left out when empty.
+current profile, up to 5 minutes old (#50, #36); `avatar` is left out when empty.
 
 ## `presence`: someone's online status changed
 

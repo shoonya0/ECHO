@@ -65,6 +65,7 @@ Details: [websocket-requests.md](../../../_docs/websocket-requests.md#send_messa
   `username` and `avatar`.
 - `participants.<id>.userInfo` in `POST chats/direct/:userId` and `POST chats/group`
   replies is current too.
-- Live `chat` events still carry the name from when the message was sent.
+- Live `chat` events carry the name from when the message was sent. `typing`, `join`,
+  `leave`, invite and removal events show the current name within seconds of a change.
 
 Details: [chats.md](../../../_docs/rest-api/chats.md#messages).

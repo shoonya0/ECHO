@@ -11,17 +11,14 @@ on `main`. To learn what the product does, read
 and with a link to exactly one feature state.md. Updated by /close-increment and
 /feature-docs update. -->
 
-- **Feature:** none · #36 current names on `fix/36-fresh-display-info`: message history and
-  chat replies read names and avatars from `users` when built, new chats copy them from the
-  DB instead of the JWT, and so does WebSocket connect
-  ([decided](./decisions/accounts-and-privacy.md#names-are-read-when-shown-36)). Verified;
-  code review: 5 of 10 fixed (no 500 after a saved create, gone account is an error, reads
-  in the transaction and only on insert, 2 s connect read); a deleted reactor's name is `""`.
-  Left on #36: the hub's name cache (typing, invite, remove) isn't cleared on a profile
-  change, and join and leave show the name from connect.
+- **Feature:** none · #36 live names on `fix/36-live-names`: a name or avatar change, or a
+  delete, clears the user's cached name on every server (`control:profiles`); join and leave
+  read through that cache; a read overlapping a change isn't cached ([decided](./decisions/accounts-and-privacy.md#names-are-read-when-shown-36)).
+  Verified; code review 5 of 9 fixed. Left: one epoch for all users, a join on a cache miss
+  waits up to 2 s. Every #36 part is done: proposed to close it.
 - **#36 usernames on Render (not checked yet):** PR #160 is merged; the startup log shows
   any `Renamed a username another account already had`, then `Indexes ensured` with
-  `username_ci`. `main` at `db8204b`: #37 steps 2 and 3, #110 and
+  `username_ci`. PR #161 (current names in replies) is merged too. `main` at `cab0bfe`: #37 steps 2 and 3, #110 and
   the last #40 items (mentions, `CheckOrigin`, per-account limit; PRs #151 to #159) are
   merged, so Render deploys them. #5 step 2 waits for the Android invite screen
   ([group-invites](./features/group-invites/state.md))
@@ -75,12 +72,11 @@ and with a link to exactly one feature state.md. Updated by /close-increment and
   proposed to close it
 - **Next step:** the user decides on closing #40, #37 (all steps merged; the "Left open"
   review items in [data-writes](./decisions/data-writes.md#mongodb-transactions) stay) and
-  #63. Open a PR for `fix/36-fresh-display-info`; then the last #36 step (clear the hub's
-  name cache on every server on a profile change), #42 (unbounded lists) or #43
-  (missed live messages). Direct-chat gating and live status changes are decided against for now
+  #63, and #36 once this PR merges. Open a PR for `fix/36-live-names`; then #42 (unbounded
+  lists) or #43 (missed live messages). Direct-chat gating and live status changes are decided against for now
   ([decided](./decisions/accounts-and-privacy.md#how-privacy-settings-apply-32)). The Render
   checks above are the user's
-- **Updated:** 2026-11-19 on `fix/36-fresh-display-info` from `db8204b`. Commits on `main` must keep the author `shoonya0`
+- **Updated:** 2026-11-19 on `fix/36-live-names` from `cab0bfe`. Commits on `main` must keep the author `shoonya0`
 
 ## Where things stand
 
@@ -94,6 +90,9 @@ Not built yet: editing or deleting messages, and changing chat settings. The ful
 
 ## Recently finished
 
+- **#36 current names (PR #161):** message history and chat replies read names and avatars
+  when built; new chats and WebSocket connect copy them from the DB, not the JWT
+  ([decided](./decisions/accounts-and-privacy.md#names-are-read-when-shown-36)).
 - **#36 usernames (PR #160):** 3 to 30 letters, digits, `_` or `.`, unique ignoring case
   (`username_ci`); `409` on signup and `PUT profile/`; names shared before are renamed at
   startup ([decided](./decisions/accounts-and-privacy.md#unique-usernames-36)).
@@ -187,7 +186,7 @@ There are 8 open issues. Where each risk sits in the code: [architecture-overvie
 |---|---|---|
 | Live connections | Missed live messages can't be detected | #43 |
 | Groups | Pending members still pass membership checks (#5 step 2) | #5 |
-| Accounts | Live events can show a name up to 5 minutes old, or from connect (REST fix: PR pending) | #36 |
+| Accounts | A server that misses a profile-change message shows the old name for up to 5 minutes (fix: PR pending) | #36 |
 | Contacts and blocking | Contact lists aren't cut to `limit`, and blocks written during a deploy can be missed | #39, #63 |
 | Online status and privacy | A status or privacy change reaches live events only at the next connect (decided) | none |
 | Messages and data | Some lists grow without limit | #42 |

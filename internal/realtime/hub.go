@@ -49,6 +49,9 @@ type Hub struct {
 	// loadPresence reads a user's status and privacy settings for their
 	// offline; nil means services.GetPresenceSettings.
 	loadPresence func(ctx context.Context, userID bson.ObjectID) (services.PresenceSettings, error)
+	// loadUserInfo reads a user's name and avatar for GetUserInfo; nil means
+	// services.GetUserDisplayInfoFromDB.
+	loadUserInfo func(userID bson.ObjectID) (*models.UserDisplayInfo, error)
 	// background tracks the Redis work a disconnect leaves running, so tests can
 	// wait for it (#22).
 	background sync.WaitGroup
@@ -768,17 +771,18 @@ func (eh *Hub) JoinChat(ctx context.Context, client *models.Client, chatID strin
 		return fmt.Errorf("removed during the join: %w", ErrNotInChat)
 	}
 
-	// Publish join event to chat
+	// Publish join event to chat, with the current name (#36)
+	username, avatar := eh.currentName(client)
 	joinMsg := &models.WebSocketMessage{
 		Type:     models.WSMessageTypeJoin,
 		ChatID:   chatID,
 		UserID:   client.UserID.Hex(),
-		Username: client.Username,
-		Avatar:   client.Avatar,
+		Username: username,
+		Avatar:   avatar,
 		Data: models.UserJoinLeave{
 			UserID:    client.UserID.Hex(),
-			Username:  client.Username,
-			Avatar:    client.Avatar,
+			Username:  username,
+			Avatar:    avatar,
 			Action:    "join",
 			Timestamp: time.Now(),
 		},
@@ -805,17 +809,18 @@ func (eh *Hub) LeaveChat(client *models.Client, chatID string) error {
 	emptied := removeClientFromRoom(eh.Hub, client, chatID)
 	eh.Mutex.Unlock()
 
-	// Publish leave event
+	// Publish leave event, with the current name (#36)
+	username, avatar := eh.currentName(client)
 	leaveMsg := &models.WebSocketMessage{
 		Type:     models.WSMessageTypeLeave,
 		ChatID:   chatID,
 		UserID:   client.UserID.Hex(),
-		Username: client.Username,
-		Avatar:   client.Avatar,
+		Username: username,
+		Avatar:   avatar,
 		Data: models.UserJoinLeave{
 			UserID:    client.UserID.Hex(),
-			Username:  client.Username,
-			Avatar:    client.Avatar,
+			Username:  username,
+			Avatar:    avatar,
 			Action:    "leave",
 			Timestamp: time.Now(),
 		},
@@ -986,34 +991,51 @@ func (eh *Hub) performCleanup() {
 	}
 }
 
-// GetUserInfo gets user display information from hub cache first, then lookup service
+// GetUserInfo returns a user's name and avatar for live events: from the cache while
+// the entry is fresh, else from the database. A profile change forgets the entry on
+// every instance (ProfileChanged), so a name change shows without waiting for the
+// TTL (#36). A read that overlaps such a change isn't cached, so it can't put the old
+// name back for 5 minutes.
 func (eh *Hub) GetUserInfo(userID bson.ObjectID) (*models.UserDisplayInfo, error) {
-	eh.Mutex.RLock()
 	userIDStr := userID.Hex()
 
-	// Check hub cache first
+	eh.Mutex.RLock()
 	if userInfo, exists := eh.UserInfoCache[userIDStr]; exists {
-		// Check if cache entry is still valid
 		if expiry, hasExpiry := eh.CacheExpiry[userIDStr]; hasExpiry && time.Now().Before(expiry) {
 			eh.Mutex.RUnlock()
 			return userInfo, nil
 		}
 	}
+	epoch := eh.UserInfoEpoch
 	eh.Mutex.RUnlock()
 
-	// Not in cache or expired, get from lookup service
-	userInfo, err := services.GetUserDisplayInfoFromDB(userID)
+	load := eh.loadUserInfo
+	if load == nil {
+		load = services.GetUserDisplayInfoFromDB
+	}
+	userInfo, err := load(userID)
 	if err != nil {
 		return nil, err
 	}
 
-	// Cache the result in hub for future use
 	eh.Mutex.Lock()
-	eh.UserInfoCache[userIDStr] = userInfo
-	eh.CacheExpiry[userIDStr] = time.Now().Add(5 * time.Minute)
+	if eh.UserInfoEpoch == epoch { // no profile change since the read began
+		eh.UserInfoCache[userIDStr] = userInfo
+		eh.CacheExpiry[userIDStr] = time.Now().Add(5 * time.Minute)
+	}
 	eh.Mutex.Unlock()
 
 	return userInfo, nil
+}
+
+// currentName is the name and avatar to show for a connection's user in a live
+// event: the cached or current one, else what the connection was opened with.
+func (eh *Hub) currentName(client *models.Client) (username, avatar string) {
+	info, err := eh.GetUserInfo(client.UserID)
+	if err != nil || info == nil {
+		return client.Username, client.Avatar
+	}
+	return info.Username, info.Avatar
 }
 
 // HubStats is what GET chats/hub/stats returns: counts for this instance.

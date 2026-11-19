@@ -175,11 +175,9 @@ func HandleWebSocketChat(ctx *gin.Context) {
 		client.TokenExpiresAt = claims.ExpiresAt.Time // the re-check closes the connection then (#76)
 	}
 
-	hub.UpdateUserInfoCache(user.ID.Hex(), models.UserDisplayInfo{
-		Email:       user.Email,
-		Username:    user.Username,
-		DisplayName: user.Profile.DisplayName,
-	})
+	// The name cache isn't written here: GetUserInfo fills it, and only when no
+	// profile change overlapped its read. A write from here could put back a name
+	// read before a change (code review of #36).
 
 	// The registration decides from this presence whether to announce the
 	// user online (#31). QueueRegister gives up if the hub stopped;

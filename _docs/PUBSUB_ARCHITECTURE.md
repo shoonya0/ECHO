@@ -92,9 +92,9 @@ call `BroadcastToChat`, which calls the hub's `PublishToChat`.
 | `chat:<chatID>` | All events of one chat | **Yes.** This is the main path. It also carries `internal.members_removed` after `remove_user`: each server takes those users' connections out of the room, and never forwards it. Being on the same channel keeps its place after the `chat_updated` (#14). |
 | `presence:global` | Online and offline updates | **Yes** (#31). Each update lists the user's chats; every server sends it to its own connections in them, once per connection, without the list. |
 | `user:<userID>` | Messages for one person | Only `internal.chat_added`: when the person gains a chat (a new direct chat, a group they created or joined with a code), each server puts their connections in its room and subscribes to it, and never forwards it (#49). |
-| `system:global` | Announcements to everyone | No. Servers listen, but nothing publishes to it. |
-| `instance:<instanceID>` | Messages for one server | No. Servers listen, but nothing publishes to it. |
+| `system:global`, `instance:<instanceID>` | Announcements to everyone; messages for one server | No. Servers listen, but nothing publishes to them. |
 | `control:sessions` | Close a user's connections on every server (logout, deleted profile) | **Yes** (#76). Never forwarded to clients. |
+| `control:profiles` | Forget a user's cached name and avatar on every server (profile change) | **Yes** (#36). Never forwarded to clients. |
 
 A server listens to all its channels over **one** Redis connection and one reader goroutine
 (#21). A subscribe returns once Redis confirms it; a release doesn't wait. The reader handles

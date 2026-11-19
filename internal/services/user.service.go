@@ -361,8 +361,14 @@ func GetUserSuggestions(ctx context.Context, userID bson.ObjectID, page, limit i
 	return r.Suggestions, r.Total, nil
 }
 
-// GetUserDisplayInfoFromDB fetches user display info from database
+// displayInfoReadTimeout bounds GetUserDisplayInfoFromDB, which live events wait on.
+const displayInfoReadTimeout = 2 * time.Second
+
+// GetUserDisplayInfoFromDB reads the name and avatar live events show (#36). It has
+// no caller context, so the read is bounded on its own.
 func GetUserDisplayInfoFromDB(userID bson.ObjectID) (*models.UserDisplayInfo, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), displayInfoReadTimeout)
+	defer cancel()
 	filter := bson.M{"_id": userID}
 	projection := bson.M{
 		"username":            1,
@@ -381,7 +387,7 @@ func GetUserDisplayInfoFromDB(userID bson.ObjectID) (*models.UserDisplayInfo, er
 	}
 
 	err := database.DB.Collection(string(constants.UserColl)).FindOne(
-		context.Background(),
+		ctx,
 		filter,
 		options.FindOne().SetProjection(projection),
 	).Decode(&user)
@@ -396,6 +402,7 @@ func GetUserDisplayInfoFromDB(userID bson.ObjectID) (*models.UserDisplayInfo, er
 	return &models.UserDisplayInfo{
 		Username:    user.Username,
 		DisplayName: user.Profile.DisplayName,
+		Avatar:      user.Profile.Avatar,
 	}, nil
 }
 

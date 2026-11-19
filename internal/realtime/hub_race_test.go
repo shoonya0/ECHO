@@ -66,6 +66,10 @@ func newTestHub(t *testing.T) *Hub {
 		logger:        logger,
 		instanceID:    "test",
 		saveLastSeen:  func(context.Context, bson.ObjectID, time.Time) error { return nil },
+		// No database in these tests: live events fall back to the connection's name.
+		loadUserInfo: func(bson.ObjectID) (*models.UserDisplayInfo, error) {
+			return nil, errors.New("no database in tests")
+		},
 		loadPresence: func(context.Context, bson.ObjectID) (services.PresenceSettings, error) {
 			return services.PresenceSettings{Status: constants.UserStatusOnline, Privacy: models.PrivacySettingsEmbed{ShowLastSeen: true}}, nil
 		},

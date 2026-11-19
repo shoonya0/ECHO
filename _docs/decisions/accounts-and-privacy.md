@@ -57,7 +57,8 @@ now read the current values from `users` when they are built (one query per repl
 instead of rewriting copies: a profile change would otherwise have to update every message
 the user ever sent. Copies are still written, but from the database, not from the JWT,
 which keeps the name from login for 7 days and has no avatar. Live events read names
-through the hub's cache, which a profile change doesn't clear yet: that is the next step.
+through each server's 5-minute cache, which a profile change clears on every server
+(`control:profiles`); a server that misses that message shows the old name until expiry.
 
 ## Where presence comes from (#31)
 
