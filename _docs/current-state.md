@@ -11,13 +11,14 @@ on `main`. To learn what the product does, read
 and with a link to exactly one feature state.md. Updated by /close-increment and
 /feature-docs update. -->
 
-- **Feature:** #37 part 2, step 1 on `chore/37-mongo-replica-set`: local and CI MongoDB
-  run as a one-node replica set; verified, PR next. #37 part 1 (PR #150) is merged, so
-  Render deploys it. #5 step 2 waits for the Android invite screen
-  ([group-invites](./features/group-invites/state.md))
+- **Feature:** #37 step 2a on `fix/37-transactions`: contact writes in transactions, no
+  start on a standalone MongoDB; verified, PR next. #5 step 2 waits for the Android invite
+  screen ([group-invites](./features/group-invites/state.md))
 - **#37 part 1 on Render (not checked yet):** the startup log shows `Backfilled direct chat
   keys` once (not on the next start), any `Second direct chats of a pair` (chat IDs to merge
   by hand), and `Indexes ensured` with `directKey_1`
+- **#37 step 2a on Render (not checked yet):** the server starts (no `MongoDB can't run
+  transactions`), and a contact request, accept and remove work
 - **#21 on Render (not checked yet):** Redis `CLIENT LIST TYPE pubsub` shows one connection
   per running server
 - **#31 on Render (not checked yet):** in a shared chat, A sees B's online and offline, and
@@ -57,14 +58,13 @@ and with a link to exactly one feature state.md. Updated by /close-increment and
   missed; a connection's welcome is dropped when its 10-message queue is already full
 - **Not filed:** #63 can't happen any more (no deployed version writes `blockedChats`);
   proposed to close it
-- **Next step:** #37 part 2, step 2: transactions for the contact request sent both ways
-  at once, accept, and the group and message writes, plus a startup check that `DB_URI`
-  supports them (PR #151 review). The replica set is set up
-  ([decided](./decisions.md#mongodb-transactions), [recreate old containers](./getting-started.md#run-it)).
-  Direct-chat gating and live status changes are decided against for now
-  ([decided](./decisions.md#how-privacy-settings-apply-32)). The Render checks above are the
-  user's
-- **Updated:** 2026-11-19 on `chore/37-mongo-replica-set` from `03381e8`. Commits on `main` must keep the author `shoonya0`
+- **Next step:** #37 step 2b: transactions for `CreateGroupChat`, adding, removing and
+  joining members, and `SendMessage` with its chat stats (rules in
+  [decided](./decisions.md#mongodb-transactions)). Direct-chat gating and live status
+  changes are decided against for now ([decided](./decisions.md#how-privacy-settings-apply-32)).
+  The Render checks above are the user's
+- **Updated:** 2026-11-19 on `fix/37-transactions` from `40cc898`. Commits on `main` must
+  keep the author `shoonya0`
 
 ## Where things stand
 

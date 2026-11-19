@@ -69,8 +69,9 @@ Platform: Linux server, Docker image auto-deployed to Render from `main`.
 - Hub maps (`ChatClients`, `UserClients`, `ClientChats`) are touched only under
   `hub.Mutex`; never range over an inner map after unlocking (#19).
 - Every WebSocket handler that takes a `chatId` checks membership (#23).
-- Multi-document writes: check `MatchedCount`, don't discard errors (`_, _ =`), prefer
-  `$addToSet` over `$push` for ID lists (#37).
+- Multi-document writes: one `database.WithTransaction` with the reads inside it, two users
+  written smaller ID first (`writeInIDOrder`, else they livelock). Check `MatchedCount`,
+  don't discard errors (`_, _ =`), prefer `$addToSet` over `$push` for ID lists (#37).
 - Service and WebSocket errors go through a mapper; never send `err.Error()` to clients (#41).
 - Respect the target layers in `_docs/architecture-overview.md#target-layers-not-yet-enforced`.
 - `go.sum` is protected: change it with `go get` / `go mod tidy`, not by editing.
