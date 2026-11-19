@@ -2,6 +2,17 @@
 
 Part of [server changes the app must handle](./README.md).
 
+## Messages have a per-chat number: catch up on missed ones (#43)
+
+- Every message in history and in live `message` events has `seq` (1, 2, 3 per chat).
+  Chats have `stats.lastSeq`. Store the highest `seq` seen per chat.
+- On every (re)connect, and when a live `seq` skips a number, call
+  `GET messages/:chatID/messages?afterSeq=<highest>` and page with `nextAfterSeq` while
+  `hasMore`. Merge by message ID: you may get one you already have.
+- A gap can be a deleted account's messages, not a loss; the catch-up call settles it.
+
+Details: [chats.md](../../../_docs/rest-api/chats.md#catching-up-on-missed-messages).
+
 ## Live events name the sender (#50)
 
 - A `message` event now has `data.sender` (`userId`, `username`, `displayName`, `avatar`,

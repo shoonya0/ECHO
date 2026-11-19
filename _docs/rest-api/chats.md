@@ -22,6 +22,7 @@ user" (#36). There is no route that lists your chats, and none that renames a gr
 |---|---|
 | `limit` | Messages per page, 1 to 100. Default 50. Other values fall back to 50. |
 | `before` | Message ID to start from. Leave it out for the newest page. |
+| `afterSeq` | Catch up: messages with a `seq` above this, oldest first. Not with `before`. |
 
 The reply's `data` has `chat`, `messages` and `pagination`:
 
@@ -32,6 +33,20 @@ The reply's `data` has `chat`, `messages` and `pagination`:
 **To load older messages,** send `nextCursor` as `before`. On the last page, `nextCursor`
 is `null` and `hasMore` is `false`. Pages stay correct while new messages arrive. The old
 `offset` option now returns `400`.
+
+### Catching up on missed messages
+
+Each message has `seq`: the chat's messages are numbered 1, 2, 3 in the order the server
+saved them (#43). Live delivery can drop a message (a reconnect, a full send queue), so:
+
+- Keep the highest `seq` you have per chat. On connect, and whenever a live `message`
+  skips a number, send `afterSeq=<that seq>`. A chat's `stats.lastSeq` is its newest one.
+- The reply is oldest first. While `hasMore` is `true`, send `pagination.nextAfterSeq` as
+  the next `afterSeq`.
+- A skip isn't always a lost message: a deleted account's messages leave gaps. Messages an
+  older server copy saves during a deploy have no `seq` until the next start numbers them.
+
+`afterSeq` that isn't a whole number from 0 up, or comes with `before`, gets `400`.
 
 `reactions` maps emoji to `count`, `users` and `details` (ID to username, `""` before #75).
 Messages saved before #72 have `reactions: null` until reacted to: treat it as none.
