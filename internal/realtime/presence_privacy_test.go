@@ -1,10 +1,14 @@
 package realtime
 
 import (
+	"context"
+	"errors"
 	"testing"
 	"time"
 
 	"github.com/shoonya0/ECHO/internal/constants"
+	"github.com/shoonya0/ECHO/internal/models"
+	"github.com/shoonya0/ECHO/internal/services"
 	"github.com/shoonya0/ECHO/internal/testutil"
 
 	"go.mongodb.org/mongo-driver/v2/bson"
@@ -86,5 +90,70 @@ func TestPresenceEventsHideLastSeen(t *testing.T) {
 		if seen, ok := event["lastSeen"]; ok {
 			t.Fatalf("%v event has lastSeen %v; the user hides it", event["status"], seen)
 		}
+	}
+}
+
+// The user's own other connections get their contacts-only events: they
+// aren't in their own contacts list (#32 review).
+func TestContactsOnlyPresenceReachesOwnDevices(t *testing.T) {
+	hub := newPresenceHub(t, testutil.UseTestRedis(t), "one")
+	chat := bson.NewObjectID().Hex()
+	userA := bson.NewObjectID()
+	tablet := bufferedClient("tablet", userA)
+	phone := bufferedClient("phone", userA)
+	addClient(hub, tablet, chat)
+	connectWithPresence(t, hub, phone, UserPresence{
+		Status: "online", ShowOnline: "contacts", ShowLastSeen: true, Contacts: []string{bson.NewObjectID().Hex()},
+	}, chat)
+	wantStatus(t, nextPresence(t, tablet, userA), constants.UserStatusOnline)
+}
+
+// The offline follows the settings at disconnect, not at connect (#32
+// review): it still reaches everyone the online did, so nobody is left
+// showing the user online, but carries lastSeen only if the current settings
+// let all of them see it.
+func TestOfflineFollowsCurrentSettings(t *testing.T) {
+	contact, dropped := bson.NewObjectID(), bson.NewObjectID()
+	settings := func(scope string, showLastSeen bool, contacts ...bson.ObjectID) func(context.Context, bson.ObjectID) (services.PresenceSettings, error) {
+		return func(context.Context, bson.ObjectID) (services.PresenceSettings, error) {
+			return services.PresenceSettings{Status: constants.UserStatusOnline, Contacts: contacts,
+				Privacy: models.PrivacySettingsEmbed{ShowOnlineStatus: scope, ShowLastSeen: showLastSeen}}, nil
+		}
+	}
+	cases := []struct {
+		name     string
+		current  func(context.Context, bson.ObjectID) (services.PresenceSettings, error)
+		lastSeen bool
+	}{
+		{"unchanged", settings("contacts", true, contact, dropped), true},
+		{"turned lastSeen off", settings("contacts", false, contact, dropped), false},
+		{"now shown to nobody", settings("none", true), false},
+		{"a contact removed", settings("contacts", true, contact), false},
+		{"a contact added", settings("contacts", true, contact, dropped, bson.NewObjectID()), true},
+		{"settings unreadable", func(context.Context, bson.ObjectID) (services.PresenceSettings, error) {
+			return services.PresenceSettings{}, errors.New("mongo down")
+		}, false},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			hub := newPresenceHub(t, testutil.UseTestRedis(t), "one")
+			hub.loadPresence = tc.current
+			chat := bson.NewObjectID().Hex()
+			a1 := bufferedClient("a1", bson.NewObjectID())
+			b1 := bufferedClient("b1", contact)
+			addClient(hub, b1, chat)
+			connectWithPresence(t, hub, a1, UserPresence{
+				Status: "online", ShowOnline: "contacts", ShowLastSeen: true,
+				Contacts: []string{contact.Hex(), dropped.Hex()},
+			}, chat)
+			wantStatus(t, nextPresence(t, b1, a1.UserID), constants.UserStatusOnline)
+
+			unregisterAndWait(hub, a1)
+			offline := nextPresence(t, b1, a1.UserID)
+			wantStatus(t, offline, constants.UserStatusOffline)
+			if _, has := offline["lastSeen"]; has != tc.lastSeen {
+				t.Fatalf("offline has lastSeen = %v, want %v", has, tc.lastSeen)
+			}
+		})
 	}
 }

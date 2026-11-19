@@ -71,20 +71,14 @@ func connectionLogFields(user models.LoginUserResponse, client *models.Client) l
 // read fails the user counts as invisible: an outage mustn't announce a user
 // who chose to hide. REST still shows them, from their stored settings.
 func connectionPresence(ctx context.Context, log logrus.Entry, user models.LoginUserResponse, clientID string) *realtime.UserPresence {
-	presence := &realtime.UserPresence{UserID: user.ID, ClientID: clientID, DeviceInfo: user.Presence.DeviceInfo}
 	settings, err := services.GetPresenceSettings(ctx, user.ID)
 	if err != nil {
 		log.WithError(err).WithField(string(constants.UserIDKey), user.ID.Hex()).Warn("Could not read the user's presence settings; not announcing them")
-		presence.Status = realtime.UserStatus(constants.UserStatusInvisible)
-		return presence
+		settings = services.PresenceSettings{Status: constants.UserStatusInvisible}
 	}
-	presence.Status = realtime.UserStatus(settings.Status)
-	presence.ShowOnline = settings.Privacy.ShowOnlineStatus
-	presence.ShowLastSeen = settings.Privacy.ShowLastSeen
-	for _, id := range settings.Contacts {
-		presence.Contacts = append(presence.Contacts, id.Hex())
-	}
-	return presence
+	presence := realtime.PresenceFromSettings(user.ID, settings)
+	presence.ClientID, presence.DeviceInfo = clientID, user.Presence.DeviceInfo
+	return &presence
 }
 
 // HandleWebSocketChat upgrades the request to a WebSocket and serves the chat

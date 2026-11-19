@@ -4,6 +4,8 @@ import (
 	"sync"
 	"time"
 
+	"github.com/shoonya0/ECHO/internal/services"
+
 	"go.mongodb.org/mongo-driver/v2/bson"
 )
 
@@ -22,6 +24,21 @@ type UserPresence struct {
 	ShowOnline   string   `json:"show_online,omitempty"`
 	ShowLastSeen bool     `json:"show_last_seen,omitempty"`
 	Contacts     []string `json:"contacts,omitempty"`
+}
+
+// PresenceFromSettings is the presence a connection registers with, from
+// the user's stored status and privacy settings (#31, #32).
+func PresenceFromSettings(userID bson.ObjectID, settings services.PresenceSettings) UserPresence {
+	presence := UserPresence{
+		UserID:       userID,
+		Status:       UserStatus(settings.Status),
+		ShowOnline:   settings.Privacy.ShowOnlineStatus,
+		ShowLastSeen: settings.Privacy.ShowLastSeen,
+	}
+	for _, id := range settings.Contacts {
+		presence.Contacts = append(presence.Contacts, id.Hex())
+	}
+	return presence
 }
 
 // PresenceManager keeps presence for users connected to this instance.

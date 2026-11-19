@@ -14,7 +14,9 @@ import (
 	"github.com/sirupsen/logrus"
 	"go.mongodb.org/mongo-driver/v2/bson"
 
+	"github.com/shoonya0/ECHO/internal/constants"
 	"github.com/shoonya0/ECHO/internal/models"
+	"github.com/shoonya0/ECHO/internal/services"
 	"github.com/shoonya0/ECHO/internal/testutil"
 )
 
@@ -59,6 +61,9 @@ func newTestHub(t *testing.T) *Hub {
 		logger:        logger,
 		instanceID:    "test",
 		saveLastSeen:  func(context.Context, bson.ObjectID, time.Time) error { return nil },
+		loadPresence: func(context.Context, bson.ObjectID) (services.PresenceSettings, error) {
+			return services.PresenceSettings{Status: constants.UserStatusOnline, Privacy: models.PrivacySettingsEmbed{ShowLastSeen: true}}, nil
+		},
 	}
 }
 
