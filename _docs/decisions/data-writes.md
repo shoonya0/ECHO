@@ -39,6 +39,9 @@ Left open (from the PR review of step 2a):
 - **Commit vs. client timeout.** A client that disconnects during the commit can get an
   error for a write that was saved, and its retry gets "already sent". True of every
   write, not only transactions; leave unless clients report it.
+- **One failpoint per server.** `testutil.FailCommand` sets MongoDB's single `failCommand`
+  failpoint; only `internal/services` may use it, or packages testing in parallel
+  overwrite each other's setting. Make it a lock if a second package needs it.
 
 ## One direct chat per pair (#37)
 
