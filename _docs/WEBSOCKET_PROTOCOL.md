@@ -21,6 +21,10 @@ Send your login token in the `Authorization: Bearer <token>` header. The server 
 nowhere else: not in the URL, not in a cookie. A plain browser page can't set this header,
 so it can't connect. The Android app (OkHttp), Node (`ws`) and `wscat -H` all can.
 
+A request with an `Origin` header (a browser page) is refused with `403` unless the origin
+is the server's own host or is listed in `WS_ALLOWED_ORIGINS` (#40). Apps that send no
+`Origin`, as OkHttp doesn't, aren't affected.
+
 When you connect, the server:
 
 1. Checks your token.

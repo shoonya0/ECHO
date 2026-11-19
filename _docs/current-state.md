@@ -11,9 +11,9 @@ on `main`. To learn what the product does, read
 and with a link to exactly one feature state.md. Updated by /close-increment and
 /feature-docs update. -->
 
-- **Feature:** none · #40 mention lookups on `fix/40-mention-lookups`, verified, PR not
-  opened yet. `main` at `45d90af`: #37 steps 2 and 3 and #110 (PRs #151 to #156) are
-  merged, so Render deploys them. #5 step 2 waits for the Android invite screen
+- **Feature:** none · #40 `CheckOrigin` on `fix/40-websocket-origin`, verified, PR not
+  opened yet. `main` at `81b2e49`: #37 steps 2 and 3, #110 and the #40 mention lookups
+  (PRs #151 to #157) are merged, so Render deploys them. #5 step 2 waits for the Android invite screen
   ([group-invites](./features/group-invites/state.md))
 - **#37 part 1 on Render (not checked yet):** the startup log shows `Backfilled direct chat
   keys` once (not on the next start), any `Second direct chats of a pair` (chat IDs to merge
@@ -48,8 +48,7 @@ and with a link to exactly one feature state.md. Updated by /close-increment and
 - **#72 on Render (paused 2026-11-15):** `/health` answers `200`, but no chat with a message
   saved before PR #74 (`reactions: null`) is left to react to. Continue later, for example
   by setting `reactions: null` on a test message in Atlas first
-- **Still open on #40:** a per-account WebSocket limit, `CheckOrigin` (mention lookups on
-  this branch).
+- **Still open on #40:** a per-account WebSocket limit (`CheckOrigin` on this branch).
   Proposed, not filed: hide which emails have accounts (signup `409`, login timing). Split
   `websocket-requests.md` and `websocket-events.md` (~199 lines) before adding to them
 - **#69 on Render (not checked yet):** the startup log shows `Removed chat entries of users
@@ -61,12 +60,12 @@ and with a link to exactly one feature state.md. Updated by /close-increment and
   missed; a connection's welcome is dropped when its 10-message queue is already full
 - **Not filed:** #63 can't happen any more (no deployed version writes `blockedChats`);
   proposed to close it
-- **Next step:** open the PR for the #40 mention lookups (two reads per message, only
-  participants kept, [request rule](./websocket-requests.md#send_message)). Then decide whether #37 can close: all its steps are merged; the review items under "Left
+- **Next step:** open the PR for #40 `CheckOrigin` (no `Origin`, own host or
+  `WS_ALLOWED_ORIGINS`, [connect](./WEBSOCKET_PROTOCOL.md#connect)). Then decide whether #37 can close: all its steps are merged; the review items under "Left
   open" in [data-writes](./decisions/data-writes.md#mongodb-transactions) stay. Direct-chat gating and live status changes are decided against for now
   ([decided](./decisions/accounts-and-privacy.md#how-privacy-settings-apply-32)). The Render
   checks above are the user's
-- **Updated:** 2026-11-19 on `fix/40-mention-lookups` from `45d90af`. Commits on `main` must keep the author `shoonya0`
+- **Updated:** 2026-11-19 on `fix/40-websocket-origin` from `81b2e49`. Commits on `main` must keep the author `shoonya0`
 
 ## Where things stand
 
@@ -80,6 +79,8 @@ Not built yet: editing or deleting messages, and changing chat settings. The ful
 
 ## Recently finished
 
+- **#40 mentions (PR #157):** a message keeps only mentions of chat participants, each once,
+  read in two queries instead of one per mention ([request rule](./websocket-requests.md#send_message)).
 - **#110 (PR #156):** a group's `participantCount` is computed from `participants` when
   read, not stored; the `$inc` writes and the startup backfill are gone
   ([decided](./decisions/chats-and-groups.md#how-a-groups-participant-count-is-kept-110)).
@@ -188,7 +189,7 @@ There are 8 open issues. Where each risk sits in the code: [architecture-overvie
 | Contacts and blocking | Contact lists aren't cut to `limit`, and blocks written during a deploy can be missed | #39, #63 |
 | Online status and privacy | A status or privacy change reaches live events only at the next connect (decided) | none |
 | Messages and data | Some lists grow without limit | #42 |
-| Limits and errors | WebSocket limits are per connection, not per user; `CheckOrigin` allows any origin | #40 |
+| Limits and errors | WebSocket limits are per connection, not per user | #40 |
 
 ## Next task
 

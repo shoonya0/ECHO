@@ -55,6 +55,7 @@ The defaults work with the Docker setup above. Real environment variables overri
 | `JWT_SECRET` | `echo-dev-secret` | **Required.** Use a long random value outside local development |
 | `LOG_FILE` | `cmd/server/logs/server.log` | Leave empty to log to the screen |
 | `LOG_LEVEL` | `debug` | Use `info` for deployment. `info` is also the default if unset |
+| `WS_ALLOWED_ORIGINS` | empty | Web origins besides the server's own host that may open the WebSocket (#40). Apps that send no `Origin` are always allowed |
 
 **4. Start the server**
 
