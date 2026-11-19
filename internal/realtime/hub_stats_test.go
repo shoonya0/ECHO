@@ -17,8 +17,8 @@ func TestGetStatsHasNoIdentifiers(t *testing.T) {
 
 	// The test hub can't reach Redis, so record the subscriptions directly.
 	hub.pubSubManager.mu.Lock()
-	hub.pubSubManager.subscriptions["user:"+userID.Hex()] = nil
-	hub.pubSubManager.subscriptions["chat:"+chatID.Hex()] = nil
+	hub.pubSubManager.subscriptions["user:"+userID.Hex()] = struct{}{}
+	hub.pubSubManager.subscriptions["chat:"+chatID.Hex()] = struct{}{}
 	hub.pubSubManager.mu.Unlock()
 
 	raw, err := json.Marshal(hub.GetStats())

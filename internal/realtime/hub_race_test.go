@@ -334,11 +334,11 @@ func TestDisconnectOfLastConnectionLeavesEveryChat(t *testing.T) {
 	chats := []string{"chatA", "chatB", "chatC"}
 	addClient(hub, client, chats...)
 
-	// Stand-in subscriptions: a PubSub with no channels never dials Redis.
+	// Stand-in subscriptions: marked without Redis.
 	pm := hub.pubSubManager
 	pm.mu.Lock()
 	for _, chatID := range chats {
-		pm.subscriptions[pm.getChatChannel(chatID)] = hub.redisClient.Subscribe(context.Background())
+		pm.subscriptions[pm.getChatChannel(chatID)] = struct{}{}
 	}
 	pm.mu.Unlock()
 
@@ -363,14 +363,13 @@ func TestDisconnectOfLastConnectionLeavesEveryChat(t *testing.T) {
 	}
 }
 
-// stubSubscriptions marks channels as subscribed without Redis: a PubSub with
-// no channels never dials.
+// stubSubscriptions marks channels as subscribed without Redis.
 func stubSubscriptions(hub *Hub, channels ...string) {
 	pm := hub.pubSubManager
 	pm.mu.Lock()
 	defer pm.mu.Unlock()
 	for _, channel := range channels {
-		pm.subscriptions[channel] = hub.redisClient.Subscribe(context.Background())
+		pm.subscriptions[channel] = struct{}{}
 	}
 }
 
