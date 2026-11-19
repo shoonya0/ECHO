@@ -46,7 +46,7 @@ Checked against the code at `17ec08b`. Issue numbers were last updated on 2026-1
 | Live messages | Send and receive instantly | Works | Missed messages can't be detected (#43). |
 | Message history | Load old messages, page by page | Works | |
 | Typing, read receipts, reactions | See who is typing, who has read a message, and emoji reactions | Partly works | Reaction counts can drift (#25). History shows who reacted by ID only, not by name (#75). |
-| Online status | See who is online | Partly works | Live online and offline events work. Contacts and profiles still show a stored status that is often wrong (#31). Privacy settings are saved but not applied (#32). |
+| Online status | See who is online | Works | Live events and REST show who is connected, with the status they chose (#31). Privacy settings apply to both (#32). A status change while connected isn't sent live yet. |
 | Attachments | Send a link to a file, with its details | Partly works | There is no file upload. The app must store the file elsewhere and send its URL. |
 
 ## Not built yet

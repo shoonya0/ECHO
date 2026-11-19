@@ -23,7 +23,8 @@ Index: [REST API](./README.md). Shared rules: [the basics](./basics.md).
 the person is connected now. `status` is their choice (`online`, `away`, `dnd`, `invisible`)
 while they are connected; to others it is `offline` when they aren't, or chose `invisible`,
 and `lastSeen` is when their last connection closed. You see your own status as you set it.
-[Decided](../decisions.md#where-presence-comes-from-31).
+`settings.privacy` narrows what others see (#32): `showOnlineStatus` (`everyone`,
+`contacts`, `none`) and `showLastSeen`. [Decided](../decisions.md#how-privacy-settings-apply-32).
 
 ## Finding people
 
@@ -45,7 +46,7 @@ All of these start with `users/contacts`.
 | `GET /sent-requests` | Requests you sent |
 | `GET /blocked` | People you blocked |
 | `GET /favorites` | Your favorites |
-| `POST /:targetUserId` | Sends a contact request. `400` if the target is you (#38). |
+| `POST /:targetUserId` | Sends a contact request. `400` if the target is you (#38). `403` if the target's `allowContactBy` shuts you out: `none`, or `contacts` when you share no group as members (#32). |
 | `PUT /:requestId?action=accepted` | Accepts a request. Use `action=declined` to decline. |
 | `DELETE /:contactId` | Removes a contact |
 | `POST /blockUnblock/:userId` | Blocks or unblocks someone (`action=block` or `action=unblock`; block is the default). Only the person who blocked can unblock. `409` if already blocked, or if you didn't block them. The block never appears in the blocked person's lists or suggestions, but their contact requests to you fail with `403`. |
