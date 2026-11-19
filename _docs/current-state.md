@@ -11,14 +11,14 @@ on `main`. To learn what the product does, read
 and with a link to exactly one feature state.md. Updated by /close-increment and
 /feature-docs update. -->
 
-- **Feature:** #37 step 2b-1 on `fix/37-group-transactions`: group create, add, remove and
-  send message in transactions; verified, PR next. #5 step 2 waits for the Android invite
+- **Feature:** #37 step 2b-2 on `fix/37-join-transactions`: join by code, accept and
+  decline in transactions; verified, PR next. #5 step 2 waits for the Android invite
   screen ([group-invites](./features/group-invites/state.md))
 - **#37 part 1 on Render (not checked yet):** the startup log shows `Backfilled direct chat
   keys` once (not on the next start), any `Second direct chats of a pair` (chat IDs to merge
   by hand), and `Indexes ensured` with `directKey_1`
-- **#37 step 2a/2b-1 on Render (not checked yet):** the server starts (no `MongoDB can't
-  run transactions`); contacts, group create, add, remove and sending messages work
+- **#37 step 2 on Render (not checked yet):** the server starts (no `MongoDB can't run
+  transactions`); contacts, groups (create, add, remove, join, accept, decline) and sends work
 - **#21 on Render (not checked yet):** Redis `CLIENT LIST TYPE pubsub` shows one connection
   per running server
 - **#31 on Render (not checked yet):** in a shared chat, A sees B's online and offline, and
@@ -58,12 +58,12 @@ and with a link to exactly one feature state.md. Updated by /close-increment and
   missed; a connection's welcome is dropped when its 10-message queue is already full
 - **Not filed:** #63 can't happen any more (no deployed version writes `blockedChats`);
   proposed to close it
-- **Next step:** #37 step 2b-2: join by code, accept and decline an invite in
-  transactions ([decided](./decisions/data-writes.md#mongodb-transactions)). Direct-chat
-  gating and live status changes are decided against for now
+- **Next step:** #37 step 3: read receipts and reactions take the request's context and
+  return their write errors ([decided](./decisions/data-writes.md#mongodb-transactions)).
+  Direct-chat gating and live status changes are decided against for now
   ([decided](./decisions/accounts-and-privacy.md#how-privacy-settings-apply-32)). The Render
   checks above are the user's
-- **Updated:** 2026-11-19 on `fix/37-group-transactions` from `118520d`. Commits on `main`
+- **Updated:** 2026-11-19 on `fix/37-join-transactions` from `21dee86`. Commits on `main`
   must keep the author `shoonya0`
 
 ## Where things stand
