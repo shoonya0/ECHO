@@ -23,10 +23,11 @@ func contains(slice []bson.ObjectID, item bson.ObjectID) bool {
 	return false
 }
 
-// logWriteError logs a failed database call. A write conflict inside a
-// transaction is expected under load: the driver runs the transaction again,
-// so it is logged at debug, not as an error (#37).
-func logWriteError(log *logrus.Entry, err error, msg string) {
+// logDBError logs a failed database call. A conflict inside a transaction is
+// expected under load: the driver runs the transaction again, so it is logged
+// at debug here. If the retries run out, database.WithTransaction logs the
+// final error (#37).
+func logDBError(log *logrus.Entry, err error, msg string) {
 	var le mongo.LabeledError
 	if errors.As(err, &le) && le.HasErrorLabel("TransientTransactionError") {
 		log.WithError(err).Debug(msg + "; the transaction runs again")
@@ -72,7 +73,7 @@ func FindByID[T any](
 		if err == mongo.ErrNoDocuments {
 			log.Debug("Document not found")
 		} else {
-			logWriteError(log, err, "Failed to find document")
+			logDBError(log, err, "Failed to find document")
 		}
 		return nil, err
 	}
@@ -94,7 +95,7 @@ func UpdateOne[T any](
 
 	res, err := coll.UpdateOne(ctx, filter, update, opts...)
 	if err != nil {
-		logWriteError(log, err, "Failed to update document")
+		logDBError(log, err, "Failed to update document")
 		return nil, fmt.Errorf("failed to update document: %w", err)
 	}
 

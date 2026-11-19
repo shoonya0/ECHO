@@ -5,7 +5,10 @@ import (
 	"errors"
 	"fmt"
 
+	"github.com/shoonya0/ECHO/internal/logger"
+
 	"go.mongodb.org/mongo-driver/v2/bson"
+	"go.mongodb.org/mongo-driver/v2/mongo"
 	"go.mongodb.org/mongo-driver/v2/mongo/options"
 	"go.mongodb.org/mongo-driver/v2/mongo/readconcern"
 	"go.mongodb.org/mongo-driver/v2/mongo/writeconcern"
@@ -50,8 +53,31 @@ func WithTransaction(ctx context.Context, fn func(ctx context.Context) error) er
 	opts := options.Transaction().
 		SetReadConcern(readconcern.Snapshot()).
 		SetWriteConcern(writeconcern.Majority())
+	var fnErr error // what the last run of fn returned
 	_, err = sess.WithTransaction(ctx, func(ctx context.Context) (any, error) {
-		return nil, fn(ctx)
+		fnErr = fn(ctx)
+		return nil, fnErr
 	}, opts)
+	if err != nil && failedInMongo(err, fnErr) {
+		// The callers' own checks (not found, already sent) aren't logged here;
+		// a commit that failed or retries that ran out are, as nothing else
+		// logs them at error.
+		logger.WithContext(ctx).WithError(err).Error("MongoDB transaction failed")
+	}
 	return err
+}
+
+// failedInMongo reports whether err, returned by a transaction whose function
+// last returned fnErr, came from MongoDB or the driver: the commit, the
+// session, an ended context, or write conflicts the retries didn't get past.
+func failedInMongo(err, fnErr error) bool {
+	if fnErr == nil || !errors.Is(err, fnErr) {
+		return true // not fn's error: the commit, abort or session failed
+	}
+	var le mongo.LabeledError
+	if errors.As(err, &le) && (le.HasErrorLabel("TransientTransactionError") ||
+		le.HasErrorLabel("UnknownTransactionCommitResult")) {
+		return true
+	}
+	return errors.Is(err, context.DeadlineExceeded) || errors.Is(err, context.Canceled)
 }

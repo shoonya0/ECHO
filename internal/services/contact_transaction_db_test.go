@@ -7,6 +7,9 @@ import (
 	"testing"
 
 	"go.mongodb.org/mongo-driver/v2/bson"
+
+	"github.com/shoonya0/ECHO/internal/constants"
+	"github.com/shoonya0/ECHO/internal/database"
 )
 
 // A→B and B→A sent at once both passed the checks, so each user ended up with
@@ -62,5 +65,49 @@ func checkOneWayRequest(t *testing.T, ctx context.Context, round int, a, b bson.
 	if len(ca.PendingOut)+len(ca.PendingIn)+len(cb.PendingOut)+len(cb.PendingIn) != 2 {
 		t.Fatalf("round %d: leftover entries; a: out %v in %v, b: out %v in %v",
 			round, ca.PendingOut, ca.PendingIn, cb.PendingOut, cb.PendingIn)
+	}
+}
+
+// Removing a contact whose account is gone still removes it from the caller:
+// the transaction doesn't roll that back for want of a second user (#37).
+func TestRemoveContactOfDeletedAccount(t *testing.T) {
+	ctx := useTestDB(t)
+	user, gone := bson.NewObjectID(), bson.NewObjectID()
+	insertTestUsers(t, ctx, user)
+	if _, err := database.DB.Collection(string(constants.UserColl)).UpdateOne(ctx, bson.M{"_id": user},
+		bson.M{"$set": bson.M{"contactInfo.contacts": []bson.ObjectID{gone}}}); err != nil {
+		t.Fatalf("add stale contact: %v", err)
+	}
+
+	if err := RemoveContact(ctx, user, gone); err != nil {
+		t.Fatalf("RemoveContact: %v", err)
+	}
+	if c := loadContactInfo(t, ctx, user).Contacts; len(c) != 0 {
+		t.Errorf("contacts = %v, want none", c)
+	}
+}
+
+// A request answered once can't be answered again: the conditional writes find
+// nothing and the transaction returns ErrContactRequestNotFound (#37).
+func TestAnswerContactRequestTwice(t *testing.T) {
+	ctx := useTestDB(t)
+	a, b := bson.NewObjectID(), bson.NewObjectID()
+	insertTestUsers(t, ctx, a, b)
+	if err := SendContactRequest(ctx, a, b); err != nil {
+		t.Fatalf("SendContactRequest: %v", err)
+	}
+
+	if err := AcceptOrDeclineContactRequest(ctx, b, a, string(constants.StatusAccepted)); err != nil {
+		t.Fatalf("accept: %v", err)
+	}
+	err := AcceptOrDeclineContactRequest(ctx, b, a, string(constants.StatusDeclined))
+	if !errors.Is(err, ErrContactRequestNotFound) {
+		t.Fatalf("second answer returned %v, want %v", err, ErrContactRequestNotFound)
+	}
+	if n := countID(loadContactInfo(t, ctx, a).Contacts, b); n != 1 {
+		t.Errorf("a's contacts hold b %d times, want 1", n)
+	}
+	if n := countID(loadContactInfo(t, ctx, b).Contacts, a); n != 1 {
+		t.Errorf("b's contacts hold a %d times, want 1", n)
 	}
 }

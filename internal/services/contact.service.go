@@ -310,11 +310,11 @@ func sendContactRequest(ctx context.Context, userID, targetUserID bson.ObjectID)
 	now := time.Now()
 	coll := database.DB.Collection(string(constants.UserColl))
 
-	// Conditional on the request not being there yet, so of two concurrent
-	// requests (a double tap) one wins and the other gets ErrRequestAlreadySent
-	// (#37).
+	// A concurrent request (a double tap, or the other way) that commits after
+	// this transaction's reads makes these writes conflict; the transaction then
+	// runs again and checkContactRequest returns the usual error (#37).
 	return writeInIDOrder(userID, targetUserID, func() error {
-		sent, err := UpdateOne(ctx, coll, bson.M{"_id": userID, "contactInfo.pendingOut": bson.M{"$ne": targetUserID}}, bson.M{
+		sent, err := UpdateOne(ctx, coll, bson.M{"_id": userID}, bson.M{
 			"$addToSet": bson.M{"contactInfo.pendingOut": targetUserID},
 			"$set":      bson.M{"contactInfo.updatedAt": now},
 		})
@@ -322,10 +322,7 @@ func sendContactRequest(ctx context.Context, userID, targetUserID bson.ObjectID)
 			return fmt.Errorf("failed to update requesting user: %w", err)
 		}
 		if sent.MatchedCount == 0 {
-			if _, err := fetchUserContact(ctx, userID); err != nil {
-				return err // gone, or unreadable
-			}
-			return fmt.Errorf("%w", ErrRequestAlreadySent)
+			return fmt.Errorf("%w", ErrUserNotFound)
 		}
 		return nil
 	}, func() error {
@@ -352,26 +349,12 @@ func AcceptOrDeclineContactRequest(ctx context.Context, userID, targetRequestID 
 }
 
 func answerContactRequest(ctx context.Context, userID, targetRequestID bson.ObjectID, action string) error {
+	// The writes are conditional on the request being there on both sides; one
+	// that matches nothing ends the transaction with ErrContactRequestNotFound.
 	userFilter := bson.M{"_id": userID, "contactInfo.pendingIn": bson.M{"$in": []bson.ObjectID{targetRequestID}}}
 	targetFilter := bson.M{"_id": targetRequestID, "contactInfo.pendingOut": bson.M{"$in": []bson.ObjectID{userID}}}
 
 	coll := database.DB.Collection(string(constants.UserColl))
-
-	count, err := coll.CountDocuments(ctx, userFilter)
-	if err != nil {
-		return fmt.Errorf("failed to fetch user contact: %w", err)
-	}
-	if count == 0 {
-		return fmt.Errorf("%w", ErrContactRequestNotFound)
-	}
-
-	count, err = coll.CountDocuments(ctx, targetFilter)
-	if err != nil {
-		return fmt.Errorf("failed to fetch target contact: %w", err)
-	}
-	if count == 0 {
-		return fmt.Errorf("%w", ErrContactRequestNotFound)
-	}
 
 	now := time.Now()
 	var userUpdate, targetUpdate bson.M
@@ -395,11 +378,10 @@ func answerContactRequest(ctx context.Context, userID, targetRequestID bson.Obje
 		targetUpdate = bson.M{
 			"$pull": bson.M{"contactInfo.pendingOut": userID},
 		}
+	default:
+		return fmt.Errorf("unknown action: %s (use 'accepted' or 'declined')", action)
 	}
 
-	// Both writes are conditional on the request still being there and their
-	// MatchedCount is checked: a request cancelled or answered since the checks
-	// above is not found, and the transaction drops the first write with it.
 	return writeInIDOrder(userID, targetRequestID, func() error {
 		res, err := UpdateOne(ctx, coll, userFilter, userUpdate)
 		if err != nil {
@@ -443,17 +425,24 @@ func removeContact(ctx context.Context, userID, targetUserID bson.ObjectID) erro
 	coll := database.DB.Collection(string(constants.UserColl))
 
 	return writeInIDOrder(userID, targetUserID, func() error {
-		if _, err := UpdateOne(ctx, coll, bson.M{"_id": userID}, bson.M{
+		res, err := UpdateOne(ctx, coll, bson.M{"_id": userID}, bson.M{
 			"$pull": bson.M{
 				"contactInfo.favorites": targetUserID,
 				"contactInfo.contacts":  targetUserID,
 			},
 			"$set": bson.M{"contactInfo.updatedAt": now},
-		}); err != nil {
+		})
+		if err != nil {
 			return fmt.Errorf("failed to update user contact: %w", err)
+		}
+		if res.MatchedCount == 0 {
+			return fmt.Errorf("%w: caller no longer exists", ErrUserNotFound)
 		}
 		return nil
 	}, func() error {
+		// MatchedCount isn't checked: a target whose account is gone matches
+		// nothing, and the caller's side is still removed, or a contact left
+		// over from a deleted account could never be removed.
 		if _, err := UpdateOne(ctx, coll, bson.M{"_id": targetUserID}, bson.M{
 			"$pull": bson.M{
 				"contactInfo.favorites": userID,
