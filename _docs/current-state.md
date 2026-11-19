@@ -1,6 +1,6 @@
 # ECHO: current state
 
-A one-page snapshot of where the project stands. Last checked on 2026-11-18 at `cbd75c0`
+A one-page snapshot of where the project stands. Last checked on 2026-11-19 at `662cb7e`
 on `main`. To learn what the product does, read
 [product-overview.md](./product-overview.md). For the code, read
 [architecture-overview.md](./architecture-overview.md).
@@ -11,11 +11,12 @@ on `main`. To learn what the product does, read
 and with a link to exactly one feature state.md. Updated by /close-increment and
 /feature-docs update. -->
 
-- **Feature:** #31 increment 1 (live presence) on `fix/31-presence-delivery`: code, tests
-  and docs done; code review: 8 findings, 6 fixed, 2 documented. Increment 2 (REST
-  presence: contacts and profiles read `online:<id>`, `lastSeen` written on offline, status
-  not from the JWT) is its own branch. #5 step 2 waits for the Android invite screen
+- **Feature:** none · nothing in progress. `main` at `662cb7e`: #31 part 1 (PR #145) is
+  merged, so Render deploys it; #31 stays open for part 2 (REST presence: contacts and
+  profiles read `online:<id>`, `lastSeen` written on offline, status not from the JWT).
+  #5 step 2 waits for the Android invite screen
   ([group-invites](./features/group-invites/state.md))
+- **#31 part 1 on Render (not checked yet):** in a shared chat, A sees B's online and offline
 - **Not filed, from #31:** a user held only by a server that crashes gets no offline (its
   entry expires in 2 min); two servers connecting and disconnecting one user within
   milliseconds can order online and offline wrongly; during a deploy, old and new servers
@@ -47,9 +48,9 @@ and with a link to exactly one feature state.md. Updated by /close-increment and
   losing messages
 - **Not filed, from #22:** a `chat_added` arriving while a connection's chats load is
   missed; a connection's welcome is dropped when its 10-message queue is already full
-- **Next step:** the user reviews and merges the #31 increment 1 PR; the Render checks
+- **Next step:** #31 part 2 (REST presence) is the natural follow-up; the Render checks
   above are the user's
-- **Updated:** 2026-11-18 on `fix/31-presence-delivery` (verify `--full` passed)
+- **Updated:** 2026-11-19 on `main` at `662cb7e` (not committed yet: rides on the next branch)
 
 ## Where things stand
 
@@ -63,6 +64,13 @@ Not built yet: editing or deleting messages, and changing chat settings. The ful
 
 ## Recently finished
 
+- **#31 part 1 (PR #145):** `presence` events carry the user's chats over
+  `presence:global`; every server delivers them once per connection, so offline arrives
+  and members on other servers get both. `online:<userID>` (one expiring entry per
+  server) keeps offline back while another server holds the user, rechecked after a
+  stopped server's entry expires ([pub/sub](./PUBSUB_ARCHITECTURE.md#redis-channels),
+  [app changes](../Android/_docs/08_SERVER_CHANGES/auth-and-connection.md)). Code review:
+  8 findings, 6 fixed, 2 documented.
 - **#22 (PR #144):** the hub goroutine only changes maps. Each connection registers in its
   own goroutine (32 at most, chats read within 5 s); one that can't be set up closes with
   `1011` so the app reconnects. Disconnects release Redis channels in the background, a
@@ -133,16 +141,8 @@ Not built yet: editing or deleting messages, and changing chat settings. The ful
 - **#122 (PR #125):** the server reads a connection's requests only after the hub has
   registered it (at most 10 s), so a `join_chat` sent right after connecting is no longer
   dropped ([pub/sub](./PUBSUB_ARCHITECTURE.md#connecting-and-disconnecting)).
-- **#54 (PR #121):** a disconnect the hub handles before the connection's registration
-  closes its send queue and drops the presence it stored; the registration then skips the
-  closed connection ([pub/sub](./PUBSUB_ARCHITECTURE.md#connecting-and-disconnecting)).
-  From the code review: #122, #123, #124 and a comment on #22.
-- **#20 + #55 (PR #120):** rooms are tracked per connection (`ClientChats`). Every room
-  removal (disconnect, `leave_chat`, `remove_user`) releases the chat channels left
-  unused, a user's last connection releases `user:<id>`, and a join racing a release keeps
-  its subscription ([pub/sub](./PUBSUB_ARCHITECTURE.md#connecting-and-disconnecting)).
 
-Older work, from #116 (PR #119) and #49 (PR #130) back: [finished-work.md](./finished-work.md).
+Older work, from #54 (PR #121) and #49 (PR #130) back: [finished-work.md](./finished-work.md).
 
 ## How to build, run, test
 

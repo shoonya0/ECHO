@@ -4,6 +4,14 @@ Older entries moved here from
 [current-state.md](./current-state.md#recently-finished), newest first. Links point to
 the docs that describe each change today. Newer work is listed on that page.
 
+- **#54 (PR #121):** a disconnect the hub handles before the connection's registration
+  closes its send queue and drops the presence it stored; the registration then skips the
+  closed connection ([pub/sub](./PUBSUB_ARCHITECTURE.md#connecting-and-disconnecting)).
+  From the code review: #122, #123, #124 and a comment on #22.
+- **#20 + #55 (PR #120):** rooms are tracked per connection (`ClientChats`). Every room
+  removal (disconnect, `leave_chat`, `remove_user`) releases the chat channels left
+  unused, a user's last connection releases `user:<id>`, and a join racing a release keeps
+  its subscription ([pub/sub](./PUBSUB_ARCHITECTURE.md#connecting-and-disconnecting)).
 - **#116 (PR #119):** a user's last connection closing leaves every chat and unsubscribes
   each of their chat channels (the loop used to skip some).
 - **#14 (PR #118):** a member removed with `remove_user` gets the `chat_updated` and then
