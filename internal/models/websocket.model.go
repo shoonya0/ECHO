@@ -286,6 +286,7 @@ type UserDisplayInfo struct {
 	Email       string `json:"email"`
 	Username    string `json:"username"`
 	DisplayName string `json:"displayName"`
+	Avatar      string `json:"avatar"`
 }
 
 // Hub represents the WebSocket hub managing all connections (simplified)
@@ -298,8 +299,11 @@ type Hub struct {
 	Unregister    chan *Client
 	Ctx           context.Context
 	Cancel        context.CancelFunc
-	UserInfoCache map[string]*UserDisplayInfo    `json:"-"` // User display info cache (TTL: 5 minutes){UserID -> UserDisplayInfo}
-	CacheExpiry   map[string]time.Time           `json:"-"` // Cache expiry time{UserID -> time.Time}
+	UserInfoCache map[string]*UserDisplayInfo `json:"-"` // User display info cache (TTL: 5 minutes){UserID -> UserDisplayInfo}
+	CacheExpiry   map[string]time.Time        `json:"-"` // Cache expiry time{UserID -> time.Time}
+	// UserInfoEpoch counts forgotten UserInfoCache entries, so a read that overlaps
+	// a profile change doesn't cache the old name (#36).
+	UserInfoEpoch uint64                         `json:"-"`
 	ClientChats   map[string]map[string]struct{} `json:"-"` // Rooms each connection is in, the inverse of ChatClients{ClientID -> ChatID}
 	// PendingClients holds connections queued for registration but not added to
 	// the maps yet, so a disconnect meanwhile isn't taken as the user's last (#22).
