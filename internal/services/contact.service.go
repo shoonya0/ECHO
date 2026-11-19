@@ -128,15 +128,6 @@ func GetContacts(ctx context.Context, userID bson.ObjectID, contactStatus consta
 			return []models.ContactInfo{}, 0, err
 		}
 
-		// Normalize presence: offline users show neither activity nor lastSeen.
-		if user.Presence.Status != string(constants.UserStatusOnline) {
-			user.Presence.IsOnline = false
-			if user.Presence.Status != string(constants.UserStatusOffline) {
-				user.Presence.LastActivity = time.Time{}
-				user.Presence.LastSeen = time.Time{}
-			}
-		}
-
 		user.IsFavorite = contains(contact.ContactInfo.Favorites, user.ID)
 
 		results = append(results, user)
@@ -144,6 +135,16 @@ func GetContacts(ctx context.Context, userID bson.ObjectID, contactStatus consta
 
 	if err := cursor.Err(); err != nil {
 		return []models.ContactInfo{}, 0, err
+	}
+
+	// Presence comes from who is connected now, not the stored isOnline (#31).
+	pageIDs := make([]bson.ObjectID, len(results))
+	for i := range results {
+		pageIDs[i] = results[i].ID
+	}
+	connected := connectedOrNone(ctx, pageIDs)
+	for i := range results {
+		ShowPresence(&results[i].Presence, connected[results[i].ID], false)
 	}
 	return results, int(total), nil
 }
