@@ -135,16 +135,6 @@ Not built yet: editing or deleting messages, and changing chat settings. The ful
   user's choice, invisible users stay offline, `lastSeen` is saved on offline, and the hub
   reads the status from MongoDB ([decided](./decisions/accounts-and-privacy.md#where-presence-comes-from-31)).
   Code review: 10 findings, 6 fixed.
-- **#31 part 1 (PR #145):** `presence` events carry the user's chats over
-  `presence:global`; every server delivers them once per connection, so offline arrives
-  and members on other servers get both. `online:<userID>` (one expiring entry per
-  server) keeps offline back while another server holds the user, rechecked after a
-  stopped server's entry expires ([pub/sub](./PUBSUB_ARCHITECTURE.md#redis-channels),
-  [app changes](../Android/_docs/08_SERVER_CHANGES/auth-and-connection.md)). Code review:
-  8 findings, 6 fixed, 2 documented.
-- **#69 (PR #143):** a startup repair, `RemoveStaleChatEntries`, removes `users.chats`
-  entries whose chat doesn't list the user or is gone (forged joins before #9, failed
-  cleanups). It runs on every start, in batches of 200 users.
 
 ## How to build, run, test
 
