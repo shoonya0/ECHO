@@ -223,13 +223,13 @@ func TestMissedJoinChecksRoom(t *testing.T) {
 	now := time.Now()
 
 	roomy := insertSizedGroup(t, ctx, owner, 1, 4, live)
-	err := resolveMissedJoin(ctx, roomy, joiner, live.InviteCode, now)
+	_, err := resolveMissedJoin(ctx, roomy, joiner, live.InviteCode, now)
 	if err == nil || errors.Is(err, ErrGroupFull) || errors.Is(err, ErrInvalidInvite) {
 		t.Fatalf("missed join into a group with room: err = %v, want a retryable error", err)
 	}
 
 	full := insertSizedGroup(t, ctx, owner, 1, 2, live)
-	if err := resolveMissedJoin(ctx, full, joiner, live.InviteCode, now); !errors.Is(err, ErrGroupFull) {
+	if _, err := resolveMissedJoin(ctx, full, joiner, live.InviteCode, now); !errors.Is(err, ErrGroupFull) {
 		t.Fatalf("missed join into a full group: err = %v, want ErrGroupFull", err)
 	}
 }

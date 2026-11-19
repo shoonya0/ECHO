@@ -30,9 +30,16 @@ since every message writes its chat and concurrent sends rerun; `lastMessageId` 
 `$max`, so a rerun can't set an older message. Kept on 2026-11-19 although concurrent sends
 to one chat now conflict and rerun (20 at once: 0.26s locally); revisit if send latency or
 conflicts show on Render. Tests make one write fail with `testutil.FailCommand`
-(`enableTestCommands`, local and CI only) to check the rollback. Join by code and accept or
-decline an invite are next (step 2b-2): their "already a member" path repairs a missing
-chats entry and then returns an error, which a transaction would roll back.
+(`enableTestCommands`, local and CI only) to check the rollback. Joining by code and accepting or
+declining an invite (step 2b-2) do the same. Their "already a member" path repairs a
+missing chats entry and answers 409; an error inside the transaction would roll that repair
+back, so the transaction returns what it did (`joinOutcome`) and the 409 and the live-hub
+join come after the commit; a 409 always follows the chat again, as a commit that succeeded
+but answered with an error never got to. A decline whose user cleanup fails now fails as a whole.
+
+Left for step 3 of #37: read receipts (`MarkMessagesAsRead`, `updateChatReadReceipts`,
+which discards its error) and reactions still use `context.Background()` instead of the
+request's context. They are single-document writes, so they need no transaction.
 
 Left open (from the PR review of step 2a):
 - **No backoff.** The driver reruns a conflicting transaction at once, reads included, so
@@ -44,6 +51,10 @@ Left open (from the PR review of step 2a):
 - **One failpoint per server.** `testutil.FailCommand` sets MongoDB's single `failCommand`
   failpoint; only `internal/services` may use it, or packages testing in parallel
   overwrite each other's setting. Make it a lock if a second package needs it.
+- **Join and accept read the invite codes twice** (from the step 2b-2 review). One extra read
+  per transaction; pass the codes in from the first read if join latency shows up.
+- **`joinOutcome` is join-only.** If a second write needs "commit, then answer an error",
+  make it a generic result of `WithTransaction` instead of another outcome type.
 
 ## One direct chat per pair (#37)
 
