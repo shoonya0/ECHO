@@ -60,6 +60,21 @@ func (s UserStatus) Hidden() bool {
 	return s == UserStatusInvisible || s == UserStatusOffline
 }
 
+// PrivacyScope says who may see or do something: settings.privacy's
+// showOnlineStatus and allowContactBy (#32).
+type PrivacyScope string
+
+const (
+	PrivacyEveryone PrivacyScope = "everyone"
+	PrivacyContacts PrivacyScope = "contacts"
+	PrivacyNone     PrivacyScope = "none"
+)
+
+// Valid reports whether s is a scope a user may choose.
+func (s PrivacyScope) Valid() bool {
+	return s == PrivacyEveryone || s == PrivacyContacts || s == PrivacyNone
+}
+
 // OnlineKeyPrefix starts the Redis sorted set online:<userID>, which records
 // the servers a user is connected to (#31).
 const OnlineKeyPrefix = "online:"

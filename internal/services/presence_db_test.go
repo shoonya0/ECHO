@@ -137,7 +137,7 @@ func TestGetContactsShowsLivePresence(t *testing.T) {
 		// isOnline stored true for everyone, as the old default did.
 		docs = append(docs, bson.M{"_id": ids[name], "username": name, "presence": bson.M{
 			"status": status, "isOnline": true, "lastSeen": seen,
-		}})
+		}, "settings": bson.M{"privacy": bson.M{"showOnlineStatus": "everyone", "showLastSeen": true}}})
 	}
 	docs = append(docs, bson.M{"_id": owner, "username": "owner", "contactInfo": bson.M{"contacts": contacts}})
 	if _, err := users.InsertMany(ctx, docs); err != nil {
@@ -167,6 +167,73 @@ func TestGetContactsShowsLivePresence(t *testing.T) {
 		if c.Presence.Status != w.status || c.Presence.IsOnline != w.online || c.Presence.LastSeen.IsZero() == w.lastSeen {
 			t.Errorf("%s: status %q isOnline %v lastSeen %v; want %q %v shown=%v",
 				c.Username, c.Presence.Status, c.Presence.IsOnline, c.Presence.LastSeen, w.status, w.online, w.lastSeen)
+		}
+	}
+}
+
+// #32: the contacts list applies each listed user's privacy settings. A
+// showOnlineStatus of "contacts" shows them to the owner only when the owner
+// is their accepted contact, not when they merely sent a request.
+func TestGetContactsAppliesPrivacy(t *testing.T) {
+	ctx := useTestDB(t)
+	redisClient := testutil.UseTestRedis(t)
+	users := database.DB.Collection(string(constants.UserColl))
+	seen := time.Now().UTC().Add(-time.Hour).Truncate(time.Millisecond)
+
+	owner := bson.NewObjectID()
+	type listed struct {
+		privacy  bson.M
+		accepted bool // in the owner's contacts; else a request to the owner
+	}
+	people := map[string]listed{
+		"contactsonly":   {bson.M{"showOnlineStatus": "contacts", "showLastSeen": true}, true},
+		"requester":      {bson.M{"showOnlineStatus": "contacts", "showLastSeen": true}, false},
+		"nobody":         {bson.M{"showOnlineStatus": "none", "showLastSeen": true}, true},
+		"nolastseen":     {bson.M{"showOnlineStatus": "everyone", "showLastSeen": false}, true},
+		"neversetstatus": {bson.M{"showLastSeen": true}, false},
+	}
+	ids := map[string]bson.ObjectID{}
+	docs := []any{}
+	contacts, pendingIn := bson.A{}, bson.A{}
+	for name, p := range people {
+		ids[name] = bson.NewObjectID()
+		if p.accepted {
+			contacts = append(contacts, ids[name])
+		} else {
+			pendingIn = append(pendingIn, ids[name])
+		}
+		docs = append(docs, bson.M{"_id": ids[name], "username": name,
+			"presence": bson.M{"status": "online", "lastSeen": seen},
+			"settings": bson.M{"privacy": p.privacy}})
+		markFor(t, redisClient, ids[name], "one", time.Now().Add(time.Minute))
+	}
+	docs = append(docs, bson.M{"_id": owner, "username": "owner",
+		"contactInfo": bson.M{"contacts": contacts, "pendingIn": pendingIn}})
+	if _, err := users.InsertMany(ctx, docs); err != nil {
+		t.Fatalf("insert: %v", err)
+	}
+
+	list, _, err := GetContacts(ctx, owner, constants.StatusContact, 1, 10)
+	if err != nil {
+		t.Fatalf("GetContacts: %v", err)
+	}
+	want := map[string]struct {
+		online, lastSeen bool
+	}{
+		"contactsonly":   {true, true},
+		"requester":      {false, false},
+		"nobody":         {false, false},
+		"nolastseen":     {true, false},
+		"neversetstatus": {true, true},
+	}
+	if len(list) != len(want) {
+		t.Fatalf("got %d entries, want %d", len(list), len(want))
+	}
+	for _, c := range list {
+		w := want[c.Username]
+		if c.Presence.IsOnline != w.online || c.Presence.LastSeen.IsZero() == w.lastSeen {
+			t.Errorf("%s: isOnline %v lastSeen %v; want online %v, lastSeen shown %v",
+				c.Username, c.Presence.IsOnline, c.Presence.LastSeen, w.online, w.lastSeen)
 		}
 	}
 }
