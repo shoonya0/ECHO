@@ -4,6 +4,15 @@ Older entries moved here from
 [current-state.md](./current-state.md#recently-finished), newest first. Links point to
 the docs that describe each change today. Newer work is listed on that page.
 
+- **CI race (PR #146):** a #22 test returned before its slow registration finished, which
+  then raced the next test on `chatLoadTimeout`; it failed `main` after #145, now fixed.
+- **#22 (PR #144):** the hub goroutine only changes maps. Each connection registers in its
+  own goroutine (32 at most, chats read within 5 s); one that can't be set up closes with
+  `1011` so the app reconnects. Disconnects release Redis channels in the background, a
+  user is announced online once and offline only when no connection is left or queued
+  ([pub/sub](./PUBSUB_ARCHITECTURE.md#connecting-and-disconnecting),
+  [app changes](../Android/_docs/08_SERVER_CHANGES/auth-and-connection.md)). Code review:
+  9 findings, 8 fixed; a live burst check found a presence flood, fixed.
 - **#122 (PR #125):** the server reads a connection's requests only after the hub has
   registered it (at most 10 s), so a `join_chat` sent right after connecting is no longer
   dropped ([pub/sub](./PUBSUB_ARCHITECTURE.md#connecting-and-disconnecting)).
