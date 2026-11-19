@@ -90,13 +90,7 @@ const (
 // viewer see them online. A scope never set means everyone; one the server
 // doesn't know means nobody, so a bad value can't expose anyone (#32).
 func ShowsOnlineTo(scope string, viewer Viewer) bool {
-	switch constants.PrivacyScope(scope) {
-	case "", constants.PrivacyEveryone:
-		return true
-	case constants.PrivacyContacts:
-		return viewer != ViewerOther
-	}
-	return viewer == ViewerSelf
+	return viewer == ViewerSelf || constants.PrivacyScope(scope).Lets(viewer == ViewerContact)
 }
 
 // ShowPresence turns stored presence into what viewer sees. The user
@@ -168,9 +162,10 @@ func GetPresenceSettings(ctx context.Context, userID bson.ObjectID) (PresenceSet
 		} `bson:"settings"`
 		ContactInfo models.ContactInfoEmbed `bson:"contactInfo"`
 	}
-	coll := database.DB.Collection(string(constants.UserColl))
-	projection := bson.M{"presence.status": 1, "settings.privacy": 1}
-	err := coll.FindOne(ctx, bson.M{"_id": userID}, options.FindOne().SetProjection(projection)).Decode(&user)
+	// One read, so status, settings and contacts are consistent with each other.
+	projection := bson.M{"presence.status": 1, "settings.privacy": 1, "contactInfo.contacts": 1}
+	err := database.DB.Collection(string(constants.UserColl)).FindOne(ctx,
+		bson.M{"_id": userID}, options.FindOne().SetProjection(projection)).Decode(&user)
 	if err != nil {
 		if errors.Is(err, mongo.ErrNoDocuments) {
 			return PresenceSettings{}, fmt.Errorf("%w: %s", ErrUserNotFound, userID.Hex())
@@ -178,15 +173,8 @@ func GetPresenceSettings(ctx context.Context, userID bson.ObjectID) (PresenceSet
 		return PresenceSettings{}, fmt.Errorf("get presence settings: %w", err)
 	}
 	settings := PresenceSettings{Status: chosenStatus(user.Presence), Privacy: user.Settings.Privacy}
-	if constants.PrivacyScope(settings.Privacy.ShowOnlineStatus) != constants.PrivacyContacts {
-		return settings, nil
+	if constants.PrivacyScope(settings.Privacy.ShowOnlineStatus) == constants.PrivacyContacts {
+		settings.Contacts = user.ContactInfo.Contacts
 	}
-	// Read separately, so users who show everyone don't load their contacts.
-	err = coll.FindOne(ctx, bson.M{"_id": userID},
-		options.FindOne().SetProjection(bson.M{"contactInfo.contacts": 1})).Decode(&user)
-	if err != nil {
-		return PresenceSettings{}, fmt.Errorf("get contacts for presence: %w", err)
-	}
-	settings.Contacts = user.ContactInfo.Contacts
 	return settings, nil
 }
