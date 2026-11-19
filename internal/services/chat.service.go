@@ -1662,29 +1662,75 @@ func groupManagerFilter(chatID, userID bson.ObjectID) bson.M {
 	}
 }
 
+// maxUnexpiredInviteCodes is how many codes a group may hold that haven't expired,
+// deleted ones included (#42). Codes last 24 hours, so this is also how many a
+// group can create in a day. Counting deleted ones stops a create-and-delete loop
+// from growing the list, and keeps a deleted code listed until it expires.
+const maxUnexpiredInviteCodes = 20
+
+// expiredInviteCodes matches the codes CreateInvite removes. Codes from before
+// #15 have no stored date and are left alone.
+func expiredInviteCodes(now time.Time) bson.M {
+	return bson.M{"expiredDate": bson.M{"$type": "date", "$lte": now}}
+}
+
 // CreateInvite adds a new invite code to a group and returns it, as stored.
-// Only its owner and admins may.
+// Only its owner and admins may. It first removes the group's expired codes, and
+// refuses with ErrTooManyInvites when maxUnexpiredInviteCodes remain, so the
+// inviteCode list stays bounded (#42). Both writes run in one transaction, so
+// concurrent creates can't pass the limit: they write the same chat document and
+// commit one after another.
 func CreateInvite(ctx context.Context, userID bson.ObjectID, chatID bson.ObjectID) (models.InviteCodeEmbed, error) {
 	if err := requireGroupManager(ctx, chatID, userID); err != nil {
 		return models.InviteCodeEmbed{}, err
 	}
 
-	invite, ok := utils.NewInviteCodeWithDefaults(time.Now().Add(24 * time.Hour))
+	now := time.Now()
+	invite, ok := utils.NewInviteCodeWithDefaults(now.Add(24 * time.Hour))
 	if !ok {
 		return models.InviteCodeEmbed{}, fmt.Errorf("failed to create invite code")
 	}
 
-	res, err := database.DB.Collection(string(constants.ChatColl)).UpdateOne(ctx,
-		groupManagerFilter(chatID, userID),
-		bson.M{"$push": bson.M{"inviteCode": invite}},
-	)
-	if err != nil {
-		return models.InviteCodeEmbed{}, fmt.Errorf("failed to create invite code: %w", err)
-	}
-	if res.MatchedCount == 0 {
-		return models.InviteCodeEmbed{}, fmt.Errorf("%w: role changed while creating the invite", ErrPermissionDenied)
-	}
+	chats := database.DB.Collection(string(constants.ChatColl))
+	err := database.WithTransaction(ctx, func(ctx context.Context) error {
+		res, err := chats.UpdateOne(ctx, groupManagerFilter(chatID, userID),
+			bson.M{"$pull": bson.M{"inviteCode": expiredInviteCodes(now)}})
+		if err != nil {
+			return fmt.Errorf("failed to remove expired invite codes: %w", err)
+		}
+		if res.MatchedCount == 0 {
+			return fmt.Errorf("%w: role changed while creating the invite", ErrPermissionDenied)
+		}
 
+		// Read after the pull, in the transaction: every code left is unexpired
+		// or from before #15.
+		var chat struct {
+			InviteCode []models.InviteCodeEmbed `bson:"inviteCode"`
+		}
+		if err := chats.FindOne(ctx, bson.M{"_id": chatID},
+			options.FindOne().SetProjection(bson.M{"inviteCode.expiredDate": 1}),
+		).Decode(&chat); err != nil {
+			return fmt.Errorf("failed to read invite codes: %w", err)
+		}
+		unexpired := 0
+		for _, c := range chat.InviteCode {
+			if c.ExpiredDate.After(now) {
+				unexpired++
+			}
+		}
+		if unexpired >= maxUnexpiredInviteCodes {
+			return fmt.Errorf("%w: %d", ErrTooManyInvites, unexpired)
+		}
+
+		if _, err := chats.UpdateOne(ctx, bson.M{"_id": chatID},
+			bson.M{"$push": bson.M{"inviteCode": invite}}); err != nil {
+			return fmt.Errorf("failed to create invite code: %w", err)
+		}
+		return nil
+	})
+	if err != nil {
+		return models.InviteCodeEmbed{}, err
+	}
 	return invite, nil
 }
 
