@@ -4,6 +4,12 @@ Older entries moved here from
 [current-state.md](./current-state.md#recently-finished), newest first. Links point to
 the docs that describe each change today. Newer work is listed on that page.
 
+- **#132 (PR #135):** a new direct chat is kept only when both users got their `chats`
+  entry (else `404` / `INVALID_USER_ID`, chat and entries removed), and opening an existing
+  one writes back a missing entry ([REST](./rest-api/chats.md#chats)).
+- **#131 (PR #134):** `GET users/suggestions` takes `page` 1 to 10000 (clamped, shared
+  `services.MaxPage` with the contact lists), so a huge page no longer overflows the skip
+  into a `500` ([REST](./rest-api/users.md#finding-people)).
 - **#51 (PR #133):** a message `content` is limited to 4000 characters (code points), not
   bytes, so Hindi or emoji text is no longer cut at about a third
   ([decided](./decisions.md#how-the-message-length-limit-counts-51),
