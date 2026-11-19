@@ -30,6 +30,11 @@ type Config struct {
 	// ClientIPHeader names the header the platform's edge sets to the client's
 	// IP (True-Client-IP on Render). Empty means the socket address (#40).
 	ClientIPHeader string
+
+	// AllowedOrigins lists the web origins (scheme://host[:port]) that may open a
+	// WebSocket besides the server's own host, from WS_ALLOWED_ORIGINS, comma-separated.
+	// A request without an Origin header, as the Android app sends, is always allowed (#40).
+	AllowedOrigins []string
 }
 
 // Cfg is the loaded configuration, set once by Load at startup.
@@ -53,6 +58,7 @@ func Load(path string) error {
 
 		StatsToken:     strings.Trim(strings.TrimSpace(os.Getenv("STATS_TOKEN")), `"'`),
 		ClientIPHeader: strings.TrimSpace(os.Getenv("CLIENT_IP_HEADER")),
+		AllowedOrigins: splitList(os.Getenv("WS_ALLOWED_ORIGINS")),
 	}
 
 	// A relative log path is relative to the project (where .env lives),
@@ -65,6 +71,18 @@ func Load(path string) error {
 		return fmt.Errorf("JWT_SECRET is required")
 	}
 	return nil
+}
+
+// splitList splits a comma-separated value into its non-empty, trimmed items, without a
+// trailing slash, as an origin copied from a browser's address bar may have.
+func splitList(value string) []string {
+	var items []string
+	for _, item := range strings.Split(value, ",") {
+		if item = strings.TrimRight(strings.TrimSpace(item), "/"); item != "" {
+			items = append(items, item)
+		}
+	}
+	return items
 }
 
 func getEnv(key, fallback string) string {
