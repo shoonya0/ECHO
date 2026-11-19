@@ -23,14 +23,16 @@ finally fails in MongoDB (commit, retries run out, context ended) is logged at e
 Group and message writes (step 2b, 2026-11-19): creating a group, adding and removing
 members, and sending a message each commit as a whole. They write the chat first, then the
 users through one `UpdateMany` over `_id` (`$in`), which goes through the `_id` index in ID
-order, so they meet other writes in the same order (`TestConcurrentGroupCreatesWithSharedUsers`).
-Work outside the database (joining the live hub, broadcasting) runs after the commit. A
-send keeps its reads outside the transaction, since every message writes its chat and
-concurrent sends rerun; `lastMessageId` is set with `$max`, so a rerun can't set an older
-message. Tests make one write fail with `testutil.FailCommand` (`enableTestCommands`, local
-and CI only) to check the rollback. Join by code and accept or decline an invite are next
-(step 2b-2): their "already a member" path repairs a missing chats entry and then returns
-an error, which a transaction would roll back.
+order, so they meet other writes in the same order
+(`TestConcurrentGroupCreatesWithSharedUsers`). Work outside the database (joining the live
+hub, broadcasting) runs after the commit. A send keeps its reads outside the transaction,
+since every message writes its chat and concurrent sends rerun; `lastMessageId` is set with
+`$max`, so a rerun can't set an older message. Kept on 2026-11-19 although concurrent sends
+to one chat now conflict and rerun (20 at once: 0.26s locally); revisit if send latency or
+conflicts show on Render. Tests make one write fail with `testutil.FailCommand`
+(`enableTestCommands`, local and CI only) to check the rollback. Join by code and accept or
+decline an invite are next (step 2b-2): their "already a member" path repairs a missing
+chats entry and then returns an error, which a transaction would roll back.
 
 Left open (from the PR review of step 2a):
 - **No backoff.** The driver reruns a conflicting transaction at once, reads included, so
