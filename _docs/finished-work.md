@@ -4,6 +4,13 @@ Older entries moved here from
 [current-state.md](./current-state.md#recently-finished), newest first. Links point to
 the docs that describe each change today. Newer work is listed on that page.
 
+- **#116 (PR #119):** a user's last connection closing leaves every chat and unsubscribes
+  each of their chat channels (the loop used to skip some).
+- **#14 (PR #118):** a member removed with `remove_user` gets the `chat_updated` and then
+  no more live events from the group, on every server: a hub-internal message on the
+  chat's Redis channel takes their connections out of the room
+  ([events](./websocket-events.md), [app changes](../Android/_docs/08_SERVER_CHANGES/groups-and-invites.md)).
+  The Android log is split into topic pages. Security review: nothing found; code review: #116, #117.
 - **#49 (PR #130):** a chat a user gains while connected (a new direct chat, either side; a
   group they create; a code join, also a retry or a pending accept) reaches their open
   connections at once, through a hub-internal `internal.chat_added` on `user:<id>`

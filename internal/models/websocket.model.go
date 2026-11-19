@@ -54,6 +54,9 @@ type WSPresenceStatus struct {
 	Status     string    `json:"status"` // "online", "away", "busy", "offline"
 	LastSeen   time.Time `json:"lastSeen"`
 	CustomText string    `json:"customText,omitempty"`
+	// Chats routes the event between servers: each one delivers it to its
+	// connections in these chats. Removed before it reaches a client (#31).
+	Chats []string `json:"chats,omitempty"`
 }
 
 // UserJoinLeave represents user joining/leaving events

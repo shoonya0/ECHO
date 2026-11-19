@@ -215,7 +215,8 @@ func (pm *PubSubManager) PublishToChat(chatID string, message *models.WebSocketM
 	return pm.publishMessage(channel, message)
 }
 
-// PublishPresenceUpdate publishes presence updates to the global presence channel
+// PublishPresenceUpdate publishes a presence change on presence:global. Every
+// server delivers it to its own connections in status.Chats (#31).
 func (pm *PubSubManager) PublishPresenceUpdate(status *models.WSPresenceStatus) error {
 	if pm.beforePresencePublish != nil {
 		pm.beforePresencePublish(status.Status)
@@ -415,18 +416,40 @@ func (pm *PubSubManager) dropSlowClient(client *models.Client) {
 	}
 }
 
-// handlePresenceMessage handles global presence updates
+// handlePresenceMessage delivers a presence change to this server's
+// connections in the chats it lists, once per connection, without the list
+// (#31). An event without chats is ignored: only a server from before #31
+// publishes those, during a deploy.
 func (pm *PubSubManager) handlePresenceMessage(message *models.WebSocketMessage) {
-	userID := message.UserID
+	data, ok := message.Data.(map[string]any)
+	if !ok {
+		return
+	}
+	rawChats, _ := data["chats"].([]any)
+	if len(rawChats) == 0 {
+		return
+	}
+	out := make(map[string]any, len(data))
+	for key, value := range data {
+		if key != "chats" {
+			out[key] = value
+		}
+	}
+	event := *message
+	event.Data = out
 
+	recipients := make(map[string]*models.Client)
 	pm.hub.Mutex.RLock()
-	activeChats := userActiveChats(pm.hub, userID)
+	for _, item := range rawChats {
+		if chatID, ok := item.(string); ok {
+			maps.Copy(recipients, pm.hub.ChatClients[chatID])
+		}
+	}
 	pm.hub.Mutex.RUnlock()
 
-	for _, chatID := range activeChats {
-		// we have to publish to the chat channel
-		if err := pm.publishMessage(pm.getChatChannel(chatID), message); err != nil {
-			pm.logger.WithFields(logrus.Fields{"chatID": chatID}).WithError(err).Error("Failed to publish message to chat channel")
+	for _, client := range recipients {
+		if !client.TrySend(event) {
+			pm.dropSlowClient(client)
 		}
 	}
 }

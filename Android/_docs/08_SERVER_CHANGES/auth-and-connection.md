@@ -2,6 +2,20 @@
 
 Part of [server changes the app must handle](./README.md).
 
+## Presence: offline arrives, once per connection (#31)
+
+- `presence` events reach every connection that shares a chat with the user, on any
+  server, **once**, however many chats they share. Before, there was one per shared chat,
+  and `offline` never arrived.
+- `offline` comes when the user's last connection on any server closes. While they are
+  still connected to another server, nothing is sent.
+- `online` can come twice for one user (connected to two servers): treat a repeat as no
+  change. `data.instanceID` is gone.
+- Not changed yet: `presence` in contacts and profiles (REST) is still the stored value,
+  often `online` (#31).
+
+Details: [websocket-events.md](../../../_docs/websocket-events.md#presence-someones-online-status-changed).
+
 ## Deleting an account (#35)
 
 - After `DELETE profile/delete`, the deleted person's messages and direct-chat entry show
@@ -95,7 +109,7 @@ says why. The reasons are the REST codes above.
   `4403` only gets a `401` or `403` at the upgrade.
 - A ban made in the database closes the socket within about a minute.
 - When a user comes online (their first connection on a server), the app now also gets
-  its own `presence` event (`online`), once per chat; before #22 it was usually lost.
+  its own `presence` event (`online`), once (#31); before #22 it was usually lost.
   Further connections of an online user don't announce it again. Ignore presence for the
   user's own ID if the app doesn't use it.
 
