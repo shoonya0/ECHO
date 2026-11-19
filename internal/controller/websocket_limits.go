@@ -90,3 +90,12 @@ func refuseRateLimited(client *models.Client, frame []byte) {
 	_ = json.Unmarshal(frame, &request) // best effort: an unreadable frame gets no requestId
 	sendErrorResponse(client, request.RequestID, "RATE_LIMITED", "Too many requests; slow down and retry")
 }
+
+// closeTooManyConnections ends a connection that lost the race for the account's
+// last free slot (#40): a close frame with 1008 and the reason, then the socket.
+// No loop runs for it yet, so it writes directly.
+func closeTooManyConnections(conn *websocket.Conn) {
+	frame := websocket.FormatCloseMessage(websocket.ClosePolicyViolation, "Too many connections")
+	_ = conn.WriteControl(websocket.CloseMessage, frame, time.Now().Add(time.Second)) // best effort
+	_ = conn.Close()
+}

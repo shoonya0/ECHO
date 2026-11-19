@@ -130,6 +130,15 @@ func HandleWebSocketChat(ctx *gin.Context) {
 		return
 	}
 
+	// An account at its connection limit is refused before the upgrade (#40).
+	// QueueRegister checks again under the hub's lock, for two connects at once.
+	hub := realtime.GetHubInstance()
+	if hub.ConnectionCount(user.ID.Hex()) >= realtime.MaxConnectionsPerUser {
+		log.WithField(string(constants.UserIDKey), user.ID.Hex()).Warn("Refused a WebSocket connection over the account limit")
+		utils.ErrorResponse(ctx, http.StatusTooManyRequests, "Too many connections", nil)
+		return
+	}
+
 	conn, err := upgrader.Upgrade(ctx.Writer, ctx.Request, nil) // Upgrade HTTP connection to WebSocket
 	if err != nil {
 		// The upgrader has already answered (403 for a refused origin, 400 for a bad
@@ -151,8 +160,6 @@ func HandleWebSocketChat(ctx *gin.Context) {
 		client.TokenExpiresAt = claims.ExpiresAt.Time // the re-check closes the connection then (#76)
 	}
 
-	hub := realtime.GetHubInstance()
-
 	hub.UpdateUserInfoCache(user.ID.Hex(), models.UserDisplayInfo{
 		Email:       user.Email,
 		Username:    user.Username,
@@ -162,7 +169,11 @@ func HandleWebSocketChat(ctx *gin.Context) {
 	// The registration decides from this presence whether to announce the
 	// user online (#31). QueueRegister gives up if the hub stopped;
 	// WaitRegistered reports it (#22).
-	hub.QueueRegister(client, connectionPresence(reqCtx, log, user, client.ID))
+	if !hub.QueueRegister(client, connectionPresence(reqCtx, log, user, client.ID)) {
+		log.WithFields(connectionLogFields(user, client)).Warn("Refused a WebSocket connection over the account limit")
+		closeTooManyConnections(conn)
+		return
+	}
 
 	// Read requests only once the hub has registered the connection: a
 	// join_chat handled earlier would be dropped (#122).
