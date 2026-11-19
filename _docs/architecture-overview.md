@@ -81,7 +81,7 @@ MongoDB has three collections.
 
 - **`users`:** profile, presence, contact lists (`contactInfo`, including the one-sided
   `blocked` and hidden `blockedBy` lists), `chats` (a map of chat ID to unread count) and
-  `chatInvitations`. Emails are unique, enforced by an index.
+  `chatInvitations` (the newest 100, #42). Emails are unique, enforced by an index.
 - **`chats`:** `participants` (a map keyed by user ID, holding role, status and a copy of
   the user's details), `inviteCode[]`, `readReceipts`, `typingUsers` (no longer written, #40) and `stats`.
   A direct chat also has `directKey`, unique by index, so a pair has one
