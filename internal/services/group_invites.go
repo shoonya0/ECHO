@@ -25,27 +25,23 @@ type PendingGroupInvite struct {
 	InvitedAt        time.Time     `json:"invitedAt"`
 }
 
-// giveInviteesChatEntry adds the group chatID to each invitee's chats list, which is
-// where their pending invite is found (#5). $max keeps an entry that is already
-// there. The invitees are already pending members, so a failure is only logged:
-// accepting by group ID still works, the hub skips pending chats either way, and
-// the startup backfill writes the missing entry.
-func giveInviteesChatEntry(ctx context.Context, chatID bson.ObjectID, invitees []bson.ObjectID) {
-	if len(invitees) == 0 {
-		return
+// giveChatEntry adds the group chatID to each user's chats list, which is where
+// an invitee's pending invite is found (#5) and the hub finds a member's chats.
+// $max keeps an entry that is already there. It runs inside the group write's
+// transaction (#37), so its error aborts the whole write, and it returns how many
+// of userIDs exist.
+func giveChatEntry(ctx context.Context, chatID bson.ObjectID, userIDs []bson.ObjectID) (int64, error) {
+	if len(userIDs) == 0 {
+		return 0, nil
 	}
 	res, err := database.DB.Collection(string(constants.UserColl)).UpdateMany(ctx,
-		bson.M{"_id": bson.M{"$in": invitees}},
+		bson.M{"_id": bson.M{"$in": userIDs}},
 		bson.M{"$max": bson.M{"chats." + chatID.Hex(): 0}},
 	)
-	log := logger.WithContext(ctx).WithField("chat", chatID.Hex())
-	switch {
-	case err != nil:
-		// The startup backfill writes missing entries (AcceptLegacyPendingMembers).
-		log.WithError(err).Warn("Invitees may not see the group among their pending invites until the next start")
-	case res.MatchedCount < int64(len(invitees)):
-		log.WithField("missing", int64(len(invitees))-res.MatchedCount).Debug("Some invitees have no user document")
+	if err != nil {
+		return 0, fmt.Errorf("failed to add the group to its members' chats: %w", err)
 	}
+	return res.MatchedCount, nil
 }
 
 // acceptedFields is the $set that makes userID an accepted member, used by every
