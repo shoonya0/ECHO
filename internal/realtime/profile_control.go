@@ -17,13 +17,16 @@ const ProfileControlChannel = "control:profiles"
 
 type profileControl struct {
 	UserID string `json:"userId"`
+	// Origin is the sending instance, which has already forgotten the entry and
+	// ignores its own message.
+	Origin string `json:"origin"`
 }
 
 // ProfileChanged forgets a user's cached name and avatar here and tells the other
 // instances to do the same. Called after a profile update is saved.
 func (eh *Hub) ProfileChanged(ctx context.Context, userID string) error {
 	eh.pubSubManager.forgetUserInfo(userID)
-	return eh.pubSubManager.publishProfileControl(ctx, profileControl{UserID: userID})
+	return eh.pubSubManager.publishProfileControl(ctx, profileControl{UserID: userID, Origin: eh.pubSubManager.instanceID})
 }
 
 // forgetUserInfo drops a user's cache entry on this instance and stops reads already
@@ -52,9 +55,16 @@ func (pm *PubSubManager) publishProfileControl(ctx context.Context, msg profileC
 
 func (pm *PubSubManager) handleProfileControl(payload string) {
 	var msg profileControl
-	if err := json.Unmarshal([]byte(payload), &msg); err != nil || msg.UserID == "" {
-		pm.logger.WithError(err).Warn("Ignoring a profile control message without a user")
+	if err := json.Unmarshal([]byte(payload), &msg); err != nil {
+		pm.logger.WithError(err).Warn("Ignoring a profile control message that isn't JSON")
 		return
+	}
+	if msg.UserID == "" {
+		pm.logger.Warn("Ignoring a profile control message without a user")
+		return
+	}
+	if msg.Origin == pm.instanceID {
+		return // forgotten already, by ProfileChanged
 	}
 	pm.forgetUserInfo(msg.UserID)
 }

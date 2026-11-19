@@ -105,3 +105,29 @@ func TestProfileChangeReachesOtherInstances(t *testing.T) {
 		t.Fatalf("the other instance still caches the old name")
 	}
 }
+
+// The sending instance forgot the entry already; its own message must not bump
+// the epoch again and stop more in-flight reads from caching (code review of #36).
+func TestProfileControlIgnoresItsOwnMessage(t *testing.T) {
+	hub := newTestHub(t)
+	userID := bson.NewObjectID()
+	cacheName(hub, userID, "kept")
+
+	hub.pubSubManager.handleProfileControl(`{"userId":"` + userID.Hex() + `","origin":"test"}`)
+
+	hub.Mutex.RLock()
+	_, cached := hub.UserInfoCache[userID.Hex()]
+	epoch := hub.UserInfoEpoch
+	hub.Mutex.RUnlock()
+	if !cached || epoch != 0 {
+		t.Fatalf("own message: cached %v, epoch %d; want the entry kept and epoch 0", cached, epoch)
+	}
+
+	hub.pubSubManager.handleProfileControl(`{"userId":"` + userID.Hex() + `","origin":"other"}`)
+	hub.Mutex.RLock()
+	_, cached = hub.UserInfoCache[userID.Hex()]
+	hub.Mutex.RUnlock()
+	if cached {
+		t.Fatalf("another instance's message: entry still cached")
+	}
+}

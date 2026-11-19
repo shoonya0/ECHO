@@ -1,6 +1,7 @@
 package controller
 
 import (
+	"context"
 	"net/http"
 	"strconv"
 
@@ -12,6 +13,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/gin-gonic/gin/binding"
+	"github.com/sirupsen/logrus"
 	"go.mongodb.org/mongo-driver/v2/bson"
 )
 
@@ -125,10 +127,11 @@ func UpdateProfile(ctx *gin.Context) {
 		return
 	}
 
-	// Live events read names through each server's cache; drop this user's (#36).
-	// If Redis fails, other servers show the old name until the entry expires.
-	if err := realtime.GetHubInstance().ProfileChanged(reqCtx, objectID.Hex()); err != nil {
-		log.WithError(err).Warn("Could not tell other servers about the profile change")
+	// Live events read names through each server's cache; drop this user's when a
+	// shown field changed (#36). If Redis fails, other servers show the old name
+	// until the entry expires.
+	if changesShownName(sanitizedDoc) {
+		forgetNameEverywhere(reqCtx, log, objectID.Hex())
 	}
 
 	profile, err := services.GetUserBasicInfo(reqCtx, objectID)
@@ -174,8 +177,28 @@ func DeleteProfile(ctx *gin.Context) {
 		return
 	}
 
+	// The real name mustn't keep showing in live events after the delete (#35, #36).
+	forgetNameEverywhere(reqCtx, log, userID.(string))
+
 	log.Debug("profile deleted successfully")
 	utils.SuccessResponse(ctx, "Profile deleted successfully", nil)
+}
+
+// changesShownName reports whether a profile update writes a field live events show.
+func changesShownName(update map[string]interface{}) bool {
+	for _, key := range []string{"username", "profile.displayName", "profile.avatar"} {
+		if _, ok := update[key]; ok {
+			return true
+		}
+	}
+	return false
+}
+
+// forgetNameEverywhere drops the user's cached name and avatar on every server (#36).
+func forgetNameEverywhere(ctx context.Context, log logrus.Entry, userID string) {
+	if err := realtime.GetHubInstance().ProfileChanged(ctx, userID); err != nil {
+		log.WithError(err).Warn("Could not tell other servers about the profile change")
+	}
 }
 
 // ============ USER DISCOVERY & SEARCH ============
