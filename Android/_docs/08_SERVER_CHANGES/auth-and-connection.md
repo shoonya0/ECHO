@@ -11,10 +11,16 @@ Part of [server changes the app must handle](./README.md).
   still connected to another server, nothing is sent.
 - `online` can come twice for one user (connected to two servers): treat a repeat as no
   change. `data.instanceID` is gone.
-- Not changed yet: `presence` in contacts and profiles (REST) is still the stored value,
-  often `online` (#31).
+- A user who chose `invisible` gets no `online` event. `away` and `dnd` users do.
+- REST `presence` (contacts, your profile, `login`) is live now (#31, part 2):
+  - `isOnline` is whether they are connected. For others, `status` is `offline` while they
+    aren't connected or are invisible; otherwise their choice (`online`, `away`, `dnd`).
+  - `lastSeen` is when their last connection closed (empty for invisible users).
+  - Your own `status` is what you set. `PUT profile/` ignores `isOnline` and `lastSeen`:
+    stop sending them.
 
-Details: [websocket-events.md](../../../_docs/websocket-events.md#presence-someones-online-status-changed).
+Details: [websocket-events.md](../../../_docs/websocket-events.md#presence-someones-online-status-changed),
+[users.md](../../../_docs/rest-api/users.md#profile).
 
 ## Deleting an account (#35)
 
