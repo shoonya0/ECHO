@@ -113,7 +113,23 @@ events, and others see them as `offline` with no `lastSeen`. Other statuses answ
 `presence.lastSeen` when it publishes the offline, with `$max` so writes can't go back;
 `PUT profile/` can no longer set `isOnline` or `lastSeen`. When Redis can't answer, replies
 show everyone offline rather than failing. A status change while connected isn't announced
-live yet, and the privacy settings `showOnlineStatus` and `showLastSeen` aren't applied.
+live yet. Privacy settings narrow this further: see below.
+
+## How privacy settings apply (#32)
+
+Decided on 2026-11-19. `settings.privacy` takes effect everywhere presence is shown, REST
+and events alike. `showOnlineStatus` `contacts` shows the user only to accepted contacts
+(contacts are mutual, so the viewer's own list decides); its events carry the contact IDs
+and each server delivers them to those users only. `none`, or `contacts` with no contacts,
+announces the user to nobody, as `invisible` does. A user hidden from a viewer shows no
+`lastSeen` to them either. `showLastSeen` `false` hides `lastSeen` and `lastActivity`, and
+leaves `lastSeen` out of events. It was stored `false` for every account while nothing read
+it, so new accounts get `true` and a startup migration (marker
+`show-last-seen-default-32`) turned it on once for old ones; later choices stay.
+`allowContactBy` `none` refuses every contact request (`403`); `contacts` lets in people who
+share a group with you as members. Pending invitees don't count, and neither do direct
+chats, since anyone can open one. A value the server doesn't know means nobody, so `PUT
+profile/` answers `400` for anything but `everyone`, `contacts` or `none`.
 
 ## How login and signup limits find the client (#40)
 

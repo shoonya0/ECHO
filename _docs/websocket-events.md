@@ -175,8 +175,8 @@ profile as it was when that connection opened (#50); `avatar` is left out when e
 }
 ```
 
-No `chatId`. Once to each connection sharing a chat: their chosen status (`online`, `away`, `dnd`) at their first
-connection on a server (maybe twice), `offline` when the last closes; nothing for `invisible` users (#31).
+No `chatId`. Once to each connection sharing a chat (only contacts, or nobody, per `showOnlineStatus`): the chosen status at the
+first connection on a server (maybe twice), `offline` when the last closes. No `lastSeen` if hidden (#31, #32).
 
 ## `chat_updated`: group members changed
 
