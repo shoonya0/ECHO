@@ -58,6 +58,23 @@ Left open (from the PR review of step 2a):
 - **`joinOutcome` is join-only.** If a second write needs "commit, then answer an error",
   make it a generic result of `WithTransaction` instead of another outcome type.
 
+## Messages are numbered per chat (#43)
+
+Decided on 2026-11-19. Live delivery is Redis pub/sub, at most once, so a client needs a
+way to see a gap. Each message gets `seq`, taken from the chat's `stats.lastSeq` with
+`$inc` inside the send transaction: sends to one chat write the same document, so they
+commit one after another and an aborted send takes its number back. Message IDs were
+rejected as the cursor: two servers can make IDs in the same second out of order, so a
+client could pass one without noticing. `GET messages/:chatID/messages?afterSeq=` reads
+`chatId_1_seq_1` (unique, partial on `seq > 0`: the planner uses a partial index only
+for queries that imply its filter). A chat from before #43 is seeded on its first send or
+backfill: its k unnumbered messages keep 1 to k (`stats.oldSeqNext`, `oldSeqEnd`), so a
+new message can't be numbered before old history. The backfill hands those out oldest
+first in 500-message transactions, at start and again 15 minutes later for what the old
+copy saved during the deploy (numbered after the newest); then the `message-seqs-43`
+marker stops later starts from scanning every message. Left: no replay buffer (Redis
+Streams); the client catches up over REST.
+
 ## One direct chat per pair (#37)
 
 Decided on 2026-11-19. A direct chat stores `directKey`, the two user IDs smaller first,

@@ -443,6 +443,7 @@ func handleSendMessage(ctx context.Context, client *models.Client, request model
 		MessageID: message.ID.Hex(),
 		Data: map[string]interface{}{
 			"messageId":   message.ID.Hex(),
+			"seq":         message.Seq, // the message's number in its chat (#43)
 			"timestamp":   message.CreatedAt,
 			"chatId":      request.ChatID,
 			"messageType": messageType,

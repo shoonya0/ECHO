@@ -29,6 +29,7 @@ type WebSocketMessage struct {
 type ChatMessage struct {
 	ID          string                 `json:"id"`
 	ChatID      string                 `json:"chatId"`
+	Seq         int64                  `json:"seq,omitempty"` // the message's number in its chat (#43)
 	SenderID    string                 `json:"senderId"`
 	Sender      *MessageSenderEmbed    `json:"sender,omitempty"`
 	Content     string                 `json:"content"`

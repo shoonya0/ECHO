@@ -11,17 +11,20 @@ on `main`. To learn what the product does, read
 and with a link to exactly one feature state.md. Updated by /close-increment and
 /feature-docs update. -->
 
-- **Feature:** none · #36 live names on `fix/36-live-names`: a name or avatar change, or a
-  delete, clears the user's cached name on every server (`control:profiles`); join and leave
-  read through that cache; a read overlapping a change isn't cached ([decided](./decisions/accounts-and-privacy.md#names-are-read-when-shown-36)).
-  Verified; code review 5 of 9 fixed. Left: one epoch for all users, a join on a cache miss
-  waits up to 2 s. Every #36 part is done: proposed to close it.
-- **#36 usernames on Render (not checked yet):** PR #160 is merged; the startup log shows
-  any `Renamed a username another account already had`, then `Indexes ensured` with
-  `username_ci`. PR #161 (current names in replies) is merged too. `main` at `cab0bfe`: #37 steps 2 and 3, #110 and
-  the last #40 items (mentions, `CheckOrigin`, per-account limit; PRs #151 to #159) are
-  merged, so Render deploys them. #5 step 2 waits for the Android invite screen
+- **Feature:** none · #43 message numbers on `fix/43-message-seq` (PR open, 7 commits on
+  `4d58ff3`): each message gets a per-chat `seq` in the send transaction; live events and
+  the `send_message` reply carry it; `GET messages/:chatID/messages?afterSeq=` catches up.
+  Old history keeps the lowest numbers ([decided](./decisions/data-writes.md#messages-are-numbered-per-chat-43)).
+  Verified (verify `--full`, live check); code review: 9 findings, all fixed.
+- **#43 on Render (not checked yet):** the startup log shows `Indexes ensured` with
+  `chatId_1_seq_1` and `Numbered messages` once, again about 15 minutes later only if the
+  old copy saved some; then `migrations` holds `message-seqs-43`. In the app, a message's
+  history entry has `seq`
+  #36 is done and closed (PRs #160 to #162); #5 step 2 waits for the Android invite screen
   ([group-invites](./features/group-invites/state.md))
+- **#36 on Render (not checked yet):** the startup log shows any `Renamed a username another
+  account already had`, then `Indexes ensured` with `username_ci`; after a rename in the
+  app, old messages show the new name, and so do typing and join events within seconds
 - **#37 part 1 on Render (not checked yet):** the startup log shows `Backfilled direct chat
   keys` once (not on the next start), any `Second direct chats of a pair` (chat IDs to merge
   by hand), and `Indexes ensured` with `directKey_1`
@@ -72,11 +75,10 @@ and with a link to exactly one feature state.md. Updated by /close-increment and
   proposed to close it
 - **Next step:** the user decides on closing #40, #37 (all steps merged; the "Left open"
   review items in [data-writes](./decisions/data-writes.md#mongodb-transactions) stay) and
-  #63, and #36 once this PR merges. Open a PR for `fix/36-live-names`; then #42 (unbounded
-  lists) or #43 (missed live messages). Direct-chat gating and live status changes are decided against for now
+  #63, and on merging the #43 PR (merging deploys). Then #42 (unbounded lists). Direct-chat gating and live status changes are decided against for now
   ([decided](./decisions/accounts-and-privacy.md#how-privacy-settings-apply-32)). The Render
   checks above are the user's
-- **Updated:** 2026-11-19 on `fix/36-live-names` from `cab0bfe`. Commits on `main` must keep the author `shoonya0`
+- **Updated:** 2026-11-19 on `fix/43-message-seq` from `4d58ff3`. Commits on `main` must keep the author `shoonya0`
 
 ## Where things stand
 
@@ -90,6 +92,8 @@ Not built yet: editing or deleting messages, and changing chat settings. The ful
 
 ## Recently finished
 
+- **#36 live names (PR #162):** a name or avatar change, or a delete, clears the user's
+  cached name on every server (`control:profiles`); join and leave read through that cache.
 - **#36 current names (PR #161):** message history and chat replies read names and avatars
   when built; new chats and WebSocket connect copy them from the DB, not the JWT
   ([decided](./decisions/accounts-and-privacy.md#names-are-read-when-shown-36)).
@@ -131,16 +135,6 @@ Not built yet: editing or deleting messages, and changing chat settings. The ful
   user's choice, invisible users stay offline, `lastSeen` is saved on offline, and the hub
   reads the status from MongoDB ([decided](./decisions/accounts-and-privacy.md#where-presence-comes-from-31)).
   Code review: 10 findings, 6 fixed.
-- **#31 part 1 (PR #145):** `presence` events carry the user's chats over
-  `presence:global`; every server delivers them once per connection, so offline arrives
-  and members on other servers get both. `online:<userID>` (one expiring entry per
-  server) keeps offline back while another server holds the user, rechecked after a
-  stopped server's entry expires ([pub/sub](./PUBSUB_ARCHITECTURE.md#redis-channels),
-  [app changes](../Android/_docs/08_SERVER_CHANGES/auth-and-connection.md)). Code review:
-  8 findings, 6 fixed, 2 documented.
-- **#69 (PR #143):** a startup repair, `RemoveStaleChatEntries`, removes `users.chats`
-  entries whose chat doesn't list the user or is gone (forged joins before #9, failed
-  cleanups). It runs on every start, in batches of 200 users.
 
 ## How to build, run, test
 
@@ -180,13 +174,12 @@ blocks are stored, and who counts as a member.
 
 ## Known issues and risks
 
-There are 8 open issues. Where each risk sits in the code: [architecture-overview.md](./architecture-overview.md#riskiest-areas).
+There are 6 open issues. Where each risk sits in the code: [architecture-overview.md](./architecture-overview.md#riskiest-areas).
 
 | Area | The problem, in short | Issues |
 |---|---|---|
-| Live connections | Missed live messages can't be detected | #43 |
+| Live connections | Missed live messages can't be detected (fix: `fix/43-message-seq`) | #43 |
 | Groups | Pending members still pass membership checks (#5 step 2) | #5 |
-| Accounts | A server that misses a profile-change message shows the old name for up to 5 minutes (fix: PR pending) | #36 |
 | Contacts and blocking | Contact lists aren't cut to `limit`, and blocks written during a deploy can be missed | #39, #63 |
 | Online status and privacy | A status or privacy change reaches live events only at the next connect (decided) | none |
 | Messages and data | Some lists grow without limit | #42 |
