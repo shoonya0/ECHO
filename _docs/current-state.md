@@ -11,8 +11,8 @@ on `main`. To learn what the product does, read
 and with a link to exactly one feature state.md. Updated by /close-increment and
 /feature-docs update. -->
 
-- **Feature:** #32 (privacy settings) on `fix/32-privacy-settings`: built and verified
-  (`TEST_DB_REQUIRED=1 verify --full`), `/code-review` running; then push and PR. Rules:
+- **Feature:** #32 (privacy settings) on `fix/32-privacy-settings`: done, reviewed (7 fixed,
+  incl. `PUT profile/` resetting unsent settings), verified; PR open (`Fixes #32`). Rules:
   [decided](./decisions.md#how-privacy-settings-apply-32). #5 step 2 waits for the Android invite screen
   ([group-invites](./features/group-invites/state.md))
 - **#31 on Render (not checked yet):** in a shared chat, A sees B's online and offline, and
@@ -48,9 +48,9 @@ and with a link to exactly one feature state.md. Updated by /close-increment and
   losing messages
 - **Not filed, from #22:** a `chat_added` arriving while a connection's chats load is
   missed; a connection's welcome is dropped when its 10-message queue is already full
-- **Next step:** review fixes, PR for #32. Open question: should `allowContactBy` also gate
+- **Next step:** merge the #32 PR (user). Open question: should `allowContactBy` also gate
   `CreateDirectChat` (anyone can open one today)? The Render checks above are the user's
-- **Updated:** 2026-11-19 on `fix/32-privacy-settings` at `faafc7d`
+- **Updated:** 2026-11-19 on `fix/32-privacy-settings` at `86453a4`
 
 ## Where things stand
 
