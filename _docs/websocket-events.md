@@ -121,13 +121,13 @@ couldn't read your message. All codes are listed in
   "data": {
     "messageIds": ["<messageId>"],
     "status": "read",
-    "timestamp": "2026-11-04T12:00:00Z",
+    "timestamp": "2026-11-04T12:00:00Z", "readUpToSeq": 42,
     "instanceID": "<server>"
   }
 }
 ```
 
-`status` is always `read` today. Ignore `instanceID`: it is for the server's own tracking.
+`status` is always `read` today. `readUpToSeq` is the reader's highest read `seq`: every message up to it counts as read, and it never goes down (`0`: nothing numbered read yet, #42). Ignore `instanceID`: it is for the server's own tracking.
 
 ## `reaction`: a reaction changed
 
