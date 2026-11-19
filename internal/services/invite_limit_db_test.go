@@ -2,6 +2,7 @@ package services
 
 import (
 	"errors"
+	"fmt"
 	"sync"
 	"testing"
 	"time"
@@ -116,4 +117,54 @@ func TestCreateInviteKeepsTheListBounded(t *testing.T) {
 	if got := len(storedInviteCodes(t, chat.ChatID)); got != MaxUnexpiredInviteCodes+1 {
 		t.Fatalf("stored %d codes, want %d", got, MaxUnexpiredInviteCodes+1)
 	}
+}
+
+// fillInvitations gives userID n pending invitations, old-0 being the oldest.
+func fillInvitations(t *testing.T, userID bson.ObjectID, n int) {
+	t.Helper()
+	list := make(bson.A, n)
+	for i := range n {
+		list[i] = bson.M{"token": fmt.Sprintf("old-%d", i), "status": "pending"}
+	}
+	if _, err := database.DB.Collection(string(constants.UserColl)).UpdateOne(t.Context(),
+		bson.M{"_id": userID}, bson.M{"$set": bson.M{"chatInvitations": list}}); err != nil {
+		t.Fatalf("fill invitations: %v", err)
+	}
+}
+
+// checkInvitations fails unless userID holds MaxUserInvitations invitations, the
+// newest being want and the oldest (old-0) dropped.
+func checkInvitations(t *testing.T, userID bson.ObjectID, want string) {
+	t.Helper()
+	got := loadTestUser(t, t.Context(), userID).ChatInvitations
+	if len(got) != MaxUserInvitations || got[len(got)-1].Token != want || got[0].Token != "old-1" {
+		t.Fatalf("invitations: %d, first %q, last %q; want %d, old-1, %s",
+			len(got), got[0].Token, got[len(got)-1].Token, MaxUserInvitations, want)
+	}
+}
+
+// #42: a user's chatInvitations only grew. A user keeps the newest
+// MaxUserInvitations: one more drops the oldest, whether it is sent or comes with a
+// new group. The same code sent again changes nothing.
+func TestUserInvitationsStayBounded(t *testing.T) {
+	ctx := useTestDB(t)
+	owner, sent, created := bson.NewObjectID(), bson.NewObjectID(), bson.NewObjectID()
+	insertTestUsers(t, ctx, owner, sent, created)
+	chat := newTestGroup(t, ctx, owner)
+	code := chat.InviteCode[0].InviteCode
+
+	fillInvitations(t, sent, MaxUserInvitations)
+	if err := SendInviteToUser(ctx, owner, code, sent); err != nil {
+		t.Fatalf("SendInviteToUser: %v", err)
+	}
+	checkInvitations(t, sent, code)
+
+	if err := SendInviteToUser(ctx, owner, code, sent); err != nil {
+		t.Fatalf("SendInviteToUser again: %v", err)
+	}
+	checkInvitations(t, sent, code)
+
+	fillInvitations(t, created, MaxUserInvitations)
+	group := newTestGroup(t, ctx, owner, created)
+	checkInvitations(t, created, group.InviteCode[0].InviteCode)
 }

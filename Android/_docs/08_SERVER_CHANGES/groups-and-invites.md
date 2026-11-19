@@ -11,6 +11,8 @@ Part of [server changes the app must handle](./README.md).
   and `.../joined` stop finding them. Don't keep an expired code's ID to look up later.
 - Invitations for those codes leave `GET groups/invites` at the same time: refresh the
   list instead of keeping invitations locally.
+- `GET groups/invites` holds at most 100 invitations, oldest first; one more drops the
+  oldest. Build the "invited to" screen from `GET groups/pending`, which is never trimmed.
 
 Details: [groups.md](../../../_docs/rest-api/groups.md).
 

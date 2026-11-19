@@ -634,7 +634,7 @@ func createGroupChat(ctx context.Context, creator models.LoginUserResponse, chat
 	// Each invitee's invitation for the new code.
 	if len(invitees) > 0 {
 		res, err := database.DB.Collection(string(constants.UserColl)).UpdateMany(ctx,
-			bson.M{"_id": bson.M{"$in": invitees}}, addInvitationUpdate(invite.InviteCode))
+			withoutInvitation(bson.M{"_id": bson.M{"$in": invitees}}, invite.InviteCode), addInvitationUpdate(invite.InviteCode))
 		if err != nil {
 			return models.Chat{}, fmt.Errorf("failed to send the invitations: %w", err)
 		}
@@ -1882,18 +1882,43 @@ func SendInviteToUser(ctx context.Context, actingUserID bson.ObjectID, inviteID 
 // permission checks, and reports whether the user exists. Sending the same code
 // again adds nothing. Callers check who may send it.
 func addInvitation(ctx context.Context, inviteID string, targetUserID bson.ObjectID) (bool, error) {
-	res, err := database.DB.Collection(string(constants.UserColl)).UpdateOne(ctx,
-		bson.M{"_id": targetUserID}, addInvitationUpdate(inviteID))
+	users := database.DB.Collection(string(constants.UserColl))
+	res, err := users.UpdateOne(ctx, withoutInvitation(bson.M{"_id": targetUserID}, inviteID), addInvitationUpdate(inviteID))
 	if err != nil {
 		return false, fmt.Errorf("failed to update target user: %w", err)
 	}
-	return res.MatchedCount > 0, nil
+	if res.MatchedCount > 0 {
+		return true, nil
+	}
+	// No match: the user is missing, or already holds this invitation.
+	n, err := users.CountDocuments(ctx, bson.M{"_id": targetUserID}, options.Count().SetLimit(1))
+	if err != nil {
+		return false, fmt.Errorf("failed to check the target user: %w", err)
+	}
+	return n > 0, nil
 }
 
-// addInvitationUpdate gives a user a pending invitation for inviteID; sent again,
-// it adds nothing.
+// MaxUserInvitations is how many invitations a user keeps (#42). One more drops
+// the oldest instead of being refused, so nobody can make a user uninvitable by
+// filling their list. The list only feeds GET groups/invites: accepting reads the
+// group's participants, so a dropped invitation loses no pending membership.
+const MaxUserInvitations = 100
+
+// withoutInvitation narrows filter to users who don't hold an invitation for
+// inviteID, so addInvitationUpdate never adds the same code twice.
+func withoutInvitation(filter bson.M, inviteID string) bson.M {
+	filter["chatInvitations.token"] = bson.M{"$ne": inviteID}
+	return filter
+}
+
+// addInvitationUpdate appends a pending invitation for inviteID and keeps only
+// the newest MaxUserInvitations. Use it with withoutInvitation: $push, unlike
+// $addToSet, can trim the list, but adds a code the user already holds.
 func addInvitationUpdate(inviteID string) bson.M {
-	return bson.M{"$addToSet": bson.M{"chatInvitations": models.ChatInvitationEmbed{Token: inviteID, Status: "pending"}}}
+	return bson.M{"$push": bson.M{"chatInvitations": bson.M{
+		"$each":  bson.A{models.ChatInvitationEmbed{Token: inviteID, Status: "pending"}},
+		"$slice": -MaxUserInvitations,
+	}}}
 }
 
 // joinOutcome is what a join's transaction did, acted on once it has committed:
