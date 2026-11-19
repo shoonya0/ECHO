@@ -77,36 +77,61 @@ func chosenStatus(p models.PresenceEmbed) constants.UserStatus {
 	return constants.UserStatus(p.Status)
 }
 
-// ShowPresence turns stored presence into what a viewer sees. The user
+// Viewer is who looks at a user's presence.
+type Viewer int
+
+const (
+	ViewerOther   Viewer = iota // anyone who isn't one of the user's contacts
+	ViewerContact               // one of the user's accepted contacts
+	ViewerSelf                  // the user themselves
+)
+
+// ShowsOnlineTo reports whether a user whose showOnlineStatus is scope lets
+// viewer see them online. A scope never set means everyone; one the server
+// doesn't know means nobody, so a bad value can't expose anyone (#32).
+func ShowsOnlineTo(scope string, viewer Viewer) bool {
+	switch constants.PrivacyScope(scope) {
+	case "", constants.PrivacyEveryone:
+		return true
+	case constants.PrivacyContacts:
+		return viewer != ViewerOther
+	}
+	return viewer == ViewerSelf
+}
+
+// ShowPresence turns stored presence into what viewer sees. The user
 // themselves sees their chosen status and whether they are connected. Others
-// see the chosen status only while the user is connected and not invisible;
-// otherwise "offline", with lastSeen unless the user chose to hide (invisible
-// or offline).
-func ShowPresence(p *models.PresenceEmbed, connected, self bool) {
+// see the chosen status while the user is connected, unless the user hides
+// from them: invisible or offline by choice (#31), or a showOnlineStatus that
+// leaves them out (#32). Otherwise they see "offline". lastSeen and
+// lastActivity are shown only to viewers the user doesn't hide from, and only
+// with showLastSeen on.
+func ShowPresence(p *models.PresenceEmbed, privacy models.PrivacySettingsEmbed, connected bool, viewer Viewer) {
 	status := chosenStatus(*p)
-	if self {
+	if viewer == ViewerSelf {
 		p.Status = string(status)
 		p.IsOnline = connected
 		return
 	}
-	hiding := status.Hidden()
-	if connected && !hiding {
+	shown := !status.Hidden() && ShowsOnlineTo(privacy.ShowOnlineStatus, viewer)
+	if connected && shown {
 		p.Status = string(status)
 		p.IsOnline = true
-		return
+	} else {
+		p.Status = string(constants.UserStatusOffline)
+		p.IsOnline = false
+		p.LastActivity = time.Time{}
 	}
-	p.Status = string(constants.UserStatusOffline)
-	p.IsOnline = false
-	p.LastActivity = time.Time{}
-	if hiding {
+	if !shown || !privacy.ShowLastSeen {
 		p.LastSeen = time.Time{}
+		p.LastActivity = time.Time{}
 	}
 }
 
 // ShowOwnPresence fills in whether userID is connected on their own presence.
 func ShowOwnPresence(ctx context.Context, userID bson.ObjectID, p *models.PresenceEmbed) {
 	connected := connectedOrNone(ctx, []bson.ObjectID{userID})
-	ShowPresence(p, connected[userID], true)
+	ShowPresence(p, models.PrivacySettingsEmbed{}, connected[userID], ViewerSelf)
 }
 
 // RecordLastSeen stores at as the time the user's last connection closed. It

@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"maps"
 	"slices"
 	"time"
 
@@ -69,6 +70,7 @@ var userProjection = bson.M{
 	"presence.isOnline":     1,
 	"presence.lastActivity": 1,
 	"presence.lastSeen":     1,
+	"settings.privacy":      1, // what the owner may see of their presence (#32)
 }
 
 // ============ CONTACTS & FRIENDS MANAGEMENT ============
@@ -87,8 +89,12 @@ func GetContacts(ctx context.Context, userID bson.ObjectID, contactStatus consta
 		return []models.ContactInfo{}, 0, fmt.Errorf("unknown contact status: %s", contactStatus)
 	}
 
+	// The owner's accepted contacts decide what each listed user's
+	// showOnlineStatus "contacts" lets them see (#32). Contacts are mutual.
+	ownerProjection := maps.Clone(cfg.projection)
+	ownerProjection["contactInfo.contacts"] = 1
 	var contact models.ContactRequest
-	opts := options.FindOne().SetProjection(cfg.projection)
+	opts := options.FindOne().SetProjection(ownerProjection)
 	err := database.DB.Collection(string(constants.UserColl)).FindOne(ctx, bson.M{"_id": userID}, opts).Decode(&contact)
 	if err != nil {
 		if err == mongo.ErrNoDocuments {
@@ -122,11 +128,19 @@ func GetContacts(ctx context.Context, userID bson.ObjectID, contactStatus consta
 	defer cursor.Close(ctx)
 
 	results := make([]models.ContactInfo, 0, min(limit, len(contactIDs)))
+	privacy := make([]models.PrivacySettingsEmbed, 0, cap(results))
 	for cursor.Next(ctx) {
-		var user models.ContactInfo
-		if err := cursor.Decode(&user); err != nil {
+		var listed struct {
+			models.ContactInfo `bson:",inline"`
+			Settings           struct {
+				Privacy models.PrivacySettingsEmbed `bson:"privacy"`
+			} `bson:"settings"`
+		}
+		if err := cursor.Decode(&listed); err != nil {
 			return []models.ContactInfo{}, 0, err
 		}
+		user := listed.ContactInfo
+		privacy = append(privacy, listed.Settings.Privacy)
 
 		user.IsFavorite = contains(contact.ContactInfo.Favorites, user.ID)
 
@@ -144,7 +158,11 @@ func GetContacts(ctx context.Context, userID bson.ObjectID, contactStatus consta
 	}
 	connected := connectedOrNone(ctx, pageIDs)
 	for i := range results {
-		ShowPresence(&results[i].Presence, connected[results[i].ID], false)
+		viewer := ViewerOther
+		if contains(contact.ContactInfo.Contacts, results[i].ID) {
+			viewer = ViewerContact
+		}
+		ShowPresence(&results[i].Presence, privacy[i], connected[results[i].ID], viewer)
 	}
 	return results, int(total), nil
 }
