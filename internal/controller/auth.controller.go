@@ -202,6 +202,8 @@ func Login(c *gin.Context) {
 		displayNameFixed = true
 	}
 
+	services.ShowOwnPresence(c.Request.Context(), user.ID, &user.Presence) // live, not the stored isOnline (#31)
+
 	newUser := models.LoginUserResponse{
 		ID:            user.ID,
 		Email:         user.Email,

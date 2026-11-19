@@ -43,6 +43,7 @@ func GetProfile(ctx *gin.Context) {
 		return
 	}
 
+	services.ShowOwnPresence(reqCtx, objectID, &profile.Presence) // live, not the stored isOnline (#31)
 	utils.SuccessResponse(ctx, "User profile fetched successfully", profile)
 }
 
@@ -99,6 +100,7 @@ func UpdateProfile(ctx *gin.Context) {
 		return
 	}
 
+	services.ShowOwnPresence(reqCtx, objectID, &profile.Presence) // live, not the stored isOnline (#31)
 	utils.SuccessResponse(ctx, "Profile updated successfully", profile)
 }
 
