@@ -11,11 +11,15 @@ on `main`. To learn what the product does, read
 and with a link to exactly one feature state.md. Updated by /close-increment and
 /feature-docs update. -->
 
-- **Feature:** none · #42 step 2 on `fix/42-user-invitations` (PR open): a user keeps the
-  newest 100 invitations (`MaxUserInvitations`), one more drops the oldest; sending a code
-  twice still adds nothing. Verified (verify `--full`). Left in #42: the chat-document
-  write on every message. #5 step 2 waits for the Android invite screen
+- **Feature:** none · #42 step 3 on `fix/42-read-seqs` (PR open): `mark_read` keeps each
+  member's highest read `seq` on the chat (`readSeqs`, `$max`); history replies carry
+  `readSeqs`, the `delivery` event `readUpToSeq`. `readBy` is still written until the app
+  switches. The chat write on every send stays (#43 needs it,
+  [decided](./decisions/data-writes.md#messages-are-numbered-per-chat-43)). #42 step 2
+  merged (PR #165). #5 step 2 waits for the Android invite screen
   ([group-invites](./features/group-invites/state.md))
+- **#42 step 3 on Render (not checked yet):** mark a message read in the app; the chat in
+  Atlas gets `readSeqs.<userId>`, and the next history reply lists it
 - **#42 step 1 on Render (not checked yet):** the startup log shows `Indexes ensured` with
   `chatInvitations.token_1`; the 21st unexpired invite code of a group gets `409`
 - **#43 on Render (checked 2026-11-19):** `chatId_1_seq_1` built (15:14Z), no numbering
@@ -70,12 +74,13 @@ and with a link to exactly one feature state.md. Updated by /close-increment and
   losing messages
 - **Not filed, from #22:** a `chat_added` arriving while a connection's chats load is
   missed; a connection's welcome is dropped when its 10-message queue is already full
-- **Next step:** merge #42 step 2; then #42's chat-document write on every message, or #5
-  step 2 once the Android invite screen exists.
+- **Next step:** merge #42 step 3. Left in #42: drop `readBy` once the Android app reads
+  `readSeqs` (Android change first), and clear a leaver's `readReceipts`/`readSeqs` entry
+  on leave, remove, decline and account delete. Then #5 step 2 once the invite screen exists.
   The "Left open" review items of #37 stay in [data-writes](./decisions/data-writes.md#mongodb-transactions). Direct-chat gating and live status changes are decided against for now
   ([decided](./decisions/accounts-and-privacy.md#how-privacy-settings-apply-32)). The Render
   checks above are the user's
-- **Updated:** 2026-11-19 on `fix/42-user-invitations` from `0fa9fb6`. Commits on `main` must keep the author `shoonya0`
+- **Updated:** 2026-11-20 on `fix/42-read-seqs` from `899cdb6`. Commits on `main` must keep the author `shoonya0`
 
 ## Where things stand
 
@@ -89,7 +94,9 @@ Not built yet: editing or deleting messages, and changing chat settings. The ful
 
 ## Recently finished
 
-- **#42 step 2 (`fix/42-user-invitations`):** a user's `chatInvitations` keeps the newest
+- **#42 step 3 (`fix/42-read-seqs`):** each member's highest read `seq` is kept on the
+  chat (`readSeqs`) and sent in history and `delivery`; `readBy` stays until the app switches.
+- **#42 step 2 (PR #165):** a user's `chatInvitations` keeps the newest
   100 (`$push` with `$slice`); one more drops the oldest rather than being refused, so
   nobody can fill a user's list to block invites. `GET groups/pending` is unaffected.
 - **#42 step 1 (PR #164):** a group holds at most 20 invite codes that haven't expired,
@@ -133,14 +140,8 @@ Not built yet: editing or deleting messages, and changing chat settings. The ful
   connection and one reader; a subscribe returns once Redis confirms it, and one that isn't
   confirmed is undone ([pub/sub](./PUBSUB_ARCHITECTURE.md#redis-channels)). Code review: 9
   findings, 7 fixed, 2 documented.
-- **#32 (PR #148):** `showOnlineStatus` (`contacts`, `none`) and `showLastSeen` apply to
-  contact lists and `presence` events, `allowContactBy` gates contact requests (`403`), and
-  `showLastSeen` is on by default (one-time migration). Code review found `PUT profile/`
-  resetting unsent settings, fixed ([decided](./decisions/accounts-and-privacy.md#how-privacy-settings-apply-32)).
-- **#31 part 2 (PR #147):** REST presence is live from `online:<id>`, `status` is the
-  user's choice, invisible users stay offline, `lastSeen` is saved on offline, and the hub
-  reads the status from MongoDB ([decided](./decisions/accounts-and-privacy.md#where-presence-comes-from-31)).
-  Code review: 10 findings, 6 fixed.
+
+Older work: [finished-work/](./finished-work/README.md).
 
 ## How to build, run, test
 
@@ -186,7 +187,7 @@ There are 2 open issues. Where each risk sits in the code: [architecture-overvie
 |---|---|---|
 | Groups | Pending members still pass membership checks (#5 step 2) | #5 |
 | Online status and privacy | A status or privacy change reaches live events only at the next connect (decided) | none |
-| Messages and data | The chat-document write on every message (invite codes and user invitations done) | #42 |
+| Messages and data | `messages.readBy` until the app reads `readSeqs`; leavers stay in `readReceipts` | #42 |
 | Limits and errors | The per-account WebSocket cap is per server, not across servers | #40 |
 
 ## Next task
