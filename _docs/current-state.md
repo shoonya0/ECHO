@@ -11,11 +11,11 @@ on `main`. To learn what the product does, read
 and with a link to exactly one feature state.md. Updated by /close-increment and
 /feature-docs update. -->
 
-- **Feature:** none · #36 live names on `fix/36-live-names`: a profile change clears the
-  user's cached name and avatar on every server (`control:profiles`), join and leave read
-  through that cache, and the cache has the avatar; a read overlapping a change isn't
-  cached ([decided](./decisions/accounts-and-privacy.md#names-are-read-when-shown-36)).
-  Verified. With it every #36 part is done: proposed to close #36.
+- **Feature:** none · #36 live names on `fix/36-live-names`: a name or avatar change, or a
+  delete, clears the user's cached name on every server (`control:profiles`); join and leave
+  read through that cache; a read overlapping a change isn't cached ([decided](./decisions/accounts-and-privacy.md#names-are-read-when-shown-36)).
+  Verified; code review 5 of 9 fixed. Left: one epoch for all users, a join on a cache miss
+  waits up to 2 s. Every #36 part is done: proposed to close it.
 - **#36 usernames on Render (not checked yet):** PR #160 is merged; the startup log shows
   any `Renamed a username another account already had`, then `Indexes ensured` with
   `username_ci`. PR #161 (current names in replies) is merged too. `main` at `cab0bfe`: #37 steps 2 and 3, #110 and
