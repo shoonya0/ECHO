@@ -11,12 +11,14 @@ on `main`. To learn what the product does, read
 and with a link to exactly one feature state.md. Updated by /close-increment and
 /feature-docs update. -->
 
-- **Feature:** none · #42 step 1 on `fix/42-unbounded-lists` (PR open, 4 commits on `ec6472a`): a
-  group holds at most 20 unexpired invite codes (deleted ones count; `409` past that), and
-  creating one removes expired codes. Verified (verify `--full`, live check); code review:
-  8 findings, 3 fixed (stale invitations, MatchedCount, message), rest kept. Left in #42: users' `chatInvitations` (stale tokens stay), chat-document write
-  load. #43 (PR #163) is merged; #40, #37 and #63 closed 2026-11-19. #5 step 2 waits for
-  the Android invite screen ([group-invites](./features/group-invites/state.md))
+- **Feature:** none · nothing in progress. `main` at `0fa9fb6`: #42 step 1 (PR #164) is
+  merged: a group holds at most 20 unexpired invite codes (`409` past that), and creating
+  one removes expired codes and users' invitations for them. Left in #42: a cap on a user's
+  `chatInvitations` across groups, and the chat-document write on every message. #43 (PR
+  #163) merged; #40, #37 and #63 closed 2026-11-19. #5 step 2 waits for the Android invite
+  screen ([group-invites](./features/group-invites/state.md))
+- **#42 step 1 on Render (not checked yet):** the startup log shows `Indexes ensured` with
+  `chatInvitations.token_1`; the 21st unexpired invite code of a group gets `409`
 - **#43 on Render (checked 2026-11-19):** `chatId_1_seq_1` built (15:14Z), no numbering
   failure, `message-seqs-43` recorded at 15:36Z. Left: no message lacks `seq` (count in
   Atlas; deleted chats' messages may), and the app shows `seq` in history
@@ -69,11 +71,12 @@ and with a link to exactly one feature state.md. Updated by /close-increment and
   losing messages
 - **Not filed, from #22:** a `chat_added` arriving while a connection's chats load is
   missed; a connection's welcome is dropped when its 10-message queue is already full
-- **Next step:** finish the #42 step 1 review, then its PR; then #42's `chatInvitations`.
+- **Next step:** #42 step 2 (cap a user's pending `chatInvitations`), or #5 step 2 once the
+  Android invite screen exists.
   The "Left open" review items of #37 stay in [data-writes](./decisions/data-writes.md#mongodb-transactions). Direct-chat gating and live status changes are decided against for now
   ([decided](./decisions/accounts-and-privacy.md#how-privacy-settings-apply-32)). The Render
   checks above are the user's
-- **Updated:** 2026-11-19 on `fix/42-unbounded-lists` from `ec6472a`. Commits on `main` must keep the author `shoonya0`
+- **Updated:** 2026-11-19 on `main` at `0fa9fb6` (not committed yet: rides on the next branch). Commits on `main` must keep the author `shoonya0`
 
 ## Where things stand
 
@@ -87,6 +90,12 @@ Not built yet: editing or deleting messages, and changing chat settings. The ful
 
 ## Recently finished
 
+- **#42 step 1 (PR #164):** a group holds at most 20 invite codes that haven't expired,
+  deleted ones included (`409`); creating one removes expired codes and users' invitations
+  for them (`chatInvitations.token_1`), in one transaction. Review: 8 findings, 3 fixed.
+- **#43 (PR #163):** each message has a per-chat `seq` (send transaction, gap-free); live
+  events and the `send_message` reply carry it; `?afterSeq=` catches up; old history keeps
+  the lowest numbers ([decided](./decisions/data-writes.md#messages-are-numbered-per-chat-43)).
 - **#36 live names (PR #162):** a name or avatar change, or a delete, clears the user's
   cached name on every server (`control:profiles`); join and leave read through that cache.
 - **#36 current names (PR #161):** message history and chat replies read names and avatars
@@ -175,7 +184,7 @@ There are 2 open issues. Where each risk sits in the code: [architecture-overvie
 |---|---|---|
 | Groups | Pending members still pass membership checks (#5 step 2) | #5 |
 | Online status and privacy | A status or privacy change reaches live events only at the next connect (decided) | none |
-| Messages and data | Some lists grow without limit (invite codes: `fix/42-unbounded-lists`) | #42 |
+| Messages and data | A user's invitations and the chat-document write load still grow (invite codes done, PR #164) | #42 |
 | Limits and errors | The per-account WebSocket cap is per server, not across servers | #40 |
 
 ## Next task
