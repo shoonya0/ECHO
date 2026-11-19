@@ -130,8 +130,8 @@ func TestRemoveGroupMemberRollsBackOnFailedUserUpdate(t *testing.T) {
 	if _, ok := got.Participants[member]; !ok {
 		t.Error("member was removed from the chat, want the removal rolled back")
 	}
-	if got.Stats.ParticipantCount != 2 {
-		t.Errorf("participantCount = %d, want 2", got.Stats.ParticipantCount)
+	if n := len(got.Participants); n != 2 {
+		t.Errorf("participants = %d, want 2", n)
 	}
 }
 
@@ -154,8 +154,8 @@ func TestAddGroupMemberRollsBackOnFailedUserUpdate(t *testing.T) {
 	if _, ok := got.Participants[added]; ok {
 		t.Error("the user was added to the chat, want the add rolled back")
 	}
-	if got.Stats.ParticipantCount != 1 {
-		t.Errorf("participantCount = %d, want 1", got.Stats.ParticipantCount)
+	if n := len(got.Participants); n != 1 {
+		t.Errorf("participants = %d, want 1", n)
 	}
 }
 

@@ -145,9 +145,7 @@ func declineGroupInvite(ctx context.Context, userID, chatID bson.ObjectID) error
 		pendingInviteFilter(chatID, userID),
 		bson.M{
 			"$unset": bson.M{participantField(userID): ""},
-			// The filter requires userID to be present, so this removes one (#16).
-			"$inc": bson.M{"stats.participantCount": -1},
-			"$set": bson.M{"updatedAt": time.Now()},
+			"$set":   bson.M{"updatedAt": time.Now()},
 		},
 	)
 	if err != nil {
@@ -204,7 +202,7 @@ func PendingGroupInvites(ctx context.Context, userID bson.ObjectID) ([]PendingGr
 			key + ".requestStatus": string(constants.StatusPending),
 		},
 		options.Find().
-			SetProjection(bson.M{"name": 1, "description": 1, "stats.participantCount": 1, key: 1}).
+			SetProjection(bson.M{"name": 1, "description": 1, "stats.participantCount": participantCountExpr, key: 1}).
 			SetSort(bson.D{{Key: "_id", Value: -1}}),
 	)
 	if err != nil {

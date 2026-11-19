@@ -178,8 +178,8 @@ func TestDeclineGroupInvite(t *testing.T) {
 	if _, ok := chat.Participants[user]; ok {
 		t.Fatalf("declined user still a participant")
 	}
-	if chat.Stats.ParticipantCount != 1 {
-		t.Fatalf("participantCount = %d, want 1", chat.Stats.ParticipantCount)
+	if n := len(chat.Participants); n != 1 {
+		t.Fatalf("participants = %d, want 1", n)
 	}
 	if hasChatEntry(t, ctx, user, chatID) {
 		t.Fatalf("chats entry left after decline")

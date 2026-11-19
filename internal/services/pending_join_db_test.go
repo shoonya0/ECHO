@@ -89,8 +89,8 @@ func TestPendingMemberAcceptsByJoiningWithCode(t *testing.T) {
 	if got := p[owner].Role; got != string(constants.ChatRoleOwner) {
 		t.Fatalf("owner role = %q, want owner", got)
 	}
-	if count, n := storedCount(t, chat.ChatID); count != 2 || n != 2 {
-		t.Fatalf("participantCount = %d, participants = %d; want 2 and 2 (accepting adds nobody)", count, n)
+	if n := len(p); n != 2 {
+		t.Fatalf("participants = %d, want 2 (accepting adds nobody)", n)
 	}
 	if got := pendingInvitations(t, invitee); len(got) != 0 {
 		t.Fatalf("invitations after joining = %v, want none", got)
