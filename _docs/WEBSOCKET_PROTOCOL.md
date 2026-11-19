@@ -28,8 +28,8 @@ holds up to 5 connections per server; more get `429` (`1008` if two connect at o
 When you connect, the server:
 
 1. Checks your token.
-2. Starts following every chat in your user's chat list.
-3. Sends you a welcome `response` with `"status": "connected"`.
+2. Sends you a welcome `response` with `"status": "connected"`, always the first message.
+3. Starts following every chat in your user's chat list.
 
 ## Stay connected
 
