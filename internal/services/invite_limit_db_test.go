@@ -24,13 +24,13 @@ func storedInviteCodes(t *testing.T, chatID bson.ObjectID) []models.InviteCodeEm
 }
 
 // #42: a group's inviteCode list only grew. Creating a code now removes the expired
-// ones and refuses one past maxUnexpiredInviteCodes unexpired ones, deleted ones
+// ones and refuses one past MaxUnexpiredInviteCodes unexpired ones, deleted ones
 // included, also when many are created at once. A deleted code stays listed until it
 // expires, and a code from before #15 (no stored date) is kept.
 func TestCreateInviteKeepsTheListBounded(t *testing.T) {
 	ctx := useTestDB(t)
-	owner := bson.NewObjectID()
-	insertTestUsers(t, ctx, owner)
+	owner, invitee := bson.NewObjectID(), bson.NewObjectID()
+	insertTestUsers(t, ctx, owner, invitee)
 	chat := newTestGroup(t, ctx, owner) // starts with one unexpired code
 
 	now := time.Now()
@@ -43,9 +43,18 @@ func TestCreateInviteKeepsTheListBounded(t *testing.T) {
 		bson.M{"_id": chat.ChatID}, bson.M{"$push": bson.M{"inviteCode": bson.M{"$each": old}}}); err != nil {
 		t.Fatalf("add old codes: %v", err)
 	}
+	// Invitations sent with two of them. The expired one's can never be used, and
+	// a join or decline can't clean it up once its code is gone.
+	if _, err := database.DB.Collection(string(constants.UserColl)).UpdateOne(ctx, bson.M{"_id": invitee},
+		bson.M{"$set": bson.M{"chatInvitations": bson.A{
+			bson.M{"token": "expired", "status": "pending"},
+			bson.M{"token": "deleted", "status": "pending"},
+		}}}); err != nil {
+		t.Fatalf("add invitations: %v", err)
+	}
 
 	// Ask for more than fit, all at once. The first code and "deleted" count.
-	const tries = maxUnexpiredInviteCodes + 5
+	const tries = MaxUnexpiredInviteCodes + 5
 	errs := make([]error, tries)
 	var wg sync.WaitGroup
 	for i := range tries {
@@ -68,7 +77,7 @@ func TestCreateInviteKeepsTheListBounded(t *testing.T) {
 			t.Fatalf("CreateInvite: %v", err)
 		}
 	}
-	if want := maxUnexpiredInviteCodes - 2; created != want || refused != tries-want {
+	if want := MaxUnexpiredInviteCodes - 2; created != want || refused != tries-want {
 		t.Fatalf("created %d and refused %d, want %d and %d", created, refused, want, tries-want)
 	}
 
@@ -80,8 +89,11 @@ func TestCreateInviteKeepsTheListBounded(t *testing.T) {
 	if names["expired"] || !names["deleted"] || !names["legacy"] {
 		t.Fatalf("codes %v: want expired removed, deleted and legacy kept", names)
 	}
-	if len(codes) != maxUnexpiredInviteCodes+1 { // the unexpired ones and legacy
-		t.Fatalf("stored %d codes, want %d", len(codes), maxUnexpiredInviteCodes+1)
+	if len(codes) != MaxUnexpiredInviteCodes+1 { // the unexpired ones and legacy
+		t.Fatalf("stored %d codes, want %d", len(codes), MaxUnexpiredInviteCodes+1)
+	}
+	if got := loadTestUser(t, ctx, invitee).ChatInvitations; len(got) != 1 || got[0].Token != "deleted" {
+		t.Fatalf("invitations = %+v, want only the unexpired code's", got)
 	}
 
 	// Deleting one doesn't make room: it counts until it expires.
@@ -101,7 +113,7 @@ func TestCreateInviteKeepsTheListBounded(t *testing.T) {
 	if _, err := CreateInvite(ctx, owner, chat.ChatID); err != nil {
 		t.Fatalf("CreateInvite after one expired: %v", err)
 	}
-	if got := len(storedInviteCodes(t, chat.ChatID)); got != maxUnexpiredInviteCodes+1 {
-		t.Fatalf("stored %d codes, want %d", got, maxUnexpiredInviteCodes+1)
+	if got := len(storedInviteCodes(t, chat.ChatID)); got != MaxUnexpiredInviteCodes+1 {
+		t.Fatalf("stored %d codes, want %d", got, MaxUnexpiredInviteCodes+1)
 	}
 }
