@@ -1,13 +1,12 @@
 # Group invites: state
 
-## Now (updated 2026-11-19 at `45d90af`)
+## Now (updated 2026-11-20 at `cd84d7c`)
 
-- **Status:** 🟡 increment 1 merged; increment 2 waits for the Android invite screen
-- **Current task:** none here. #110 is merged (PR #156): the
-  pending list computes `participantCount` from `participants`, and decline no longer
-  lowers a stored count
-  ([decided](../../decisions/chats-and-groups.md#how-a-groups-participant-count-is-kept-110))
-- **Stopped at:** `node scripts/verify.mjs` and `TEST_DB_REQUIRED=1 go test ./...` passed
+- **Status:** 🟡 increment 1 merged; increment 2 waits for the Android invite screen, and
+  Android work waits until the backend issues are done (user, 2026-11-20)
+- **Current task:** none here. #42 step 4 (`fix/42-leaver-read-state`) touched decline:
+  it also unsets the invitee's `readReceipts`/`readSeqs` entries on the group
+- **Stopped at:** `TEST_DB_REQUIRED=1 node scripts/verify.mjs --full` passed (2026-11-20)
 - **Open questions / blockers:** none
 - **Don't forget:** a pending invite is stored as the invitee's `users.chats.<groupId>`
   entry. The backfill tells legacy pending members from new ones by the cutoff in the
