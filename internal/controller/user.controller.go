@@ -85,6 +85,18 @@ func UpdateProfile(ctx *gin.Context) {
 		return
 	}
 
+	// A privacy scope the server doesn't know would hide the user from
+	// everyone, without them knowing why (#32).
+	if updateReq.Settings != nil {
+		for _, scope := range []string{updateReq.Settings.Privacy.ShowOnlineStatus, updateReq.Settings.Privacy.AllowContactBy} {
+			if scope != "" && !constants.PrivacyScope(scope).Valid() {
+				log.Debug("invalid privacy scope")
+				utils.ErrorResponse(ctx, http.StatusBadRequest, "settings.privacy.showOnlineStatus and allowContactBy must be everyone, contacts or none", nil)
+				return
+			}
+		}
+	}
+
 	updateDoc := BuildPartialDocument(updateReq)
 
 	// Drop backend/service-owned fields (accountStatus, timestamps, etc.)
