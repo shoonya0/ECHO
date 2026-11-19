@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 
 	"github.com/shoonya0/ECHO/internal/constants"
@@ -168,6 +169,9 @@ func MapServiceErrorToHTTP(err error) (int, string) {
 		return http.StatusConflict, "Users are already in the chat"
 	case errors.Is(err, services.ErrGroupFull):
 		return http.StatusConflict, "Group is full"
+	case errors.Is(err, services.ErrTooManyInvites):
+		return http.StatusConflict, fmt.Sprintf("This group has %d invite codes that haven't expired (deleted ones count); wait for one to expire",
+			services.MaxUnexpiredInviteCodes)
 	case errors.Is(err, services.ErrInvalidUsername):
 		return http.StatusBadRequest, "Username must be 3 to 30 letters, digits, _ or ."
 	case errors.Is(err, services.ErrUsernameTaken):

@@ -61,6 +61,14 @@ func TestGroupFullMapsToConflict(t *testing.T) {
 	}
 }
 
+// #42: a group at its invite code limit gets 409, without the internal count.
+func TestTooManyInvitesMapsToConflict(t *testing.T) {
+	status, msg := MapServiceErrorToHTTP(fmt.Errorf("%w: 20", services.ErrTooManyInvites))
+	if status != http.StatusConflict || strings.Contains(msg, "unexpired") {
+		t.Fatalf("got %d %q, want 409 and the client text", status, msg)
+	}
+}
+
 // The invite mapping must not change what the other handlers send: a typing
 // failure on a missing user stays TYPING_FAILED.
 func TestChatErrorsKeepTheirHandlerCodes(t *testing.T) {

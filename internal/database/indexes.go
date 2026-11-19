@@ -102,6 +102,17 @@ var indexSpecs = []collectionIndexes{
 		},
 	},
 	{
+		coll: constants.UserColl,
+		models: []mongo.IndexModel{
+			// Creating an invite code removes the invitations users hold for the
+			// group's expired codes (#42).
+			{
+				Keys:    bson.D{{Key: "chatInvitations.token", Value: 1}},
+				Options: options.Index().SetName("chatInvitations.token_1"),
+			},
+		},
+	},
+	{
 		// Its own entry, so duplicate emails failing email_1 can't stop it.
 		coll: constants.UserColl,
 		models: []mongo.IndexModel{
