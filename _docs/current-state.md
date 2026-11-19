@@ -11,17 +11,15 @@ on `main`. To learn what the product does, read
 and with a link to exactly one feature state.md. Updated by /close-increment and
 /feature-docs update. -->
 
-- **Feature:** none · #43 message numbers on `fix/43-message-seq` (PR open, 7 commits on
-  `4d58ff3`): each message gets a per-chat `seq` in the send transaction; live events and
-  the `send_message` reply carry it; `GET messages/:chatID/messages?afterSeq=` catches up.
-  Old history keeps the lowest numbers ([decided](./decisions/data-writes.md#messages-are-numbered-per-chat-43)).
-  Verified (verify `--full`, live check); code review: 9 findings, all fixed.
-- **#43 on Render (not checked yet):** the startup log shows `Indexes ensured` with
-  `chatId_1_seq_1` and `Numbered messages` once, again about 15 minutes later only if the
-  old copy saved some; then `migrations` holds `message-seqs-43`. In the app, a message's
-  history entry has `seq`
-  #36 is done and closed (PRs #160 to #162); #5 step 2 waits for the Android invite screen
-  ([group-invites](./features/group-invites/state.md))
+- **Feature:** none · #42 step 1 on `fix/42-unbounded-lists` (PR open, 4 commits on `ec6472a`): a
+  group holds at most 20 unexpired invite codes (deleted ones count; `409` past that), and
+  creating one removes expired codes. Verified (verify `--full`, live check); code review:
+  8 findings, 3 fixed (stale invitations, MatchedCount, message), rest kept. Left in #42: users' `chatInvitations` (stale tokens stay), chat-document write
+  load. #43 (PR #163) is merged; #40, #37 and #63 closed 2026-11-19. #5 step 2 waits for
+  the Android invite screen ([group-invites](./features/group-invites/state.md))
+- **#43 on Render (checked 2026-11-19):** `chatId_1_seq_1` built (15:14Z), no numbering
+  failure, `message-seqs-43` recorded at 15:36Z. Left: no message lacks `seq` (count in
+  Atlas; deleted chats' messages may), and the app shows `seq` in history
 - **#36 on Render (not checked yet):** the startup log shows any `Renamed a username another
   account already had`, then `Indexes ensured` with `username_ci`; after a rename in the
   app, old messages show the new name, and so do typing and join events within seconds
@@ -35,8 +33,8 @@ and with a link to exactly one feature state.md. Updated by /close-increment and
   per running server
 - **#31 on Render (not checked yet):** in a shared chat, A sees B's online and offline, and
   B's contacts list shows `isOnline` only while B is connected
-- **#32 on Render (not checked yet):** the startup log shows `Turned on showLastSeen` once
-  (not on the next start); with `allowContactBy: none`, a contact request gets `403`
+- **#32 on Render (partly checked):** `migrations` holds `show-last-seen-default-32`
+  (05:29Z, 2026-11-19), so the one-time switch ran. Left: with `allowContactBy: none`, a contact request gets `403`
 - **Not filed, from #31:** a user held only by a server that crashes gets no offline (its
   entry expires in 2 min); two servers connecting and disconnecting one user within
   milliseconds can order online and offline wrongly; during a deploy, old and new servers
@@ -71,14 +69,11 @@ and with a link to exactly one feature state.md. Updated by /close-increment and
   losing messages
 - **Not filed, from #22:** a `chat_added` arriving while a connection's chats load is
   missed; a connection's welcome is dropped when its 10-message queue is already full
-- **Not filed:** #63 can't happen any more (no deployed version writes `blockedChats`);
-  proposed to close it
-- **Next step:** the user decides on closing #40, #37 (all steps merged; the "Left open"
-  review items in [data-writes](./decisions/data-writes.md#mongodb-transactions) stay) and
-  #63, and on merging the #43 PR (merging deploys). Then #42 (unbounded lists). Direct-chat gating and live status changes are decided against for now
+- **Next step:** finish the #42 step 1 review, then its PR; then #42's `chatInvitations`.
+  The "Left open" review items of #37 stay in [data-writes](./decisions/data-writes.md#mongodb-transactions). Direct-chat gating and live status changes are decided against for now
   ([decided](./decisions/accounts-and-privacy.md#how-privacy-settings-apply-32)). The Render
   checks above are the user's
-- **Updated:** 2026-11-19 on `fix/43-message-seq` from `4d58ff3`. Commits on `main` must keep the author `shoonya0`
+- **Updated:** 2026-11-19 on `fix/42-unbounded-lists` from `ec6472a`. Commits on `main` must keep the author `shoonya0`
 
 ## Where things stand
 
@@ -174,15 +169,13 @@ blocks are stored, and who counts as a member.
 
 ## Known issues and risks
 
-There are 6 open issues. Where each risk sits in the code: [architecture-overview.md](./architecture-overview.md#riskiest-areas).
+There are 2 open issues. Where each risk sits in the code: [architecture-overview.md](./architecture-overview.md#riskiest-areas).
 
 | Area | The problem, in short | Issues |
 |---|---|---|
-| Live connections | Missed live messages can't be detected (fix: `fix/43-message-seq`) | #43 |
 | Groups | Pending members still pass membership checks (#5 step 2) | #5 |
-| Contacts and blocking | Contact lists aren't cut to `limit`, and blocks written during a deploy can be missed | #39, #63 |
 | Online status and privacy | A status or privacy change reaches live events only at the next connect (decided) | none |
-| Messages and data | Some lists grow without limit | #42 |
+| Messages and data | Some lists grow without limit (invite codes: `fix/42-unbounded-lists`) | #42 |
 | Limits and errors | The per-account WebSocket cap is per server, not across servers | #40 |
 
 ## Next task

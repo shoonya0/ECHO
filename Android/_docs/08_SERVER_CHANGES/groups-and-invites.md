@@ -9,6 +9,8 @@ Part of [server changes the app must handle](./README.md).
   and don't retry.
 - Expired codes are removed when a new one is created, so `GET groups/:groupID/invites`
   and `.../joined` stop finding them. Don't keep an expired code's ID to look up later.
+- Invitations for those codes leave `GET groups/invites` at the same time: refresh the
+  list instead of keeping invitations locally.
 
 Details: [groups.md](../../../_docs/rest-api/groups.md).
 

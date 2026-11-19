@@ -7,7 +7,7 @@ Index: [REST API](./README.md). Shared rules: [the basics](./basics.md).
 | Route | What it does |
 |---|---|
 | `POST groups/:groupID/add-members` | Adds people. Send `{ "userIDs": ["..."] }`. Owners and admins only. A group holds at most 100 people: going over (here, on create or on join) is `409` `Group is full` and adds nobody (#68). |
-| `POST groups/:groupID/invites` | Creates an invite code and returns it in `data`, shaped like a list entry (`inviteCode`, `expiredDate`) (#104). Codes last 24 hours. A group holds at most 20 that haven't expired, deleted ones included, so 20 a day: one more is `409` (#42). Creating one removes the group's expired codes. |
+| `POST groups/:groupID/invites` | Creates an invite code and returns it in `data`, shaped like a list entry (`inviteCode`, `expiredDate`) (#104). Codes last 24 hours. A group holds at most 20 that haven't expired, deleted ones included, so 20 a day: one more is `409` (#42). Creating one removes the group's expired codes, and the invitations users hold for them. |
 | `GET groups/:groupID/invites` | Lists a group's invite codes: the unexpired ones (deleted ones marked `deleted`), and expired ones until the next code is created (#42) |
 | `GET groups/invites` | Lists invites sent to you |
 | `DELETE groups/invites/:inviteID` | Deletes an invite code |
