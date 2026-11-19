@@ -64,8 +64,9 @@ anything others added meanwhile. Finding the chats and messages scans (no index 
 
 Decided on 2026-11-15. Multi-document writes may use transactions, so MongoDB must run as a
 replica set everywhere. Atlas already does. Local `docker compose` and CI run it as a
-one-node replica set (`--replSet rs0`, initialized once). Unblocks #37. Not set up yet:
-compose and CI still run a standalone MongoDB (#37 part 2).
+one-node replica set (`--replSet rs0`, initiated by the compose healthcheck). Set up on
+2026-11-19: CI starts MongoDB from `docker/docker-compose.yml`, and
+`TestTestDBSupportsTransactions` fails on a standalone server. Unblocks #37 part 2.
 
 ## One direct chat per pair (#37)
 

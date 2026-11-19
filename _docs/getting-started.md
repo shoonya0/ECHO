@@ -27,7 +27,9 @@ docker compose -f docker/docker-compose.yml up -d
 ```
 
 This starts `echo-mongodb` on port 27017 (user and password are both `echo`) and
-`echo-redis` on port 6379.
+`echo-redis` on port 6379. MongoDB runs as a one-node replica set (`rs0`), as Atlas does,
+so transactions work. It is healthy once it is the primary, a few seconds after start. A
+container from before this change is recreated by the same command; its data stays.
 
 **3. Create your settings file**
 
