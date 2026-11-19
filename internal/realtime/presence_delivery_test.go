@@ -262,9 +262,9 @@ func TestRenewalSkipsUsersNoLongerHeld(t *testing.T) {
 	}
 }
 
-// #31: away and dnd users are announced online like anyone connected; an
-// invisible user isn't announced, though their mark still says connected.
-// Before, only a token status of exactly "online" was announced.
+// #31: away and dnd users are announced like anyone connected, with their
+// chosen status; an invisible user isn't announced, though their mark still
+// says connected. Before, only a token status of exactly "online" was.
 func TestAnnouncedStatusFollowsChoice(t *testing.T) {
 	for _, tc := range []struct {
 		status   constants.UserStatus
@@ -283,7 +283,8 @@ func TestAnnouncedStatusFollowsChoice(t *testing.T) {
 			connectOnline(t, hub, b1, chat)
 			connectWithStatus(t, hub, a1, tc.status, chat)
 			if tc.announce {
-				wantStatus(t, nextPresence(t, b1, a1.UserID), constants.UserStatusOnline)
+				// The chosen status, as REST shows it.
+				wantStatus(t, nextPresence(t, b1, a1.UserID), tc.status)
 			} else {
 				noPresence(t, b1, a1.UserID, 300*time.Millisecond)
 			}
@@ -333,5 +334,35 @@ func TestOfflineSavesLastSeen(t *testing.T) {
 	case extra := <-saves:
 		t.Fatalf("lastSeen saved again for %s", extra.userID.Hex())
 	case <-time.After(200 * time.Millisecond):
+	}
+}
+
+// #31: an invisible user's disconnect sends no offline either: one with a
+// fresh lastSeen would show they were just connected. lastSeen is still saved.
+func TestInvisibleUserGetsNoOffline(t *testing.T) {
+	hub := newPresenceHub(t, testutil.UseTestRedis(t), "one")
+	saved := make(chan bson.ObjectID, 4)
+	hub.saveLastSeen = func(_ context.Context, userID bson.ObjectID, _ time.Time) error {
+		saved <- userID
+		return nil
+	}
+	chat := bson.NewObjectID().Hex()
+	a1 := bufferedClient("a1", bson.NewObjectID())
+	b1 := bufferedClient("b1", bson.NewObjectID())
+	connectOnline(t, hub, b1, chat)
+	connectWithStatus(t, hub, a1, constants.UserStatusInvisible, chat)
+
+	unregisterAndWait(hub, a1)
+	noPresence(t, b1, a1.UserID, 300*time.Millisecond)
+	select {
+	case got := <-saved:
+		if got != a1.UserID {
+			t.Fatalf("lastSeen saved for %s, want %s", got.Hex(), a1.UserID.Hex())
+		}
+	case <-time.After(3 * time.Second):
+		t.Fatal("lastSeen not saved for the invisible user")
+	}
+	if n, err := hub.redisClient.Exists(context.Background(), onlineKey(a1.UserID.Hex())).Result(); err != nil || n != 0 {
+		t.Fatalf("online mark left after disconnect: %d, %v", n, err)
 	}
 }

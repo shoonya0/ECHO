@@ -143,7 +143,7 @@ func TestQueueGivesUpWhenTheHubStops(t *testing.T) {
 
 	done := make(chan struct{})
 	go func() {
-		hub.QueueRegister(client)
+		hub.QueueRegister(client, nil)
 		hub.QueueUnregister(client)
 		close(done)
 	}()
@@ -260,7 +260,7 @@ func TestDisconnectDuringAnotherRegistrationIsNotTheLast(t *testing.T) {
 	stubSubscriptions(hub, pm.getUserChannel(userID.Hex()))
 	published := recordPresence(pm)
 
-	hub.QueueRegister(second) // queued, not handled yet
+	hub.QueueRegister(second, nil) // queued, not handled yet
 	GetPresenceInstance().Set(UserPresence{UserID: userID, Status: UserStatus(constants.UserStatusOnline), ClientID: second.ID})
 	t.Cleanup(func() { GetPresenceInstance().Delete(userID) })
 
