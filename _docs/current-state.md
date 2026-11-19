@@ -12,8 +12,8 @@ and with a link to exactly one feature state.md. Updated by /close-increment and
 /feature-docs update. -->
 
 - **Feature:** none · #40 per-account WebSocket limit on `fix/40-account-ws-limit`,
-  verified, stacked on PR #158 (`CheckOrigin`, open). `main` at `81b2e49`: #37 steps 2 and 3, #110 and the #40 mention lookups
-  (PRs #151 to #157) are merged, so Render deploys them. #5 step 2 waits for the Android invite screen
+  verified, PR #159. `main` at `62be337`: #37 steps 2 and 3, #110 and the #40 mentions and
+  `CheckOrigin` (PRs #151 to #158) are merged, so Render deploys them. #5 step 2 waits for the Android invite screen
   ([group-invites](./features/group-invites/state.md))
 - **#37 part 1 on Render (not checked yet):** the startup log shows `Backfilled direct chat
   keys` once (not on the next start), any `Second direct chats of a pair` (chat IDs to merge
@@ -48,8 +48,8 @@ and with a link to exactly one feature state.md. Updated by /close-increment and
 - **#72 on Render (paused 2026-11-15):** `/health` answers `200`, but no chat with a message
   saved before PR #74 (`reactions: null`) is left to react to. Continue later, for example
   by setting `reactions: null` on a test message in Atlas first
-- **#40:** the per-account WebSocket limit (this branch) is its last open item; once it and
-  #158 merge, #40 can close. The cap is per server, not shared through Redis.
+- **#40:** the per-account WebSocket limit (PR #159) is its last open item; once it merges,
+  #40 can close. The cap is per server, not shared through Redis.
   Proposed, not filed: hide which emails have accounts (signup `409`, login timing). Split
   `websocket-requests.md` and `websocket-events.md` (~199 lines) before adding to them
 - **#69 on Render (not checked yet):** the startup log shows `Removed chat entries of users
@@ -61,12 +61,12 @@ and with a link to exactly one feature state.md. Updated by /close-increment and
   missed; a connection's welcome is dropped when its 10-message queue is already full
 - **Not filed:** #63 can't happen any more (no deployed version writes `blockedChats`);
   proposed to close it
-- **Next step:** merge #158, rebase this branch on `main` and open its PR (5 connections per
-  account per server, [connect](./WEBSOCKET_PROTOCOL.md#connect)). Then decide whether #37 can close: all its steps are merged; the review items under "Left
+- **Next step:** merge PR #159 (5 connections per account per server,
+  [connect](./WEBSOCKET_PROTOCOL.md#connect)); then #40 can close. Then decide whether #37 can close: all its steps are merged; the review items under "Left
   open" in [data-writes](./decisions/data-writes.md#mongodb-transactions) stay. Direct-chat gating and live status changes are decided against for now
   ([decided](./decisions/accounts-and-privacy.md#how-privacy-settings-apply-32)). The Render
   checks above are the user's
-- **Updated:** 2026-11-19 on `fix/40-account-ws-limit` (on top of #158, from `81b2e49`). Commits on `main` must keep the author `shoonya0`
+- **Updated:** 2026-11-19 on `fix/40-account-ws-limit` from `62be337`. Commits on `main` must keep the author `shoonya0`
 
 ## Where things stand
 
@@ -80,6 +80,8 @@ Not built yet: editing or deleting messages, and changing chat settings. The ful
 
 ## Recently finished
 
+- **#40 `CheckOrigin` (PR #158):** a WebSocket upgrade with an `Origin` other than the server's
+  host or `WS_ALLOWED_ORIGINS` gets `403` ([connect](./WEBSOCKET_PROTOCOL.md#connect)).
 - **#40 mentions (PR #157):** a message keeps only mentions of chat participants, each once,
   read in two queries instead of one per mention ([request rule](./websocket-requests.md#send_message)).
 - **#110 (PR #156):** a group's `participantCount` is computed from `participants` when
@@ -135,12 +137,6 @@ Not built yet: editing or deleting messages, and changing chat settings. The ful
   ([REST](./rest-api/groups.md#groups), [decided](./decisions/chats-and-groups.md#where-a-pending-group-invite-is-stored-5),
   [app changes](../Android/_docs/08_SERVER_CHANGES/groups-and-invites.md)). Left: enforcing
   pending (step 2), a group event on accept and decline.
-- **#36, emails (PR #140):** emails are stored trimmed and lower case; signup and login
-  match them ignoring case (`email_ci`), so legacy capitals work before the startup
-  `NormalizeEmails` lowers them; `PUT profile/` no longer changes `email`
-  ([decided](./decisions/accounts-and-privacy.md#changing-the-email-36), [REST](./rest-api/users.md#accounts),
-  [app changes](../Android/_docs/08_SERVER_CHANGES/auth-and-connection.md)). Left on #36:
-  unique usernames, stale display copies.
 
 ## How to build, run, test
 

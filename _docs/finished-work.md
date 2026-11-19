@@ -4,6 +4,12 @@ Older entries moved here from
 [current-state.md](./current-state.md#recently-finished), newest first. Links point to
 the docs that describe each change today. Newer work is listed on that page.
 
+- **#36, emails (PR #140):** emails are stored trimmed and lower case; signup and login
+  match them ignoring case (`email_ci`), so legacy capitals work before the startup
+  `NormalizeEmails` lowers them; `PUT profile/` no longer changes `email`
+  ([decided](./decisions/accounts-and-privacy.md#changing-the-email-36), [REST](./rest-api/users.md#accounts),
+  [app changes](../Android/_docs/08_SERVER_CHANGES/auth-and-connection.md)). Left on #36:
+  unique usernames, stale display copies.
 - **#40, login and signup (PR #139):** login attempts are counted per IP + account (10 in
   15 min) and per account (100 an hour), before bcrypt, by account ID, and cleared on
   success; 50 logins per IP in 10 min, 10 signups per IP an hour. Over that: `429`
