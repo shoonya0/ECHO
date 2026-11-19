@@ -55,3 +55,16 @@ Details: [websocket-events.md](../../../_docs/websocket-events.md).
 - In history, `mentions.userIds` and `mentions.userNames` now line up one to one.
 
 Details: [websocket-requests.md](../../../_docs/websocket-requests.md#send_message).
+
+## Old messages show current names (#36)
+
+- `GET messages/:chatID/messages` fills `sender`, reactions' `details` and mentions'
+  `userNames` with each user's current name and avatar. After someone changes their
+  profile, reload history to show it; don't cache names per message forever.
+- A sender whose account was deleted has `displayName` "Deleted user" and an empty
+  `username` and `avatar`.
+- `participants.<id>.userInfo` in `POST chats/direct/:userId` and `POST chats/group`
+  replies is current too.
+- Live `chat` events still carry the name from when the message was sent.
+
+Details: [chats.md](../../../_docs/rest-api/chats.md#messages).

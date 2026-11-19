@@ -10,7 +10,9 @@ Index: [REST API](./README.md). Shared rules: [the basics](./basics.md).
 | `POST chats/group` | Creates a group. Send `name`, `participants` (user IDs, at least one valid) and optionally `description`. |
 | `GET chats/hub/stats` | Live statistics, for operators only (see [below](#hub-statistics)) |
 
-There is no route that lists your chats, and none that renames a group.
+Each participant's `userInfo` (username, display name, avatar) is read when the reply is
+built, so it is current; an account that no longer exists shows `displayName` "Deleted
+user" (#36). There is no route that lists your chats, and none that renames a group.
 
 ## Messages
 
@@ -33,6 +35,10 @@ is `null` and `hasMore` is `false`. Pages stay correct while new messages arrive
 
 `reactions` maps emoji to `count`, `users` and `details` (ID to username, `""` before #75).
 Messages saved before #72 have `reactions: null` until reacted to: treat it as none.
+
+The names in a message (`sender`, reactions' `details`, mentions' `userNames`) are read when
+the page is built, not kept from when it was sent, so a profile change shows on old
+messages too. A sender whose account is gone shows `displayName` "Deleted user" (#36).
 
 Only participants can read a chat. Everyone else gets `404 Chat not found`.
 

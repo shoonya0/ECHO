@@ -49,6 +49,16 @@ oldest account keeps the name, each later one gets the first free `<name>_2`, `<
 and every rename is logged. The renamed person isn't told; copies of the old name in chats
 and messages stay stale like any profile change, which is the rest of #36.
 
+## Names are read when shown (#36)
+
+Decided on 2026-11-19. Chats and messages keep copies of a user's username, display name and
+avatar from when they were written, and nothing updated them on a profile change. Replies
+now read the current values from `users` when they are built (one query per reply, by ID)
+instead of rewriting copies: a profile change would otherwise have to update every message
+the user ever sent. Copies are still written, but from the database, not from the JWT,
+which keeps the name from login for 7 days and has no avatar. Live events read names
+through the hub's cache, which a profile change doesn't clear yet: that is the next step.
+
 ## Where presence comes from (#31)
 
 Decided on 2026-11-19. Whether someone is connected comes from Redis `online:<userID>`
