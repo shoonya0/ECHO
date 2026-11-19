@@ -10,7 +10,7 @@ you need, read that page, and stop when you have your answer.
 | Understand what ECHO is and what works today | [product-overview.md](./product-overview.md) |
 | Run it on my computer | [getting-started.md](./getting-started.md) |
 | See where the project stands, active work, test baseline | [current-state.md](./current-state.md) |
-| See what has been decided, and which issues each choice unblocks | [decisions.md](./decisions.md) |
+| See what has been decided, and which issues each choice unblocks | [decisions.md](./decisions/) |
 | Read older finished work (up to PR #90) | [finished-work.md](./finished-work.md) |
 | Look up a word I don't know | [glossary.md](./glossary.md) |
 

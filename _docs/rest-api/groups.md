@@ -30,7 +30,7 @@ sending codes, and `joined`, are for owners and admins (#30): members `403`, oth
 - Pending members accept with `accept` (or by joining with any usable code, #103; `send`
   works for them) or decline with `decline`. Until they accept they get no live messages,
   and they still pass the other membership checks until #5's next step
-  ([decided](../decisions.md#who-counts-as-a-chat-member)). Members left pending before
+  ([decided](../decisions/chats-and-groups.md#who-counts-as-a-chat-member)). Members left pending before
   this change were accepted by a startup backfill.
 - `add-members` returns `403` for members who aren't an owner or admin, `404` if you aren't
   in the group (#59). People already in are skipped; if everyone is already in, `409`.

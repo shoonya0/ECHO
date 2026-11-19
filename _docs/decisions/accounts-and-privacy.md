@@ -1,47 +1,6 @@
-# ECHO: decisions
+# ECHO decisions: accounts, contacts and privacy
 
-Choices that decide how open issues get fixed. Each one says what was decided, when, and
-what it means for the code. Questions still open are in
-[current-state.md](./current-state.md#open-decisions).
-
-## Who may manage invite codes (#30)
-
-Decided on 2026-11-15. Only the group's `owner` and `admin`s may create an invite code,
-send one to a user, delete one, or list them. The list shows every code, with deleted and
-expired ones marked. Everyone else in the group, pending members included, is refused.
-`settings.allowInvites` doesn't widen this.
-
-## How the message length limit counts (#51)
-
-Decided on 2026-11-17. `content` may hold 4000 characters, counted as Unicode code points,
-not bytes, so the limit doesn't shrink for non-Latin text. 4000 code points are at most
-16000 bytes, which fits the 64 KiB frame limit (#40) even fully JSON-escaped.
-
-## How a pending member accepts (#103, #5)
-
-Decided on 2026-11-16. For now a `pending` member accepts by joining with any usable code
-of the group (`POST groups/join/:inviteCode`), and owners and admins may `send` them one.
-A dedicated accept and decline action, tied to the person's own invitation, is built with
-#5 rather than added to the join route.
-
-## Where a pending group invite is stored (#5)
-
-Decided on 2026-11-18. A pending invite is the group's entry in the invitee's
-`users.chats`, written when they are added, so `GET groups/pending` reads chats by `_id`
-instead of scanning on the dynamic `participants.<id>` key. The hub skips a pending chat
-until it is accepted. Accept and decline are REST only for now. Members left pending
-before this, who were never asked and had full access, are accepted by a startup backfill,
-so they keep that access. "Before" is a cutoff stored in `migrations` on the first run (the
-start of the first server with this code), not a missing chats entry: a new invitee's
-entry can be missing too, and they must never be accepted for them. Such an invitee gets
-the entry instead. Accept-by-code
-(#103) still works and finishes the same way.
-
-## Where chat membership is stored
-
-Decided on 2026-11-15. A chat's `participants` is the only record of who is in it.
-`users.chats` isn't trusted for membership; it is dropped, or rebuilt from `participants`.
-`GetUserChats` already checks the list against `participants`. Unblocks #14 and #17.
+Up: [decisions](./README.md)
 
 ## What deleting an account does
 
@@ -60,51 +19,6 @@ last (a delete that stops partway can be repeated), and a second pass after it c
 anything others added meanwhile. Finding the chats and messages scans (no index on
 `participants.<id>` or `senderId`), which is fine for a rare action.
 
-## MongoDB transactions
-
-Decided on 2026-11-15. Multi-document writes may use transactions, so MongoDB must run as a
-replica set everywhere. Atlas already does. Local `docker compose` and CI run it as a
-one-node replica set (`--replSet rs0`, initiated by the compose healthcheck). Set up on
-2026-11-19: CI starts MongoDB from `docker/docker-compose.yml`, and
-`TestTestDBSupportsTransactions` fails on a standalone server. The server refuses to start
-on one (`database.RequireTransactions`).
-
-How they are written (2026-11-19, #37 part 2): `database.WithTransaction` runs the reads and
-checks too, not only the writes, because the driver runs the function again after a write
-conflict and the retry must see what the other side committed. Writes to two users go
-smaller ID first (`writeInIDOrder`): in the other order, a request A→B and B→A at once each
-held one user and aborted the other thousands of times until the request timed out. The
-contact writes (request, accept or decline, remove, block) run this way; the group and
-message writes are next. A transaction that finally fails in MongoDB (commit, retries run
-out, context ended) is logged at error by `WithTransaction`; the callers' own errors aren't.
-
-Left for step 2b (from the PR review of step 2a):
-- **Order for more than two users.** A group write touches a chat and N users;
-  `writeInIDOrder` takes two. Write the chat first, then the users sorted by ID, through
-  one helper, or two group operations can livelock as A→B and B→A did.
-- **No backoff.** The driver reruns a conflicting transaction at once, reads included, so
-  many writes to one popular user or chat repeat reads until the first commits. Only worth
-  our own retry loop with jitter if it shows up in load or logs.
-- **Commit vs. client timeout.** A client that disconnects during the commit can get an
-  error for a write that was saved, and its retry gets "already sent". True of every
-  write, not only transactions; leave unless clients report it.
-
-## One direct chat per pair (#37)
-
-Decided on 2026-11-19. A direct chat stores `directKey`, the two user IDs smaller first,
-under a unique partial index (`directKey_1`), so concurrent opens can't make two chats; the
-loser returns the winner's chat. No transaction needed. Opening looks up the keyed chat
-first, then the oldest by participants. A backfill runs on every start before the indexes:
-it takes the key off the newer of two chats keyed alike (made before the index existed,
-which would block it), then keys unkeyed chats oldest first (an older server copy can still
-create some during a deploy). A pair's later duplicates stay unkeyed and are logged
-(`Second direct chats of a pair`): merging their messages is a person's call.
-
-Favorite writes are conditional on the list not holding the ID yet and check
-`MatchedCount`, so of two concurrent favorites one wins and the other gets the usual
-"already" error. Contact requests and answers do the same through a transaction instead
-(see above), so neither side keeps a half-written change.
-
 ## How blocks are stored
 
 Decided on 2026-11-08 (#26). A block is stored on both people, with direction:
@@ -112,22 +26,6 @@ Decided on 2026-11-08 (#26). A block is stored on both people, with direction:
 `blockedBy` is never sent to clients. Old `blockedChats` data has no direction, so the
 startup migration (`MigrateLegacyBlocks`) turns each pair into a mutual block and removes
 the old field. Nobody is unblocked without choosing to be.
-
-## Who counts as a chat member
-
-Decided on 2026-11-07.
-
-| Participant | Counts as a member? | In the code today |
-|---|---|---|
-| Pending | No | **Not enforced yet:** pending members still pass every membership check |
-| Blocked | Yes | Already true. `send_message` still refuses them, as a separate check |
-| Removed | No | Already true: removal deletes the participant entry |
-
-Enforcing the pending rule has to wait for #5. Everyone added to a group is `pending`,
-except the creator and people who join by invite code, and nobody can accept yet, so
-enforcing it now would lock those members out. The order is: build accept and decline,
-backfill existing members, then enforce it in `chatMemberFilter`. Direct-chat participants
-have no status, so the check must allow for that.
 
 ## Changing the email (#36)
 

@@ -85,7 +85,7 @@ MongoDB has three collections.
 - **`chats`:** `participants` (a map keyed by user ID, holding role, status and a copy of
   the user's details), `inviteCode[]`, `readReceipts`, `typingUsers` (no longer written, #40) and `stats`.
   A direct chat also has `directKey`, unique by index, so a pair has one
-  ([decided](./decisions.md#one-direct-chat-per-pair-37)). Invite codes are indexed too.
+  ([decided](./decisions/data-writes.md#one-direct-chat-per-pair-37)). Invite codes are indexed too.
 - **`messages`:** `chatId`, a copy of the sender's details, content, a `reactions` map and a
   `readBy` map.
 
@@ -94,7 +94,7 @@ and read. `users.chats` decides what a connection follows live, limited to chats
 list the user in `participants`. The two can still disagree, which
 causes #17. A connection that is already open leaves a group's room when `remove_user`
 removes its user (#14). It was decided that `participants` is the only record
-([decisions.md](./decisions.md#where-chat-membership-is-stored)); the code doesn't do that yet.
+([decisions.md](./decisions/chats-and-groups.md#where-chat-membership-is-stored)); the code doesn't do that yet.
 
 ## Target layers (not yet enforced)
 
