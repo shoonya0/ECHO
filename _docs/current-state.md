@@ -11,12 +11,11 @@ on `main`. To learn what the product does, read
 and with a link to exactly one feature state.md. Updated by /close-increment and
 /feature-docs update. -->
 
-- **Feature:** none · nothing in progress. `main` at `0fa9fb6`: #42 step 1 (PR #164) is
-  merged: a group holds at most 20 unexpired invite codes (`409` past that), and creating
-  one removes expired codes and users' invitations for them. Left in #42: a cap on a user's
-  `chatInvitations` across groups, and the chat-document write on every message. #43 (PR
-  #163) merged; #40, #37 and #63 closed 2026-11-19. #5 step 2 waits for the Android invite
-  screen ([group-invites](./features/group-invites/state.md))
+- **Feature:** none · #42 step 2 on `fix/42-user-invitations` (PR open): a user keeps the
+  newest 100 invitations (`MaxUserInvitations`), one more drops the oldest; sending a code
+  twice still adds nothing. Verified (verify `--full`). Left in #42: the chat-document
+  write on every message. #5 step 2 waits for the Android invite screen
+  ([group-invites](./features/group-invites/state.md))
 - **#42 step 1 on Render (not checked yet):** the startup log shows `Indexes ensured` with
   `chatInvitations.token_1`; the 21st unexpired invite code of a group gets `409`
 - **#43 on Render (checked 2026-11-19):** `chatId_1_seq_1` built (15:14Z), no numbering
@@ -71,12 +70,12 @@ and with a link to exactly one feature state.md. Updated by /close-increment and
   losing messages
 - **Not filed, from #22:** a `chat_added` arriving while a connection's chats load is
   missed; a connection's welcome is dropped when its 10-message queue is already full
-- **Next step:** #42 step 2 (cap a user's pending `chatInvitations`), or #5 step 2 once the
-  Android invite screen exists.
+- **Next step:** merge #42 step 2; then #42's chat-document write on every message, or #5
+  step 2 once the Android invite screen exists.
   The "Left open" review items of #37 stay in [data-writes](./decisions/data-writes.md#mongodb-transactions). Direct-chat gating and live status changes are decided against for now
   ([decided](./decisions/accounts-and-privacy.md#how-privacy-settings-apply-32)). The Render
   checks above are the user's
-- **Updated:** 2026-11-19 on `main` at `0fa9fb6` (not committed yet: rides on the next branch). Commits on `main` must keep the author `shoonya0`
+- **Updated:** 2026-11-19 on `fix/42-user-invitations` from `0fa9fb6`. Commits on `main` must keep the author `shoonya0`
 
 ## Where things stand
 
@@ -90,6 +89,9 @@ Not built yet: editing or deleting messages, and changing chat settings. The ful
 
 ## Recently finished
 
+- **#42 step 2 (`fix/42-user-invitations`):** a user's `chatInvitations` keeps the newest
+  100 (`$push` with `$slice`); one more drops the oldest rather than being refused, so
+  nobody can fill a user's list to block invites. `GET groups/pending` is unaffected.
 - **#42 step 1 (PR #164):** a group holds at most 20 invite codes that haven't expired,
   deleted ones included (`409`); creating one removes expired codes and users' invitations
   for them (`chatInvitations.token_1`), in one transaction. Review: 8 findings, 3 fixed.
@@ -184,7 +186,7 @@ There are 2 open issues. Where each risk sits in the code: [architecture-overvie
 |---|---|---|
 | Groups | Pending members still pass membership checks (#5 step 2) | #5 |
 | Online status and privacy | A status or privacy change reaches live events only at the next connect (decided) | none |
-| Messages and data | A user's invitations and the chat-document write load still grow (invite codes done, PR #164) | #42 |
+| Messages and data | The chat-document write on every message (invite codes and user invitations done) | #42 |
 | Limits and errors | The per-account WebSocket cap is per server, not across servers | #40 |
 
 ## Next task
