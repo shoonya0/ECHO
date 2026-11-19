@@ -12,5 +12,5 @@ what the app should do, and where the details are.
 |---|---|
 | [groups-and-invites.md](./groups-and-invites.md) | Groups and invite codes (#49, #68, #16, #103, #104, #15, #30, #28) |
 | [contacts-and-blocking.md](./contacts-and-blocking.md) | Contacts, blocking, yourself as a target, privacy (#39, #62, #38, #27, #32) |
-| [auth-and-connection.md](./auth-and-connection.md) | Auth, connection and errors (#48, #59, #33, #76, #41, #40) |
+| [auth-and-connection.md](./auth-and-connection.md) | Auth, connection and errors (#48, #59, #33, #76, #41, #40, #36) |
 | [messages.md](./messages.md) | Messages and replies (#50, #51, #25, #47) |

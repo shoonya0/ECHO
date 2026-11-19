@@ -11,7 +11,10 @@ on `main`. To learn what the product does, read
 and with a link to exactly one feature state.md. Updated by /close-increment and
 /feature-docs update. -->
 
-- **Feature:** none · nothing in progress. `main` at `5337f1e`: #37 steps 2 and 3, #110 and
+- **Feature:** none · #36 unique usernames on `fix/36-unique-usernames`: 3 to 30 letters,
+  digits, `_` or `.`, unique ignoring case (`username_ci`), `409` on signup and `PUT
+  profile/`, startup `RenameDuplicateUsernames` ([decided](./decisions/accounts-and-privacy.md#unique-usernames-36)).
+  `main` at `5337f1e`: #37 steps 2 and 3, #110 and
   the last #40 items (mentions, `CheckOrigin`, per-account limit; PRs #151 to #159) are
   merged, so Render deploys them. #5 step 2 waits for the Android invite screen
   ([group-invites](./features/group-invites/state.md))
@@ -65,12 +68,13 @@ and with a link to exactly one feature state.md. Updated by /close-increment and
   proposed to close it
 - **Next step:** the user decides on closing #40, #37 (all steps merged; the "Left open"
   review items in [data-writes](./decisions/data-writes.md#mongodb-transactions) stay) and
-  #63. Then the next issue: #36 (unique usernames, stale display copies), #42 (unbounded
-  lists) or #43 (missed live messages). Direct-chat gating and live status changes are decided against for now
+  #63. Open a PR for `fix/36-unique-usernames`; after it merges, Render's startup log shows
+  any `Renamed a username another account already had` and `Indexes ensured` with
+  `username_ci`. Then the rest of #36 (stale display copies), #42 (unbounded lists) or #43
+  (missed live messages). Direct-chat gating and live status changes are decided against for now
   ([decided](./decisions/accounts-and-privacy.md#how-privacy-settings-apply-32)). The Render
   checks above are the user's
-- **Updated:** 2026-11-19 on `main` at `5337f1e` (not committed yet: rides on the next
-  branch). Commits on `main` must keep the author `shoonya0`
+- **Updated:** 2026-11-19 on `fix/36-unique-usernames` from `5337f1e`. Commits on `main` must keep the author `shoonya0`
 
 ## Where things stand
 
@@ -174,7 +178,7 @@ There are 8 open issues. Where each risk sits in the code: [architecture-overvie
 |---|---|---|
 | Live connections | Missed live messages can't be detected | #43 |
 | Groups | Pending members still pass membership checks (#5 step 2) | #5 |
-| Accounts | Usernames aren't unique, and display copies go stale | #36 |
+| Accounts | Display copies of names and avatars go stale (unique usernames: PR pending) | #36 |
 | Contacts and blocking | Contact lists aren't cut to `limit`, and blocks written during a deploy can be missed | #39, #63 |
 | Online status and privacy | A status or privacy change reaches live events only at the next connect (decided) | none |
 | Messages and data | Some lists grow without limit | #42 |

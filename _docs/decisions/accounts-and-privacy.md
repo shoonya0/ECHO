@@ -38,6 +38,17 @@ them. Two old accounts whose emails differ only in case are both kept: login pic
 stored exactly as typed, and the migration logs them for a manual merge. A change-email
 flow, with the current password and a check of the new address, is a separate issue.
 
+## Unique usernames (#36)
+
+Decided on 2026-11-19. A username is unique ignoring case (`Alice` and `alice` are one
+name) and keeps the capitals it was typed with. A new or changed name is 3 to 30 letters,
+digits, `_` or `.`, so it works as an @handle; names from before #36 stay until their owner
+changes them. A unique collation index, `username_ci`, enforces it. Accounts that shared a
+name before #36 are renamed at startup (`RenameDuplicateUsernames`, before the indexes): the
+oldest account keeps the name, each later one gets the first free `<name>_2`, `<name>_3`,
+and every rename is logged. The renamed person isn't told; copies of the old name in chats
+and messages stay stale like any profile change, which is the rest of #36.
+
 ## Where presence comes from (#31)
 
 Decided on 2026-11-19. Whether someone is connected comes from Redis `online:<userID>`
