@@ -153,8 +153,16 @@ var maxRegistrations = 32
 // connection pending: stored earlier, an older connection of the user closing
 // in between would take itself for the last and delete it, and the new
 // connection would never be announced online (#31).
-func (eh *Hub) QueueRegister(client *models.Client, presence *UserPresence) {
+//
+// It returns false, and queues nothing, when the user already holds
+// MaxConnectionsPerUser connections here, registered or queued (#40). The count
+// and the queueing share the lock, so two connects at once can't both pass.
+func (eh *Hub) QueueRegister(client *models.Client, presence *UserPresence) bool {
 	eh.Mutex.Lock()
+	if connectionCountLocked(eh.Hub, client.UserID.Hex()) >= MaxConnectionsPerUser {
+		eh.Mutex.Unlock()
+		return false
+	}
 	addPending(eh.Hub, client)
 	if presence != nil {
 		GetPresenceInstance().Set(*presence)
@@ -167,6 +175,7 @@ func (eh *Hub) QueueRegister(client *models.Client, presence *UserPresence) {
 		removePending(eh.Hub, client)
 		eh.Mutex.Unlock()
 	}
+	return true
 }
 
 // QueueUnregister hands client to the hub for removal. It gives up once the hub
@@ -202,6 +211,27 @@ func removePending(h *models.Hub, client *models.Client) bool {
 		delete(h.PendingClients, userID)
 	}
 	return true
+}
+
+// MaxConnectionsPerUser is the most connections one account may hold on one server
+// (#40). Each has its own request limit, so without it an account could multiply its
+// rate and memory by opening more sockets. Five leaves room for several devices and
+// a reconnect overlapping the old connection. Servers don't share the count.
+const MaxConnectionsPerUser = 5
+
+// ConnectionCount returns how many connections userID holds on this server,
+// registered or queued.
+func (eh *Hub) ConnectionCount(userID string) int {
+	eh.Mutex.RLock()
+	defer eh.Mutex.RUnlock()
+	return connectionCountLocked(eh.Hub, userID)
+}
+
+// connectionCountLocked counts userID's registered and queued connections. A
+// queued one leaves PendingClients when it is registered, so none counts twice.
+// The caller holds h.Mutex (read or write).
+func connectionCountLocked(h *models.Hub, userID string) int {
+	return len(h.UserClients[userID]) + len(h.PendingClients[userID])
 }
 
 // userInUseLocked says whether the user has a connection registered or queued
