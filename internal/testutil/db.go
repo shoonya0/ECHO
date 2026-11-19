@@ -85,7 +85,10 @@ func useTestDB(t *testing.T, monitor *event.CommandMonitor) context.Context {
 		unavailable = t.Fatalf
 	}
 
-	opts := options.Client().ApplyURI(uri).SetServerSelectionTimeout(2 * time.Second)
+	// The app name is the database name, so FailCommand can make the server fail
+	// this test's commands only, not those of tests running in parallel.
+	dbName := "echo_test_" + bson.NewObjectID().Hex()
+	opts := options.Client().ApplyURI(uri).SetServerSelectionTimeout(2 * time.Second).SetAppName(dbName)
 	if monitor != nil {
 		opts.SetMonitor(monitor)
 	}
@@ -99,11 +102,45 @@ func useTestDB(t *testing.T, monitor *event.CommandMonitor) context.Context {
 	}
 
 	prev := database.DB
-	database.DB = client.Database("echo_test_" + bson.NewObjectID().Hex())
+	database.DB = client.Database(dbName)
 	t.Cleanup(func() {
 		_ = database.DB.Drop(context.Background())
 		_ = client.Disconnect(context.Background())
 		database.DB = prev
 	})
 	return ctx
+}
+
+// FailCommand makes the test MongoDB fail this test's command named cmd (such as
+// "update" or "insert") every time after the first skip ones, until the test
+// ends. It needs a server started with enableTestCommands, as the docker compose
+// one is; elsewhere the test is skipped, or fails under TEST_DB_REQUIRED.
+// The error carries no retry label, so a transaction that meets it aborts.
+// The server has one such failpoint: use it from one package only, and not from
+// parallel tests (t.Parallel), or they overwrite each other's setting.
+func FailCommand(t *testing.T, ctx context.Context, cmd string, skip int) {
+	t.Helper()
+	admin := database.DB.Client().Database("admin")
+	err := admin.RunCommand(ctx, bson.D{
+		{Key: "configureFailPoint", Value: "failCommand"},
+		{Key: "mode", Value: bson.D{{Key: "skip", Value: skip}}},
+		{Key: "data", Value: bson.D{
+			{Key: "failCommands", Value: bson.A{cmd}},
+			{Key: "errorCode", Value: 2}, // BadValue
+			{Key: "appName", Value: database.DB.Name()},
+		}},
+	}).Err()
+	if err != nil {
+		unavailable := t.Skipf
+		if os.Getenv("TEST_DB_REQUIRED") != "" {
+			unavailable = t.Fatalf
+		}
+		unavailable("failCommand unavailable (start MongoDB with enableTestCommands): %v", err)
+	}
+	t.Cleanup(func() {
+		_ = admin.RunCommand(context.Background(), bson.D{
+			{Key: "configureFailPoint", Value: "failCommand"},
+			{Key: "mode", Value: "off"},
+		}).Err()
+	})
 }

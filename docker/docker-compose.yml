@@ -9,7 +9,9 @@ services:
       MONGO_INITDB_ROOT_PASSWORD: echo
     # A one-node replica set, so multi-document transactions work as on Atlas (#37).
     # With auth on, a replica set needs a key file; one member only checks it against
-    # itself, so a fresh random one per start is fine.
+    # itself, so a fresh random one per start is fine. enableTestCommands lets tests
+    # make one write fail (testutil.FailCommand) to check that transactions roll back;
+    # it is for this local and CI server only, never Atlas.
     entrypoint:
       - bash
       - -c
@@ -17,7 +19,7 @@ services:
         mkdir -p /etc/mongo
         head -c 512 /dev/urandom | base64 -w 0 > /etc/mongo/keyfile
         chmod 400 /etc/mongo/keyfile && chown mongodb:mongodb /etc/mongo/keyfile
-        exec docker-entrypoint.sh mongod --replSet rs0 --bind_ip_all --keyFile /etc/mongo/keyfile
+        exec docker-entrypoint.sh mongod --replSet rs0 --bind_ip_all --keyFile /etc/mongo/keyfile           --setParameter enableTestCommands=1
     volumes:
       - mongodb_data:/data/db
     restart: unless-stopped
