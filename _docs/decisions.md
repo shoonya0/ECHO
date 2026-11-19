@@ -64,7 +64,17 @@ anything others added meanwhile. Finding the chats and messages scans (no index 
 
 Decided on 2026-11-15. Multi-document writes may use transactions, so MongoDB must run as a
 replica set everywhere. Atlas already does. Local `docker compose` and CI run it as a
-one-node replica set (`--replSet rs0`, initialized once). Unblocks #37.
+one-node replica set (`--replSet rs0`, initialized once). Unblocks #37. Not set up yet:
+compose and CI still run a standalone MongoDB (#37 part 2).
+
+## One direct chat per pair (#37)
+
+Decided on 2026-11-19. A direct chat stores `directKey`, the two user IDs smaller first,
+under a unique partial index (`directKey_1`), so concurrent opens can't make two chats; the
+loser returns the winner's chat. No transaction needed. A startup backfill keys older
+chats, oldest first, on every start (an older server copy can still create unkeyed chats
+during a deploy). A pair's later duplicates stay unkeyed and are logged
+(`Second direct chats of a pair`): merging their messages is a person's call.
 
 ## How blocks are stored
 
