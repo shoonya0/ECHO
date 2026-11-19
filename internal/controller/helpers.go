@@ -106,6 +106,20 @@ func BuildPartialDocument(updateReq interface{}) bson.M {
 	return updateDoc
 }
 
+// sentFieldsOnly keeps the fields of structDoc, built from the validated
+// request struct, whose keys the client sent (in sentDoc, built from the raw
+// body). Values always come from the struct; keys the struct doesn't declare
+// are never kept, whatever the body holds.
+func sentFieldsOnly(structDoc, sentDoc bson.M) bson.M {
+	kept := bson.M{}
+	for key, value := range structDoc {
+		if _, ok := sentDoc[key]; ok {
+			kept[key] = value
+		}
+	}
+	return kept
+}
+
 // MapServiceErrorToHTTP converts a service-layer error to an HTTP status code
 // and a static human-readable message (never the raw error).
 func MapServiceErrorToHTTP(err error) (int, string) {

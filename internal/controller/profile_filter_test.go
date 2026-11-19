@@ -3,6 +3,8 @@ package controller
 import (
 	"slices"
 	"testing"
+
+	"go.mongodb.org/mongo-driver/v2/bson"
 )
 
 // PUT /profile drops "email" (#36): changing it needs a flow that checks the
@@ -38,5 +40,23 @@ func TestFilterProfileUpdateKeysDropsServerPresence(t *testing.T) {
 	}
 	if sanitized["presence.status"] != "away" {
 		t.Fatalf("presence.status not kept: %v", sanitized)
+	}
+}
+
+// PUT /profile keeps only fields that are both sent and declared by the
+// request struct, with the struct's values (#32 review): keys the struct
+// doesn't declare, such as MongoDB operators, never reach the update.
+func TestSentFieldsOnly(t *testing.T) {
+	structDoc := bson.M{"settings.privacy.showLastSeen": false, "settings.theme": "", "username": "alice"}
+	sentDoc := bson.M{"settings.privacy.showLastSeen": "ignored", "username": "x", "$where": "1", "accountStatus.isBanned": false}
+	got := sentFieldsOnly(structDoc, sentDoc)
+	want := bson.M{"settings.privacy.showLastSeen": false, "username": "alice"}
+	if len(got) != len(want) {
+		t.Fatalf("got %v, want %v", got, want)
+	}
+	for k, v := range want {
+		if got[k] != v {
+			t.Fatalf("got %v, want %v", got, want)
+		}
 	}
 }
