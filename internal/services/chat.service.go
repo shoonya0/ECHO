@@ -1675,21 +1675,28 @@ func (o joinOutcome) finish(ctx context.Context, userID bson.ObjectID) error {
 	return nil
 }
 
-// JoinGroupByInvite adds userID to the group that stores the invite code. The
-// code must not be deleted or past its stored expiry, and the chat must be a
-// group. The group and the user change in one transaction (#37), the group
-// first.
-func JoinGroupByInvite(ctx context.Context, userID bson.ObjectID, inviteID string) error {
+// runJoin runs join in a transaction and, once it commits, acts on its outcome.
+func runJoin(ctx context.Context, userID bson.ObjectID, join func(ctx context.Context) (joinOutcome, error)) error {
 	var out joinOutcome
 	err := database.WithTransaction(ctx, func(ctx context.Context) error {
 		var err error
-		out, err = joinGroupByInvite(ctx, userID, inviteID)
+		out, err = join(ctx)
 		return err
 	})
 	if err != nil {
 		return err
 	}
 	return out.finish(ctx, userID)
+}
+
+// JoinGroupByInvite adds userID to the group that stores the invite code. The
+// code must not be deleted or past its stored expiry, and the chat must be a
+// group. The group and the user change in one transaction (#37), the group
+// first.
+func JoinGroupByInvite(ctx context.Context, userID bson.ObjectID, inviteID string) error {
+	return runJoin(ctx, userID, func(ctx context.Context) (joinOutcome, error) {
+		return joinGroupByInvite(ctx, userID, inviteID)
+	})
 }
 
 func joinGroupByInvite(ctx context.Context, userID bson.ObjectID, inviteID string) (joinOutcome, error) {
@@ -1821,7 +1828,9 @@ func usableInviteFilter(chatID bson.ObjectID, inviteID string, now time.Time) bs
 // returns why:
 //   - ErrInvalidInvite: there is no such group, or the code isn't usable.
 //   - ErrGroupFull: a new member wouldn't fit (#68).
-//   - a plain error: membership changed during the join; a retry may work.
+//   - a plain error: the read and the join's filter disagree. Inside the
+//     transaction a concurrent change makes the write conflict and rerun, so
+//     this means a bug, not a race, and a retry won't help.
 func resolveMissedJoin(ctx context.Context, chatID, userID bson.ObjectID, inviteID string, now time.Time) (joinOutcome, error) {
 	var chat models.Chat
 	err := database.DB.Collection(string(constants.ChatColl)).FindOne(ctx,
@@ -1849,26 +1858,27 @@ func resolveMissedJoin(ctx context.Context, chatID, userID bson.ObjectID, invite
 			return joinOutcome{}, err
 		}
 		if !accepted {
-			return joinOutcome{}, fmt.Errorf("accept did not apply: membership changed meanwhile")
+			return joinOutcome{}, fmt.Errorf("accept did not apply although the read found a pending member")
 		}
 		return joinOutcome{}, nil
 	case member:
 		chatRef := "chats." + chatID.Hex()
-		res, err := database.DB.Collection(string(constants.UserColl)).UpdateOne(ctx,
+		if _, err := database.DB.Collection(string(constants.UserColl)).UpdateOne(ctx,
 			bson.M{"_id": userID, chatRef: bson.M{"$exists": false}},
 			bson.M{"$set": bson.M{chatRef: 0}},
-		)
-		if err != nil {
+		); err != nil {
 			return joinOutcome{}, fmt.Errorf("failed to restore chat ref of user: %w", err)
 		}
-		// Their connections read the chats without this one (#49).
-		return joinOutcome{chatID: chatID, follow: res.ModifiedCount > 0, already: true}, nil
+		// Their connections follow the chat again, even when the entry was
+		// there: a join whose commit succeeded but answered with an error never
+		// got to follow it (#49). Following twice changes nothing.
+		return joinOutcome{chatID: chatID, follow: true, already: true}, nil
 	case !usable:
 		return joinOutcome{}, fmt.Errorf("%w", ErrInvalidInvite)
 	case len(chat.Participants)+1 > groupSizeLimit(chat.Settings.MaxParticipants):
 		return joinOutcome{}, fmt.Errorf("%w", ErrGroupFull)
 	default:
-		return joinOutcome{}, fmt.Errorf("join did not apply: membership changed meanwhile")
+		return joinOutcome{}, fmt.Errorf("join did not apply although the read found room and a usable code")
 	}
 }
 

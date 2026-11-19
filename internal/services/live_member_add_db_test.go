@@ -99,11 +99,13 @@ func TestChatsGainedAreFollowedLive(t *testing.T) {
 		}
 		assertAdded(t, group.ChatID, carol)
 
-		// A member whose entry is there isn't added again.
+		// A member whose entry is there is followed again too: a join whose
+		// commit succeeded but answered with an error never got to follow the
+		// chat, and its retry lands here (#37). Following twice changes nothing.
 		delete(rec.added, group.ChatID.Hex())
 		if err := JoinGroupByInvite(ctx, carol, group.InviteCode[0].InviteCode); !errors.Is(err, ErrAlreadyParticipant) {
 			t.Fatalf("second join: err = %v, want ErrAlreadyParticipant", err)
 		}
-		assertAdded(t, group.ChatID)
+		assertAdded(t, group.ChatID, carol)
 	})
 }

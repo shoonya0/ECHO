@@ -90,16 +90,9 @@ func notPendingError(ctx context.Context, chatID, userID bson.ObjectID) error {
 // connections follow it (#17). The group and the user change in one transaction
 // (#37), the group first.
 func AcceptGroupInvite(ctx context.Context, userID, chatID bson.ObjectID) error {
-	var out joinOutcome
-	err := database.WithTransaction(ctx, func(ctx context.Context) error {
-		var err error
-		out, err = acceptGroupInvite(ctx, userID, chatID)
-		return err
+	return runJoin(ctx, userID, func(ctx context.Context) (joinOutcome, error) {
+		return acceptGroupInvite(ctx, userID, chatID)
 	})
-	if err != nil {
-		return err
-	}
-	return out.finish(ctx, userID)
 }
 
 func acceptGroupInvite(ctx context.Context, userID, chatID bson.ObjectID) (joinOutcome, error) {
@@ -172,10 +165,14 @@ func declineGroupInvite(ctx context.Context, userID, chatID bson.ObjectID) error
 	if len(codes) > 0 {
 		update["$pull"] = bson.M{"chatInvitations": bson.M{"token": bson.M{"$in": codes}}}
 	}
-	// MatchedCount isn't checked: an invitee whose account is gone (#35) can
-	// still be taken out of the group.
-	if _, err := database.DB.Collection(string(constants.UserColl)).UpdateOne(ctx, bson.M{"_id": userID}, update); err != nil {
+	// An invitee whose account is gone (#35) matches nothing and can still be
+	// taken out of the group, so a zero match is only logged.
+	res, err = database.DB.Collection(string(constants.UserColl)).UpdateOne(ctx, bson.M{"_id": userID}, update)
+	if err != nil {
 		return fmt.Errorf("failed to remove the group from the invitee: %w", err)
+	}
+	if res.MatchedCount == 0 {
+		logger.WithContext(ctx).WithField("chat", chatID.Hex()).Debug("Declined invitee has no user document")
 	}
 	return nil
 }

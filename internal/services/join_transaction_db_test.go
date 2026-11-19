@@ -2,6 +2,7 @@ package services
 
 import (
 	"context"
+	"strings"
 	"testing"
 
 	"github.com/shoonya0/ECHO/internal/constants"
@@ -24,6 +25,19 @@ func newTestGroup(t *testing.T, ctx context.Context, owner bson.ObjectID, invite
 	return chat
 }
 
+// checkFailedAt fails unless err came from the write described by want: the
+// failpoint counts updates, so a new update before the chat write would make
+// it fail the chat write instead, and the test would no longer test a rollback.
+func checkFailedAt(t *testing.T, err error, want string) {
+	t.Helper()
+	if err == nil {
+		t.Fatal("the call succeeded, want the failed user write's error")
+	}
+	if !strings.Contains(err.Error(), want) {
+		t.Fatalf("err = %v, want it from the user write (%q)", err, want)
+	}
+}
+
 func TestJoinGroupByInviteRollsBackOnFailedUserUpdate(t *testing.T) {
 	ctx := useTestDB(t)
 	owner, joiner := bson.NewObjectID(), bson.NewObjectID()
@@ -31,9 +45,7 @@ func TestJoinGroupByInviteRollsBackOnFailedUserUpdate(t *testing.T) {
 	chat := newTestGroup(t, ctx, owner)
 
 	testutil.FailCommand(t, ctx, "update", 1) // the chat write passes
-	if err := JoinGroupByInvite(ctx, joiner, chat.InviteCode[0].InviteCode); err == nil {
-		t.Fatal("JoinGroupByInvite succeeded, want the failed write's error")
-	}
+	checkFailedAt(t, JoinGroupByInvite(ctx, joiner, chat.InviteCode[0].InviteCode), "failed to add chat to user")
 
 	got := loadTestChat(t, ctx, chat.ChatID)
 	if _, ok := got.Participants[joiner]; ok {
@@ -51,9 +63,7 @@ func TestAcceptGroupInviteRollsBackOnFailedUserUpdate(t *testing.T) {
 	chat := newTestGroup(t, ctx, owner, invitee)
 
 	testutil.FailCommand(t, ctx, "update", 1) // the chat write passes
-	if err := AcceptGroupInvite(ctx, invitee, chat.ChatID); err == nil {
-		t.Fatal("AcceptGroupInvite succeeded, want the failed write's error")
-	}
+	checkFailedAt(t, AcceptGroupInvite(ctx, invitee, chat.ChatID), "failed to add chat to user")
 
 	got := loadTestChat(t, ctx, chat.ChatID).Participants[invitee]
 	if got.RequestStatus != string(constants.StatusPending) {
@@ -71,9 +81,7 @@ func TestDeclineGroupInviteRollsBackOnFailedUserUpdate(t *testing.T) {
 	chat := newTestGroup(t, ctx, owner, invitee)
 
 	testutil.FailCommand(t, ctx, "update", 1) // the chat write passes
-	if err := DeclineGroupInvite(ctx, invitee, chat.ChatID); err == nil {
-		t.Fatal("DeclineGroupInvite succeeded, want the failed write's error")
-	}
+	checkFailedAt(t, DeclineGroupInvite(ctx, invitee, chat.ChatID), "failed to remove the group from the invitee")
 
 	got := loadTestChat(t, ctx, chat.ChatID)
 	if _, ok := got.Participants[invitee]; !ok {
