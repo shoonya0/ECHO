@@ -78,7 +78,8 @@ func TestSendMessageRollsBackTogether(t *testing.T) {
 	}
 
 	t.Run("chat update fails", func(t *testing.T) {
-		testutil.FailCommand(t, ctx, "update", 0)
+		// findAndModify: the chat write returns the message's seq (#43).
+		testutil.FailCommand(t, ctx, "findAndModify", 0)
 		if _, err := SendMessage(ctx, chatID, sender, "hi", "text", nil, nil); err == nil {
 			t.Fatal("SendMessage succeeded, want the failed chat update's error")
 		}

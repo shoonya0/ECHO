@@ -261,27 +261,50 @@ func GetChatMessages(ctx context.Context, userID bson.ObjectID, chatID bson.Obje
 	}
 
 	messageFilter := messagePageFilter(chatID, before)
-
-	messageProjection := bson.M{
-		"_id":             1,
-		"senderId":        1,
-		"sender":          1,
-		"content":         1,
-		"messageType":     1,
-		"thread.threadId": 1,
-		"reactions":       1,
-		"mentions":        1,
-		"status":          1,
-		"createdAt":       1,
-		"updatedAt":       1,
-	}
-
 	findOpts := options.Find().
 		SetProjection(messageProjection).
 		SetSort(bson.M{"_id": -1}).
 		SetLimit(int64(limit) + 1) // one extra row tells us whether more remain
+	return findMessagePage(ctx, messageFilter, findOpts, limit)
+}
 
-	cursor, err := database.DB.Collection(string(constants.MessageColl)).Find(ctx, messageFilter, findOpts)
+// GetChatMessagesAfterSeq returns up to limit of a chat's messages with a seq above
+// afterSeq, oldest first, and whether more follow (#43). A client calls it on connect
+// and whenever a live message's seq skips one, with the highest seq it has.
+func GetChatMessagesAfterSeq(ctx context.Context, userID bson.ObjectID, chatID bson.ObjectID, limit int, afterSeq int64) (messages []models.Message, hasMore bool, err error) {
+	if err := RequireChatMember(ctx, chatID, userID); err != nil {
+		if errors.Is(err, ErrNotParticipant) {
+			return nil, false, fmt.Errorf("%w", ErrChatNotFound)
+		}
+		return nil, false, err
+	}
+	findOpts := options.Find().
+		SetProjection(messageProjection).
+		SetSort(bson.D{{Key: "seq", Value: 1}}).
+		SetLimit(int64(limit) + 1)
+	return findMessagePage(ctx, bson.M{"chatId": chatID, "seq": bson.M{"$gt": afterSeq}}, findOpts, limit)
+}
+
+// messageProjection is the message fields history pages return.
+var messageProjection = bson.M{
+	"_id":             1,
+	"seq":             1,
+	"senderId":        1,
+	"sender":          1,
+	"content":         1,
+	"messageType":     1,
+	"thread.threadId": 1,
+	"reactions":       1,
+	"mentions":        1,
+	"status":          1,
+	"createdAt":       1,
+	"updatedAt":       1,
+}
+
+// findMessagePage runs a history query fetched with limit+1, cuts it to limit and
+// fills in the senders' current names.
+func findMessagePage(ctx context.Context, filter bson.M, findOpts *options.FindOptionsBuilder, limit int) (messages []models.Message, hasMore bool, err error) {
+	cursor, err := database.DB.Collection(string(constants.MessageColl)).Find(ctx, filter, findOpts)
 	if err != nil {
 		return nil, false, fmt.Errorf("failed to query messages: %w", err)
 	}
@@ -662,9 +685,11 @@ func SendMessage(ctx context.Context, chatID, senderID bson.ObjectID, content, m
 	// should be only these two writes.
 	message.ID = bson.NewObjectID()
 	err = database.WithTransaction(ctx, func(ctx context.Context) error {
-		if err := updateChatLastMessage(ctx, chatID, message.ID, now); err != nil {
+		seq, err := updateChatLastMessage(ctx, chatID, message.ID, now)
+		if err != nil {
 			return err
 		}
+		message.Seq = seq
 		if _, err := database.DB.Collection(string(constants.MessageColl)).InsertOne(ctx, message); err != nil {
 			return fmt.Errorf("failed to save message: %w", err)
 		}
@@ -906,29 +931,42 @@ func AddMembersToLiveChat(ctx context.Context, chatID bson.ObjectID, userIDs ...
 
 // ============ HELPER FUNCTIONS ============
 
-// updateChatLastMessage counts a new message in the chat and makes it the last
-// one. $max keeps the newest: message IDs start with their second, so a send
-// that commits after a newer one (a rerun) can't set an older message (#37).
-// Two sends in the same second from different servers compare by their random
-// part, so either may win: as arbitrary as with $set. updatedAt uses $set, as
-// every chat write does: $max would stick to a time from a server whose clock
-// runs ahead.
-func updateChatLastMessage(ctx context.Context, chatID, messageID bson.ObjectID, timestamp time.Time) error {
-	res, err := database.DB.Collection(string(constants.ChatColl)).UpdateOne(ctx,
+// updateChatLastMessage counts a new message in the chat, makes it the last
+// one and returns its seq (#43). $max keeps the newest: message IDs start with
+// their second, so a send that commits after a newer one (a rerun) can't set an
+// older message (#37). Two sends in the same second from different servers
+// compare by their random part, so either may win: as arbitrary as with $set.
+// updatedAt uses $set, as every chat write does: $max would stick to a time from
+// a server whose clock runs ahead.
+//
+// stats.lastSeq is incremented inside the send's transaction: concurrent sends
+// write the same chat document, so they commit one after another, and a send
+// that aborts takes its number back. Seqs are therefore unique and without gaps
+// (until messages are deleted, as with an account).
+func updateChatLastMessage(ctx context.Context, chatID, messageID bson.ObjectID, timestamp time.Time) (int64, error) {
+	var chat struct {
+		Stats struct {
+			LastSeq int64 `bson:"lastSeq"`
+		} `bson:"stats"`
+	}
+	err := database.DB.Collection(string(constants.ChatColl)).FindOneAndUpdate(ctx,
 		bson.M{"_id": chatID},
 		bson.M{
 			"$max": bson.M{"lastMessageId": messageID},
 			"$set": bson.M{"updatedAt": timestamp},
-			"$inc": bson.M{"stats.messageCount": 1},
+			"$inc": bson.M{"stats.messageCount": 1, "stats.lastSeq": 1},
 		},
-	)
+		options.FindOneAndUpdate().
+			SetProjection(bson.M{"stats.lastSeq": 1}).
+			SetReturnDocument(options.After),
+	).Decode(&chat)
+	if errors.Is(err, mongo.ErrNoDocuments) {
+		return 0, fmt.Errorf("%w", ErrChatNotFound)
+	}
 	if err != nil {
-		return fmt.Errorf("failed to update the chat's last message: %w", err)
+		return 0, fmt.Errorf("failed to update the chat's last message: %w", err)
 	}
-	if res.MatchedCount == 0 {
-		return fmt.Errorf("%w", ErrChatNotFound)
-	}
-	return nil
+	return chat.Stats.LastSeq, nil
 }
 
 // updateChatReadReceipts saves when userID last read the chat.
@@ -968,6 +1006,7 @@ func broadcastNewMessage(chatID bson.ObjectID, message models.Message) {
 		Data: models.ChatMessage{
 			ID:          message.ID.Hex(),
 			ChatID:      chatID.Hex(),
+			Seq:         message.Seq,
 			SenderID:    message.SenderID.Hex(),
 			Sender:      &sender,
 			Content:     message.Content,

@@ -13,6 +13,12 @@ type Message struct {
 	ChatID   bson.ObjectID `json:"chatId" bson:"chatId"`
 	SenderID bson.ObjectID `json:"senderId" bson:"senderId"`
 
+	// Seq numbers a chat's messages 1, 2, 3, ... in the order they were saved, so a
+	// client can spot a live message it missed and fetch it with ?afterSeq= (#43).
+	// 0 (left out) only on a message an older server copy saved during a deploy,
+	// until the next start numbers it.
+	Seq int64 `json:"seq,omitempty" bson:"seq,omitempty"`
+
 	// Embedded sender info to avoid user lookup
 	Sender MessageSenderEmbed `json:"sender" bson:"sender"`
 

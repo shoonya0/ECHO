@@ -83,6 +83,7 @@ type ContactUserInfo struct {
 type ChatStatsEmbed struct {
 	ParticipantCount int                   `json:"participantCount" bson:"participantCount,omitempty"` // not stored: reads compute it from participants (#110)
 	MessageCount     int64                 `json:"messageCount" bson:"messageCount"`
+	LastSeq          int64                 `json:"lastSeq" bson:"lastSeq"`         // seq of the chat's newest message (#43)
 	UnreadCount      map[bson.ObjectID]int `json:"unreadCount" bson:"unreadCount"` // userID -> unread count
 	ImageCount       int64                 `json:"imageCount" bson:"imageCount"`
 	FileCount        int64                 `json:"fileCount" bson:"fileCount"`
