@@ -34,7 +34,6 @@ func TestSlowChatLoadDoesNotStallOtherConnections(t *testing.T) {
 	stubRegistration(hub)
 	slowUser := bson.NewObjectID()
 	release := make(chan struct{})
-	t.Cleanup(func() { close(release) })
 	hub.loadChats = func(ctx context.Context, userID bson.ObjectID) ([]string, error) {
 		if userID == slowUser {
 			select {
@@ -48,6 +47,12 @@ func TestSlowChatLoadDoesNotStallOtherConnections(t *testing.T) {
 
 	slow := newTestClient("slow", slowUser)
 	fast := newTestClient("fast", bson.NewObjectID())
+	// Let the slow registration finish before the test ends: it still reads
+	// chatLoadTimeout, which the next test changes (a data race in CI).
+	t.Cleanup(func() {
+		close(release)
+		waitRegistered(t, slow)
+	})
 	hub.Register <- slow
 	hub.Register <- fast
 	waitRegistered(t, fast)
