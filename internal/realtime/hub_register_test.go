@@ -144,3 +144,22 @@ func TestWaitRegisteredStopsAtTimeout(t *testing.T) {
 		t.Fatal("WaitRegistered returned nil without a registration")
 	}
 }
+
+// #31 review: an older connection of the user closing while a new one is
+// queued keeps the new one's presence, which decides whether it is announced
+// online. Stored before the connection counted as pending, it was deleted:
+// the old one took itself for the last.
+func TestReconnectKeepsNewPresence(t *testing.T) {
+	hub := newTestHub(t)
+	user := bson.NewObjectID()
+	old := newTestClient("old", user)
+	addClient(hub, old)
+	fresh := newTestClient("new", user)
+	hub.QueueRegister(fresh, &UserPresence{UserID: user, Status: "online", ClientID: fresh.ID})
+	t.Cleanup(func() { GetPresenceInstance().Delete(user) })
+
+	unregisterAndWait(hub, old)
+	if p, ok := GetPresenceInstance().Get(user); !ok || p.ClientID != fresh.ID {
+		t.Fatalf("presence = %+v, %v; want the new connection's", p, ok)
+	}
+}

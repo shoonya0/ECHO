@@ -56,6 +56,10 @@ type Hub struct {
 	// chats the online went to, until it publishes them as offline. Changed
 	// under the user's presence lock.
 	announced sync.Map // userID -> []string
+	// withheld holds the users this instance didn't announce because they
+	// chose to hide, until their offline would be due; it is skipped too (#31).
+	// Changed under the user's presence lock.
+	withheld  sync.Map // userID -> struct{}
 	slots     chan struct{}
 	slotsOnce sync.Once
 }
@@ -138,9 +142,17 @@ var maxRegistrations = 32
 // other connection isn't taken as their last (#22). It gives up once the hub
 // has stopped, so the connection's goroutine can't wait forever; WaitRegistered
 // then reports the stop.
-func (eh *Hub) QueueRegister(client *models.Client) {
+//
+// presence, when not nil, is stored under the same lock that marks the
+// connection pending: stored earlier, an older connection of the user closing
+// in between would take itself for the last and delete it, and the new
+// connection would never be announced online (#31).
+func (eh *Hub) QueueRegister(client *models.Client, presence *UserPresence) {
 	eh.Mutex.Lock()
 	addPending(eh.Hub, client)
+	if presence != nil {
+		GetPresenceInstance().Set(*presence)
+	}
 	eh.Mutex.Unlock()
 	select {
 	case eh.Register <- client:
@@ -372,13 +384,21 @@ func (eh *Hub) publishOnline(client *models.Client) bool {
 		return true // another connection of the user announced it
 	}
 	presence, ok := GetPresenceInstance().Get(client.UserID)
-	if !ok || hidesPresence(presence.Status) {
+	if !ok {
 		return true
+	}
+	if hidesPresence(presence.Status) {
+		eh.withheld.Store(userID, struct{}{})
+		return true
+	}
+	status := presence.Status
+	if status == "" {
+		status = UserStatus(constants.UserStatusOnline)
 	}
 	eh.announced.Store(userID, chats)
 	if err := eh.pubSubManager.PublishPresenceUpdate(&models.WSPresenceStatus{
 		UserID:   userID,
-		Status:   string(constants.UserStatusOnline),
+		Status:   string(status), // the chosen one, as REST shows it (#31)
 		LastSeen: time.Now(),
 		Chats:    chats,
 	}); err != nil {
@@ -482,10 +502,18 @@ func (eh *Hub) releaseAfterDisconnect(userID bson.ObjectID, emptyRooms []string,
 	if eh.pubSubManager.userInUse(userID.Hex()) {
 		return // a connection registered meanwhile; it announces itself
 	}
-	if announced, ok := eh.announced.LoadAndDelete(userID.Hex()); ok {
+	announced, wasAnnounced := eh.announced.LoadAndDelete(userID.Hex())
+	if wasAnnounced {
 		chats = unionChats(chats, announced.([]string))
 	}
+	_, wasWithheld := eh.withheld.LoadAndDelete(userID.Hex())
 	heldUntil, elsewhere, err := eh.markOffline(userID.Hex())
+	if wasWithheld && !wasAnnounced {
+		// Not announced because they hide (invisible, or offline by choice):
+		// an offline with a fresh lastSeen would show they were just connected.
+		eh.recordLastSeen(userID, time.Now())
+		return
+	}
 	if err != nil {
 		// Publish anyway: one server is the usual case, and a user shown
 		// online forever is worse than a wrong offline.
@@ -539,7 +567,7 @@ func (eh *Hub) recheckOfflineAt(userID bson.ObjectID, chats []string, heldUntil 
 // hidesPresence reports whether a user who chose status is never announced
 // as online: invisible, or offline by choice. Away and dnd users are (#31).
 func hidesPresence(status UserStatus) bool {
-	return status == UserStatus(constants.UserStatusInvisible) || status == UserStatus(constants.UserStatusOffline)
+	return constants.UserStatus(status).Hidden()
 }
 
 // publishOffline publishes userID as offline to the members of chats and
