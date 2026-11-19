@@ -14,6 +14,8 @@ and with a link to exactly one feature state.md. Updated by /close-increment and
 - **Feature:** none · #36 unique usernames on `fix/36-unique-usernames`: 3 to 30 letters,
   digits, `_` or `.`, unique ignoring case (`username_ci`), `409` on signup and `PUT
   profile/`, startup `RenameDuplicateUsernames` ([decided](./decisions/accounts-and-privacy.md#unique-usernames-36)).
+  Verified; code review: 3 of 9 fixed (spaced legacy names, index use, migration skip);
+  left: the JWT and copies keep old names (rest of #36), renamed names can break the format
   `main` at `5337f1e`: #37 steps 2 and 3, #110 and
   the last #40 items (mentions, `CheckOrigin`, per-account limit; PRs #151 to #159) are
   merged, so Render deploys them. #5 step 2 waits for the Android invite screen
