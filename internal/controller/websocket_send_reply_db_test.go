@@ -49,6 +49,12 @@ func TestSendMessageReplyHasTopLevelRequestID(t *testing.T) {
 		if reply.RequestID != "r1" {
 			t.Errorf("top-level requestId = %q, want %q", reply.RequestID, "r1")
 		}
+		// #43 code review: the sender learns its message's seq even when its own
+		// live event is dropped. The chat has no stats, as before #43: seeded, 1.
+		resp, ok := reply.Data.(models.MessageResponse)
+		if !ok || resp.Data["seq"] != int64(1) {
+			t.Errorf("reply data = %+v, want seq 1", reply.Data)
+		}
 	default:
 		t.Fatal("no reply sent")
 	}
