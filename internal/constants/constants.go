@@ -33,13 +33,21 @@ const (
 	StatusUnblocked  ContactStatus = "unblocked"
 )
 
-// User presence statuses.
+// User presence statuses. presence.status in MongoDB holds the one the user
+// chose; whether they are connected comes from OnlineKeyPrefix (#31).
 type UserStatus string
 
 const (
-	UserStatusOnline  UserStatus = "online"
-	UserStatusOffline UserStatus = "offline"
+	UserStatusOnline    UserStatus = "online"
+	UserStatusAway      UserStatus = "away"
+	UserStatusDND       UserStatus = "dnd"
+	UserStatusInvisible UserStatus = "invisible" // shown to others as offline
+	UserStatusOffline   UserStatus = "offline"
 )
+
+// OnlineKeyPrefix starts the Redis sorted set online:<userID>, which records
+// the servers a user is connected to (#31).
+const OnlineKeyPrefix = "online:"
 
 // Chat types, permissions, and participant roles.
 type ChatType string
