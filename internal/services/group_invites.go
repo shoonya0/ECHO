@@ -141,12 +141,11 @@ func DeclineGroupInvite(ctx context.Context, userID, chatID bson.ObjectID) error
 }
 
 func declineGroupInvite(ctx context.Context, userID, chatID bson.ObjectID) error {
+	unset := bson.M{participantField(userID): ""}
+	unsetReadState(unset, userID) // #42
 	res, err := database.DB.Collection(string(constants.ChatColl)).UpdateOne(ctx,
 		pendingInviteFilter(chatID, userID),
-		bson.M{
-			"$unset": bson.M{participantField(userID): ""},
-			"$set":   bson.M{"updatedAt": time.Now()},
-		},
+		bson.M{"$unset": unset, "$set": bson.M{"updatedAt": time.Now()}},
 	)
 	if err != nil {
 		return fmt.Errorf("failed to decline the invite: %w", err)

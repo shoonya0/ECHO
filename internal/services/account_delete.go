@@ -135,6 +135,7 @@ func leaveChatOnDelete(ctx context.Context, chatID, userID bson.ObjectID) error 
 			}
 			set := bson.M{"updatedAt": time.Now()}
 			unset := bson.M{key: ""}
+			unsetReadState(unset, userID) // #42
 			ownershipOnDelete(chat, userID, filter, set, unset)
 			update = bson.M{
 				"$set": set, "$unset": unset,
