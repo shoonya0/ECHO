@@ -59,14 +59,14 @@ func TestChatActionsRequireMembership(t *testing.T) {
 			return UpdateTypingStatus(ctx, chat, userID, true)
 		}},
 		{"mark read", func(userID, chat bson.ObjectID) error {
-			return MarkMessagesAsRead(chat, userID, []bson.ObjectID{messageID})
+			return MarkMessagesAsRead(ctx, chat, userID, []bson.ObjectID{messageID})
 		}},
 		{"add reaction", func(userID, chat bson.ObjectID) error {
-			_, err := AddMessageReaction(chat, messageID, userID, "👍")
+			_, err := AddMessageReaction(ctx, chat, messageID, userID, "👍")
 			return err
 		}},
 		{"remove reaction", func(userID, chat bson.ObjectID) error {
-			_, err := RemoveMessageReaction(chat, messageID, userID, "👍")
+			_, err := RemoveMessageReaction(ctx, chat, messageID, userID, "👍")
 			return err
 		}},
 	}
@@ -123,7 +123,7 @@ func TestMarkMessagesAsReadCoversOnlyThisChat(t *testing.T) {
 
 	t.Run("only IDs from another chat are refused", func(t *testing.T) {
 		rec.events = nil
-		err := MarkMessagesAsRead(chatID, member, []bson.ObjectID{otherMessage, bson.NewObjectID()})
+		err := MarkMessagesAsRead(ctx, chatID, member, []bson.ObjectID{otherMessage, bson.NewObjectID()})
 		if !errors.Is(err, ErrMessageNotFound) {
 			t.Fatalf("err = %v, want ErrMessageNotFound", err)
 		}
@@ -143,7 +143,7 @@ func TestMarkMessagesAsReadCoversOnlyThisChat(t *testing.T) {
 
 	t.Run("mixed IDs broadcast only this chat's messages", func(t *testing.T) {
 		rec.events = nil
-		if err := MarkMessagesAsRead(chatID, member, []bson.ObjectID{ownMessage, otherMessage}); err != nil {
+		if err := MarkMessagesAsRead(ctx, chatID, member, []bson.ObjectID{ownMessage, otherMessage}); err != nil {
 			t.Fatalf("MarkMessagesAsRead: %v", err)
 		}
 		if len(rec.events) != 1 {

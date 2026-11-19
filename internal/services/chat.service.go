@@ -713,8 +713,7 @@ func UpdateTypingStatus(ctx context.Context, chatID, userID bson.ObjectID, isTyp
 
 // MarkMessagesAsRead marks messages as read by a user. IDs that aren't messages
 // of this chat are skipped; it returns ErrMessageNotFound when none are left.
-func MarkMessagesAsRead(chatID, userID bson.ObjectID, messageIDs []bson.ObjectID) error {
-	ctx := context.Background()
+func MarkMessagesAsRead(ctx context.Context, chatID, userID bson.ObjectID, messageIDs []bson.ObjectID) error {
 	now := time.Now()
 
 	if err := RequireChatAccess(ctx, chatID, userID); err != nil {
@@ -758,8 +757,11 @@ func MarkMessagesAsRead(chatID, userID bson.ObjectID, messageIDs []bson.ObjectID
 		return fmt.Errorf("failed to update read receipts: %w", err)
 	}
 
-	// Update chat read receipts
-	updateChatReadReceipts(chatID, userID, now)
+	// The chat keeps when each member last read. Without it the read isn't saved
+	// in full, so the chat isn't told; marking the same messages again is safe.
+	if err := updateChatReadReceipts(ctx, chatID, userID, now); err != nil {
+		return err
+	}
 
 	// Broadcast read receipts to other participants
 	broadcastReadReceipts(chatID, userID, chatMessageIDs, now)
@@ -857,10 +859,8 @@ func updateChatLastMessage(ctx context.Context, chatID, messageID bson.ObjectID,
 	return nil
 }
 
-// updateChatReadReceipts updates read receipts in chat document
-func updateChatReadReceipts(chatID, userID bson.ObjectID, timestamp time.Time) {
-	ctx := context.Background()
-
+// updateChatReadReceipts saves when userID last read the chat.
+func updateChatReadReceipts(ctx context.Context, chatID, userID bson.ObjectID, timestamp time.Time) error {
 	filter := bson.M{"_id": chatID}
 	update := bson.M{
 		"$set": bson.M{
@@ -868,7 +868,14 @@ func updateChatReadReceipts(chatID, userID bson.ObjectID, timestamp time.Time) {
 		},
 	}
 
-	database.DB.Collection(string(constants.ChatColl)).UpdateOne(ctx, filter, update)
+	res, err := database.DB.Collection(string(constants.ChatColl)).UpdateOne(ctx, filter, update)
+	if err != nil {
+		return fmt.Errorf("failed to update the chat's read receipts: %w", err)
+	}
+	if res.MatchedCount == 0 {
+		return fmt.Errorf("%w", ErrChatNotFound)
+	}
+	return nil
 }
 
 // broadcastNewMessage broadcasts a new message to chat participants
@@ -975,9 +982,7 @@ func isEmojiRune(r rune) bool {
 // AddMessageReaction adds userID's emoji reaction to a message. It reports
 // whether anything changed: false when the user had already reacted with that
 // emoji, so the caller doesn't announce a reaction that was already there.
-func AddMessageReaction(chatID, messageID, userID bson.ObjectID, emoji string) (bool, error) {
-	ctx := context.Background()
-
+func AddMessageReaction(ctx context.Context, chatID, messageID, userID bson.ObjectID, emoji string) (bool, error) {
 	if err := validateEmoji(emoji); err != nil {
 		return false, err
 	}
@@ -1023,9 +1028,7 @@ func AddMessageReaction(chatID, messageID, userID bson.ObjectID, emoji string) (
 // RemoveMessageReaction removes userID's emoji reaction from a message. It
 // reports whether anything changed: false when the user hadn't reacted with
 // that emoji. The emoji is removed from the message with its last user.
-func RemoveMessageReaction(chatID, messageID, userID bson.ObjectID, emoji string) (bool, error) {
-	ctx := context.Background()
-
+func RemoveMessageReaction(ctx context.Context, chatID, messageID, userID bson.ObjectID, emoji string) (bool, error) {
 	if err := validateEmoji(emoji); err != nil {
 		return false, err
 	}

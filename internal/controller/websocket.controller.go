@@ -294,7 +294,7 @@ func handleClientRequest(ctx context.Context, client *models.Client, request mod
 		handleSetTyping(ctx, client, request)
 
 	case models.WSRequestTypeMarkRead:
-		handleMarkRead(client, request)
+		handleMarkRead(ctx, client, request)
 
 	case models.WSRequestTypeEditMessage:
 		handleEditMessage(client, request)
@@ -303,10 +303,10 @@ func handleClientRequest(ctx context.Context, client *models.Client, request mod
 		handleDeleteMessage(client, request)
 
 	case models.WSRequestTypeAddReaction:
-		handleAddReaction(client, request)
+		handleAddReaction(ctx, client, request)
 
 	case models.WSRequestTypeRemoveReaction:
-		handleRemoveReaction(client, request)
+		handleRemoveReaction(ctx, client, request)
 
 	case models.WSRequestTypeInviteUser:
 		handleInviteUser(ctx, client, request)
@@ -580,7 +580,7 @@ func handleSetTyping(ctx context.Context, client *models.Client, request models.
 }
 
 // handleMarkRead processes message read status updates
-func handleMarkRead(client *models.Client, request models.MessageRequest) {
+func handleMarkRead(ctx context.Context, client *models.Client, request models.MessageRequest) {
 	if request.ChatID == "" {
 		sendErrorResponse(client, request.RequestID, "INVALID_REQUEST", "ChatID is required")
 		return
@@ -610,7 +610,7 @@ func handleMarkRead(client *models.Client, request models.MessageRequest) {
 		return
 	}
 
-	err = services.MarkMessagesAsRead(chatID, client.UserID, messageIDs) // Mark messages as read
+	err = services.MarkMessagesAsRead(ctx, chatID, client.UserID, messageIDs) // Mark messages as read
 	if err != nil {
 		wsLog().Printf("Failed to mark messages as read: %v", err)
 		sendChatError(client, request.RequestID, err, "READ_FAILED", "Failed to mark messages as read")
@@ -621,7 +621,7 @@ func handleMarkRead(client *models.Client, request models.MessageRequest) {
 }
 
 // handleAddReaction processes message reaction addition requests
-func handleAddReaction(client *models.Client, request models.MessageRequest) {
+func handleAddReaction(ctx context.Context, client *models.Client, request models.MessageRequest) {
 	if request.ChatID == "" {
 		sendErrorResponse(client, request.RequestID, "INVALID_REQUEST", "ChatID is required")
 		return
@@ -654,7 +654,7 @@ func handleAddReaction(client *models.Client, request models.MessageRequest) {
 		return
 	}
 
-	changed, err := services.AddMessageReaction(chatID, msgObjectID, client.UserID, emoji) // Add reaction through service layer
+	changed, err := services.AddMessageReaction(ctx, chatID, msgObjectID, client.UserID, emoji) // Add reaction through service layer
 	if err != nil {
 		wsLog().Printf("Failed to add reaction: %v", err)
 		sendChatError(client, request.RequestID, err, "REACTION_FAILED", "Failed to add reaction")
@@ -695,7 +695,7 @@ func handleAddReaction(client *models.Client, request models.MessageRequest) {
 }
 
 // handleRemoveReaction processes message reaction removal requests
-func handleRemoveReaction(client *models.Client, request models.MessageRequest) {
+func handleRemoveReaction(ctx context.Context, client *models.Client, request models.MessageRequest) {
 	if request.ChatID == "" {
 		sendErrorResponse(client, request.RequestID, "INVALID_REQUEST", "ChatID is required")
 		return
@@ -728,7 +728,7 @@ func handleRemoveReaction(client *models.Client, request models.MessageRequest) 
 		return
 	}
 
-	changed, err := services.RemoveMessageReaction(chatID, msgObjectID, client.UserID, emoji) // Remove reaction through service layer
+	changed, err := services.RemoveMessageReaction(ctx, chatID, msgObjectID, client.UserID, emoji) // Remove reaction through service layer
 	if err != nil {
 		wsLog().Printf("Failed to remove reaction: %v", err)
 		sendChatError(client, request.RequestID, err, "REACTION_FAILED", "Failed to remove reaction")
