@@ -96,10 +96,11 @@ call `BroadcastToChat`, which calls the hub's `PublishToChat`.
 | `instance:<instanceID>` | Messages for one server | No. Servers listen, but nothing publishes to it. |
 | `control:sessions` | Close a user's connections on every server (logout, deleted profile) | **Yes** (#76). Never forwarded to clients. |
 
-A server listens to all its channels over **one** Redis connection, read by one goroutine
-(#21), so it holds one connection however many users and chats it has. A subscribe returns
-once Redis confirms it; a release doesn't wait. The reader handles messages one at a time in
-Redis's order, so no handler on it may wait on MongoDB or Redis.
+A server listens to all its channels over **one** Redis connection and one reader goroutine
+(#21). A subscribe returns once Redis confirms it; a release doesn't wait. The reader handles
+messages one at a time, so no handler on it may wait on MongoDB or Redis: if it falls behind
+and Redis's `client-output-buffer-limit` cuts the connection, every channel misses messages
+until go-redis reconnects (#43).
 
 The sorted set `online:<userID>` records which servers hold the user: one entry per server,
 scored with its expiry time. A server adds its entry on each connection, renews it every 30
