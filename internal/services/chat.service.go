@@ -838,12 +838,13 @@ func MarkMessagesAsRead(ctx context.Context, chatID, userID bson.ObjectID, messa
 
 	messages := database.DB.Collection(string(constants.MessageColl))
 
-	cursor, err := messages.Find(ctx, filter, options.Find().SetProjection(bson.M{"_id": 1}))
+	cursor, err := messages.Find(ctx, filter, options.Find().SetProjection(bson.M{"_id": 1, "seq": 1}))
 	if err != nil {
 		return fmt.Errorf("failed to find messages: %w", err)
 	}
 	var found []struct {
-		ID bson.ObjectID `bson:"_id"`
+		ID  bson.ObjectID `bson:"_id"`
+		Seq int64         `bson:"seq"`
 	}
 	if err := cursor.All(ctx, &found); err != nil {
 		return fmt.Errorf("failed to read messages: %w", err)
@@ -853,8 +854,10 @@ func MarkMessagesAsRead(ctx context.Context, chatID, userID bson.ObjectID, messa
 	}
 
 	chatMessageIDs := make([]bson.ObjectID, len(found))
+	var readSeq int64 // the highest seq read; 0 if none has one (before #43)
 	for i, message := range found {
 		chatMessageIDs[i] = message.ID
+		readSeq = max(readSeq, message.Seq)
 	}
 
 	update := bson.M{
@@ -869,12 +872,13 @@ func MarkMessagesAsRead(ctx context.Context, chatID, userID bson.ObjectID, messa
 
 	// The chat keeps when each member last read. Without it the read isn't saved
 	// in full, so the chat isn't told; marking the same messages again is safe.
-	if err := updateChatReadReceipts(ctx, chatID, userID, now); err != nil {
+	readUpToSeq, err := updateChatReadReceipts(ctx, chatID, userID, now, readSeq)
+	if err != nil {
 		return err
 	}
 
 	// Broadcast read receipts to other participants
-	broadcastReadReceipts(chatID, userID, chatMessageIDs, now)
+	broadcastReadReceipts(chatID, userID, chatMessageIDs, now, readUpToSeq)
 
 	return nil
 }
@@ -1035,23 +1039,57 @@ func seedChatSeqs(ctx context.Context, chatID bson.ObjectID) error {
 	return nil // seeded meanwhile
 }
 
-// updateChatReadReceipts saves when userID last read the chat.
-func updateChatReadReceipts(ctx context.Context, chatID, userID bson.ObjectID, timestamp time.Time) error {
-	filter := bson.M{"_id": chatID}
+// updateChatReadReceipts saves when userID last read the chat, and raises their
+// read seq to readSeq (#42): $max, so reading an older message later doesn't move
+// it back. It returns the read seq the chat now holds for them, 0 if none yet.
+func updateChatReadReceipts(ctx context.Context, chatID, userID bson.ObjectID, timestamp time.Time, readSeq int64) (int64, error) {
+	key := readSeqField(userID)
 	update := bson.M{
-		"$set": bson.M{
-			"readReceipts." + userID.Hex(): timestamp,
-		},
+		"$set": bson.M{"readReceipts." + userID.Hex(): timestamp},
+		"$max": bson.M{key: readSeq},
 	}
 
-	res, err := database.DB.Collection(string(constants.ChatColl)).UpdateOne(ctx, filter, update)
+	var chat struct {
+		ReadSeqs map[string]int64 `bson:"readSeqs"`
+	}
+	err := database.DB.Collection(string(constants.ChatColl)).FindOneAndUpdate(ctx,
+		bson.M{"_id": chatID}, update,
+		options.FindOneAndUpdate().SetProjection(bson.M{key: 1}).SetReturnDocument(options.After),
+	).Decode(&chat)
+	if errors.Is(err, mongo.ErrNoDocuments) {
+		return 0, fmt.Errorf("%w", ErrChatNotFound)
+	}
 	if err != nil {
-		return fmt.Errorf("failed to update the chat's read receipts: %w", err)
+		return 0, fmt.Errorf("failed to update the chat's read receipts: %w", err)
 	}
-	if res.MatchedCount == 0 {
-		return fmt.Errorf("%w", ErrChatNotFound)
+	return chat.ReadSeqs[userID.Hex()], nil
+}
+
+// readSeqField is where a chat keeps the highest seq userID has read (#42).
+func readSeqField(userID bson.ObjectID) string { return "readSeqs." + userID.Hex() }
+
+// ChatReadSeqs returns, per member who has read anything numbered, the highest seq
+// they have read, keyed by hex user ID (#42). A message with seq n is read by
+// everyone whose value is n or more. The caller checks membership first.
+func ChatReadSeqs(ctx context.Context, chatID bson.ObjectID) (map[string]int64, error) {
+	var chat struct {
+		ReadSeqs map[string]int64 `bson:"readSeqs"`
 	}
-	return nil
+	err := database.DB.Collection(string(constants.ChatColl)).FindOne(ctx, bson.M{"_id": chatID},
+		options.FindOne().SetProjection(bson.M{"readSeqs": 1})).Decode(&chat)
+	if errors.Is(err, mongo.ErrNoDocuments) {
+		return nil, fmt.Errorf("%w", ErrChatNotFound)
+	}
+	if err != nil {
+		return nil, fmt.Errorf("failed to read the chat's read seqs: %w", err)
+	}
+	seqs := make(map[string]int64, len(chat.ReadSeqs))
+	for id, seq := range chat.ReadSeqs {
+		if seq > 0 { // $max stores 0 for a member who read only unnumbered messages
+			seqs[id] = seq
+		}
+	}
+	return seqs, nil
 }
 
 // broadcastNewMessage broadcasts a new message to chat participants
@@ -1088,7 +1126,7 @@ func broadcastNewMessage(chatID bson.ObjectID, message models.Message) {
 }
 
 // broadcastReadReceipts broadcasts read receipt updates
-func broadcastReadReceipts(chatID, userID bson.ObjectID, messageIDs []bson.ObjectID, timestamp time.Time) {
+func broadcastReadReceipts(chatID, userID bson.ObjectID, messageIDs []bson.ObjectID, timestamp time.Time, readUpToSeq int64) {
 	messageIDStrings := make([]string, len(messageIDs))
 	for i, id := range messageIDs {
 		messageIDStrings[i] = id.Hex()
@@ -1099,9 +1137,10 @@ func broadcastReadReceipts(chatID, userID bson.ObjectID, messageIDs []bson.Objec
 		ChatID: chatID.Hex(),
 		UserID: userID.Hex(),
 		Data: map[string]interface{}{
-			"messageIds": messageIDStrings,
-			"status":     "read",
-			"timestamp":  timestamp,
+			"messageIds":  messageIDStrings,
+			"status":      "read",
+			"timestamp":   timestamp,
+			"readUpToSeq": readUpToSeq, // the reader's highest read seq (#42)
 		},
 		Timestamp: timestamp,
 	}
