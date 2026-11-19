@@ -71,10 +71,16 @@ compose and CI still run a standalone MongoDB (#37 part 2).
 
 Decided on 2026-11-19. A direct chat stores `directKey`, the two user IDs smaller first,
 under a unique partial index (`directKey_1`), so concurrent opens can't make two chats; the
-loser returns the winner's chat. No transaction needed. A startup backfill keys older
-chats, oldest first, on every start (an older server copy can still create unkeyed chats
-during a deploy). A pair's later duplicates stay unkeyed and are logged
+loser returns the winner's chat. No transaction needed. Opening looks up the keyed chat
+first, then the oldest by participants. A backfill runs on every start before the indexes:
+it takes the key off the newer of two chats keyed alike (made before the index existed,
+which would block it), then keys unkeyed chats oldest first (an older server copy can still
+create some during a deploy). A pair's later duplicates stay unkeyed and are logged
 (`Second direct chats of a pair`): merging their messages is a person's call.
+
+Contact list writes are conditional on the list not holding the ID yet and check
+`MatchedCount`, so of two concurrent requests or favorites one wins and the other gets the
+usual "already" error. An accept whose second write finds nothing takes back the first.
 
 ## How blocks are stored
 

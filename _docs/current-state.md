@@ -12,9 +12,13 @@ and with a link to exactly one feature state.md. Updated by /close-increment and
 /feature-docs update. -->
 
 - **Feature:** #37 part 1 on `fix/37-direct-chat-key`: one direct chat per pair (a unique
-  `directKey`, backfilled at startup) and `$addToSet` for contact ID lists. Part 2 (replica
-  set in compose and CI, then transactions) comes after. #5 step 2 waits for the Android
-  invite screen ([group-invites](./features/group-invites/state.md))
+  `directKey`, backfilled at startup;
+  [decided](./decisions.md#one-direct-chat-per-pair-37)) and conditional contact list writes
+  that check `MatchedCount`. `TEST_DB_REQUIRED=1 node scripts/verify.mjs --full` passed;
+  live: 10 concurrent opens gave 1 chat, and the local backfill keyed 413 chats with no
+  duplicates. Code review: 10 findings, all fixed. Now: PR. Part 2 (replica set in compose
+  and CI, then transactions) comes after. #5 step 2 waits for the Android invite screen
+  ([group-invites](./features/group-invites/state.md))
 - **#21 on Render (not checked yet):** Redis `CLIENT LIST TYPE pubsub` shows one connection
   per running server
 - **#31 on Render (not checked yet):** in a shared chat, A sees B's online and offline, and
@@ -54,7 +58,7 @@ and with a link to exactly one feature state.md. Updated by /close-increment and
   missed; a connection's welcome is dropped when its 10-message queue is already full
 - **Not filed:** #63 can't happen any more (no deployed version writes `blockedChats`);
   proposed to close it
-- **Next step:** #37 part 1. Direct-chat gating and live status changes are decided against
+- **Next step:** PR for #37 part 1; after merge, on Render the startup log shows `Backfilled direct chat keys` and any `Second direct chats of a pair` (merge by hand). Direct-chat gating and live status changes are decided against
   for now ([decided](./decisions.md#how-privacy-settings-apply-32)). The Render checks above
   are the user's
 - **Updated:** 2026-11-19 on `fix/37-direct-chat-key`, from `main` at `ef58498`. Commits on
