@@ -1,6 +1,6 @@
 # ECHO: current state
 
-A one-page snapshot of where the project stands. Last checked on 2026-11-19 at `662cb7e`
+A one-page snapshot of where the project stands. Last checked on 2026-11-19 at `06de366`
 on `main`. To learn what the product does, read
 [product-overview.md](./product-overview.md). For the code, read
 [architecture-overview.md](./architecture-overview.md).
@@ -11,8 +11,8 @@ on `main`. To learn what the product does, read
 and with a link to exactly one feature state.md. Updated by /close-increment and
 /feature-docs update. -->
 
-- **Feature:** none · nothing in progress. `main` at `662cb7e`: #31 part 1 (PR #145) is
-  merged, so Render deploys it; #31 stays open for part 2 (REST presence: contacts and
+- **Feature:** none · nothing in progress. `main` at `06de366`, CI green: #31 part 1 (PR
+  #145) and a CI race fix (PR #146) are merged, so Render deploys them; #31 stays open for part 2 (REST presence: contacts and
   profiles read `online:<id>`, `lastSeen` written on offline, status not from the JWT).
   #5 step 2 waits for the Android invite screen
   ([group-invites](./features/group-invites/state.md))
@@ -50,7 +50,8 @@ and with a link to exactly one feature state.md. Updated by /close-increment and
   missed; a connection's welcome is dropped when its 10-message queue is already full
 - **Next step:** #31 part 2 (REST presence) is the natural follow-up; the Render checks
   above are the user's
-- **Updated:** 2026-11-19 on `main` at `662cb7e` (not committed yet: rides on the next branch)
+- **Updated:** 2026-11-19 on `main` at `06de366` (not committed yet: rides on the next
+  branch). PRs merge by rebase only, so commits keep the author `shoonya0`
 
 ## Where things stand
 
@@ -64,6 +65,8 @@ Not built yet: editing or deleting messages, and changing chat settings. The ful
 
 ## Recently finished
 
+- **CI race (PR #146):** a #22 test returned before its slow registration finished, which
+  then raced the next test on `chatLoadTimeout`; it failed `main` after #145, now fixed.
 - **#31 part 1 (PR #145):** `presence` events carry the user's chats over
   `presence:global`; every server delivers them once per connection, so offline arrives
   and members on other servers get both. `online:<userID>` (one expiring entry per
@@ -138,11 +141,8 @@ Not built yet: editing or deleting messages, and changing chat settings. The ful
   longer writes `typingUsers` to MongoDB or starts a timer that cleared users still typing
   ([requests](./websocket-requests.md#set_typing),
   [app changes](../Android/_docs/08_SERVER_CHANGES/auth-and-connection.md)).
-- **#122 (PR #125):** the server reads a connection's requests only after the hub has
-  registered it (at most 10 s), so a `join_chat` sent right after connecting is no longer
-  dropped ([pub/sub](./PUBSUB_ARCHITECTURE.md#connecting-and-disconnecting)).
 
-Older work, from #54 (PR #121) and #49 (PR #130) back: [finished-work.md](./finished-work.md).
+Older work, from #122 (PR #125) and #49 (PR #130) back: [finished-work.md](./finished-work.md).
 
 ## How to build, run, test
 
