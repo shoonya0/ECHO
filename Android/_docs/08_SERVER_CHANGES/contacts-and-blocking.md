@@ -52,7 +52,9 @@ Details: [websocket-requests.md](../../../_docs/websocket-requests.md).
   requests from nobody, or only from people sharing a group with them. Tell the user the
   person doesn't accept requests.
 - `PUT profile/` answers `400` for a `showOnlineStatus` or `allowContactBy` other than
-  `everyone`, `contacts` or `none`.
+  `everyone`, `contacts` or `none`. It now changes only the fields you send: before, sending
+  one setting reset the other settings (and presence fields) in that group to `""`/`false`.
+- A privacy change takes effect for live events at the next connect; reconnect after saving.
 
 Details: [users.md](../../../_docs/rest-api/users.md#contacts),
 [decided](../../../_docs/decisions.md#how-privacy-settings-apply-32).

@@ -125,10 +125,12 @@ announces the user to nobody, as `invisible` does. A user hidden from a viewer s
 `lastSeen` to them either. `showLastSeen` `false` hides `lastSeen` and `lastActivity`, and
 leaves `lastSeen` out of events. It was stored `false` for every account while nothing read
 it, so new accounts get `true` and a startup migration (marker
-`show-last-seen-default-32`) turned it on once for old ones; later choices stay.
+`show-last-seen-default-32`, claimed before the update) turned it on once for old ones;
+later choices stay. The online uses the settings read at connect; the offline reaches the
+same people but reads them again and leaves `lastSeen` out unless they still allow it.
 `allowContactBy` `none` refuses every contact request (`403`); `contacts` lets in people who
-share a group with you as members. Pending invitees don't count, and neither do direct
-chats, since anyone can open one. A value the server doesn't know means nobody, so `PUT
+share a group with you as accepted members. Pending invitees don't count, and neither do
+direct chats, since anyone can open one. A value the server doesn't know means nobody, so `PUT
 profile/` answers `400` for anything but `everyone`, `contacts` or `none`.
 
 ## How login and signup limits find the client (#40)
