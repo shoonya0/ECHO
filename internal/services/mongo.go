@@ -1,10 +1,13 @@
 package services
 
 import (
+	"bytes"
 	"context"
+	"errors"
 	"fmt"
 
 	"github.com/shoonya0/ECHO/internal/logger"
+	"github.com/sirupsen/logrus"
 
 	"go.mongodb.org/mongo-driver/v2/bson"
 	"go.mongodb.org/mongo-driver/v2/mongo"
@@ -18,6 +21,32 @@ func contains(slice []bson.ObjectID, item bson.ObjectID) bool {
 		}
 	}
 	return false
+}
+
+// logWriteError logs a failed database call. A write conflict inside a
+// transaction is expected under load: the driver runs the transaction again,
+// so it is logged at debug, not as an error (#37).
+func logWriteError(log *logrus.Entry, err error, msg string) {
+	var le mongo.LabeledError
+	if errors.As(err, &le) && le.HasErrorLabel("TransientTransactionError") {
+		log.WithError(err).Debug(msg + "; the transaction runs again")
+		return
+	}
+	log.WithError(err).Error(msg)
+}
+
+// writeInIDOrder runs writeA (to user a) and writeB (to user b), the one for the
+// smaller ID first. Two transactions that write the same two users then
+// collide at the first write, and only the later one runs again. In the other
+// order each held one user and aborted the other, again and again (#37).
+func writeInIDOrder(a, b bson.ObjectID, writeA, writeB func() error) error {
+	if bytes.Compare(b[:], a[:]) < 0 {
+		writeA, writeB = writeB, writeA
+	}
+	if err := writeA(); err != nil {
+		return err
+	}
+	return writeB()
 }
 
 // FindByID decodes the single document matching filter into T.
@@ -43,7 +72,7 @@ func FindByID[T any](
 		if err == mongo.ErrNoDocuments {
 			log.Debug("Document not found")
 		} else {
-			log.WithError(err).Error("Failed to find document")
+			logWriteError(log, err, "Failed to find document")
 		}
 		return nil, err
 	}
@@ -65,7 +94,7 @@ func UpdateOne[T any](
 
 	res, err := coll.UpdateOne(ctx, filter, update, opts...)
 	if err != nil {
-		log.WithError(err).Error("Failed to update document")
+		logWriteError(log, err, "Failed to update document")
 		return nil, fmt.Errorf("failed to update document: %w", err)
 	}
 
