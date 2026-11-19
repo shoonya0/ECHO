@@ -11,6 +11,7 @@ import (
 	"github.com/shoonya0/ECHO/internal/utils"
 
 	"github.com/gin-gonic/gin"
+	"github.com/gin-gonic/gin/binding"
 	"go.mongodb.org/mongo-driver/v2/bson"
 )
 
@@ -55,8 +56,18 @@ func UpdateProfile(ctx *gin.Context) {
 		return
 	}
 
+	// The struct checks the types; the map says which fields were sent. The
+	// update is built from the map: rebuilt from the struct, each group the
+	// request touched had its unsent fields written as "" and false, so saving
+	// one setting reset the others, privacy included (#32 review).
 	var updateReq models.UpdateUserRequest
-	if err := ctx.ShouldBindJSON(&updateReq); err != nil {
+	var sent map[string]any
+	if err := ctx.ShouldBindBodyWith(&updateReq, binding.JSON); err != nil {
+		log.Debug("invalid request format")
+		utils.ErrorResponse(ctx, http.StatusBadRequest, "invalid request format", bindErrorDetail(err))
+		return
+	}
+	if err := ctx.ShouldBindBodyWith(&sent, binding.JSON); err != nil {
 		log.Debug("invalid request format")
 		utils.ErrorResponse(ctx, http.StatusBadRequest, "invalid request format", bindErrorDetail(err))
 		return
@@ -97,7 +108,7 @@ func UpdateProfile(ctx *gin.Context) {
 		}
 	}
 
-	updateDoc := BuildPartialDocument(updateReq)
+	updateDoc := BuildPartialDocument(sent)
 
 	// Drop backend/service-owned fields (accountStatus, timestamps, etc.)
 	// before they can reach MongoDB. Any client attempt to set them is logged.
