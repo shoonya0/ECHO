@@ -80,6 +80,9 @@ gap-free numbers need one document that serializes a chat's sends. Kept on 2026-
 Read state uses the same numbers (#42): `mark_read` raises `chats.readSeqs.<userId>`
 with `$max`, and a message with `seq` n is read by each member at n or more. Each message's
 `readBy` is still written until the Android app reads `readSeqs`; then it goes.
+Remove, decline and account delete unset a leaver's `readReceipts` and `readSeqs` entries,
+and `mark_read` writes only for participants; `stale-read-state-42` marks the one-time
+cleanup of entries left before that.
 
 ## One direct chat per pair (#37)
 

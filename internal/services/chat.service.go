@@ -1052,12 +1052,14 @@ func updateChatReadReceipts(ctx context.Context, chatID, userID bson.ObjectID, t
 	var chat struct {
 		ReadSeqs map[string]int64 `bson:"readSeqs"`
 	}
+	// Only while userID is a participant: a read that passed its membership check
+	// just before a removal must not write back the state the removal cleared.
 	err := database.DB.Collection(string(constants.ChatColl)).FindOneAndUpdate(ctx,
-		bson.M{"_id": chatID}, update,
+		bson.M{"_id": chatID, participantField(userID): bson.M{"$exists": true}}, update,
 		options.FindOneAndUpdate().SetProjection(bson.M{key: 1}).SetReturnDocument(options.After),
 	).Decode(&chat)
 	if errors.Is(err, mongo.ErrNoDocuments) {
-		return 0, fmt.Errorf("%w", ErrChatNotFound)
+		return 0, fmt.Errorf("%w: not a participant, or no such chat", ErrNotParticipant)
 	}
 	if err != nil {
 		return 0, fmt.Errorf("failed to update the chat's read receipts: %w", err)
@@ -1067,6 +1069,13 @@ func updateChatReadReceipts(ctx context.Context, chatID, userID bson.ObjectID, t
 
 // readSeqField is where a chat keeps the highest seq userID has read (#42).
 func readSeqField(userID bson.ObjectID) string { return "readSeqs." + userID.Hex() }
+
+// unsetReadState adds to an $unset document what takes userID's read state off a
+// chat they are leaving, so readReceipts and readSeqs don't keep former members (#42).
+func unsetReadState(unset bson.M, userID bson.ObjectID) {
+	unset["readReceipts."+userID.Hex()] = ""
+	unset[readSeqField(userID)] = ""
+}
 
 // ChatReadSeqs returns, per member who has read anything numbered, the highest seq
 // they have read, keyed by hex user ID (#42). A message with seq n is read by
@@ -1609,6 +1618,7 @@ func removeGroupMember(ctx context.Context, actingUserID bson.ObjectID, chatID b
 			updateFilter[key+".role"] = bson.M{"$ne": string(constants.ChatRoleOwner)}
 		}
 		unsetEntries[key] = ""
+		unsetReadState(unsetEntries, targetID) // #42
 		removedIDs = append(removedIDs, targetID)
 	}
 

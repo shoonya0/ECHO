@@ -755,3 +755,65 @@ func backfillChatSeqs(ctx context.Context, chatID bson.ObjectID) (int64, error) 
 	})
 	return numbered, err
 }
+
+// staleReadStateMarker is the migrations document RemoveStaleReadState sets once it
+// has run, so later starts don't rewrite every chat.
+const staleReadStateMarker = "stale-read-state-42"
+
+// RemoveStaleReadState takes the readReceipts and readSeqs entries of users who
+// aren't participants off every chat, once (#42). Until #42, removing, declining
+// and deleting an account left them, so the maps only grew; now those writes clear
+// them, and mark_read writes only for participants. A chat without either map
+// isn't given one. Two servers running it at once do the same harmless work. The
+// marker is set after a successful run, so a failed one is retried at the next
+// start. Returns the number of chats changed.
+func RemoveStaleReadState(ctx context.Context) (int64, error) {
+	markers := database.DB.Collection(string(constants.MigrationColl))
+	err := markers.FindOne(ctx, bson.M{"_id": staleReadStateMarker}).Err()
+	if err == nil {
+		return 0, nil
+	}
+	if !errors.Is(err, mongo.ErrNoDocuments) {
+		return 0, fmt.Errorf("read the marker: %w", err)
+	}
+
+	members := bson.M{"$map": bson.M{
+		"input": bson.M{"$objectToArray": bson.M{"$ifNull": bson.A{"$participants", bson.M{}}}},
+		"in":    "$$this.k",
+	}}
+	// keepMembers is field with only the participants' keys while it is a map, and
+	// the field unchanged otherwise (missing stays missing).
+	keepMembers := func(field string) bson.M {
+		return bson.M{"$cond": bson.A{
+			bson.M{"$eq": bson.A{bson.M{"$type": "$" + field}, "object"}},
+			bson.M{"$arrayToObject": bson.M{"$filter": bson.M{
+				"input": bson.M{"$objectToArray": "$" + field},
+				"cond":  bson.M{"$in": bson.A{"$$this.k", members}},
+			}}},
+			bson.M{"$cond": bson.A{
+				bson.M{"$eq": bson.A{bson.M{"$type": "$" + field}, "missing"}},
+				"$$REMOVE",
+				"$" + field,
+			}},
+		}}
+	}
+	res, err := database.DB.Collection(string(constants.ChatColl)).UpdateMany(ctx,
+		bson.M{"$or": bson.A{
+			bson.M{"readReceipts": bson.M{"$type": "object"}},
+			bson.M{"readSeqs": bson.M{"$type": "object"}},
+		}},
+		mongo.Pipeline{{{Key: "$set", Value: bson.M{
+			"readReceipts": keepMembers("readReceipts"),
+			"readSeqs":     keepMembers("readSeqs"),
+		}}}},
+	)
+	if err != nil {
+		return 0, fmt.Errorf("remove stale read state: %w", err)
+	}
+	if _, err := markers.UpdateOne(ctx, bson.M{"_id": staleReadStateMarker},
+		bson.M{"$setOnInsert": bson.M{"doneAt": time.Now(), "chats": res.ModifiedCount}},
+		options.UpdateOne().SetUpsert(true)); err != nil {
+		return res.ModifiedCount, fmt.Errorf("record the marker: %w", err)
+	}
+	return res.ModifiedCount, nil
+}

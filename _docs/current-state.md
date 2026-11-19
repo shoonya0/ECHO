@@ -11,13 +11,13 @@ on `main`. To learn what the product does, read
 and with a link to exactly one feature state.md. Updated by /close-increment and
 /feature-docs update. -->
 
-- **Feature:** none · #42 step 3 on `fix/42-read-seqs` (PR open): `mark_read` keeps each
-  member's highest read `seq` on the chat (`readSeqs`, `$max`); history replies carry
-  `readSeqs`, the `delivery` event `readUpToSeq`. `readBy` is still written until the app
-  switches. The chat write on every send stays (#43 needs it,
-  [decided](./decisions/data-writes.md#messages-are-numbered-per-chat-43)). #42 step 2
-  merged (PR #165). #5 step 2 waits for the Android invite screen
-  ([group-invites](./features/group-invites/state.md))
+- **Feature:** none · #42 step 4 on `fix/42-leaver-read-state` (PR open): remove, decline
+  and account delete clear the leaver's `readReceipts`/`readSeqs`; `mark_read` writes only
+  for participants; a one-time startup job clears older entries. #42 step 3 merged (PR
+  #166). Backend issues come before Android work (user, 2026-11-20)
+- **#42 step 4 on Render (not checked yet):** the startup log shows `Removed read state of
+  users who aren't participants` once (or nothing), and `migrations` holds
+  `stale-read-state-42`
 - **#42 step 3 on Render (not checked yet):** mark a message read in the app; the chat in
   Atlas gets `readSeqs.<userId>`, and the next history reply lists it
 - **#42 step 1 on Render (not checked yet):** the startup log shows `Indexes ensured` with
@@ -74,13 +74,13 @@ and with a link to exactly one feature state.md. Updated by /close-increment and
   losing messages
 - **Not filed, from #22:** a `chat_added` arriving while a connection's chats load is
   missed; a connection's welcome is dropped when its 10-message queue is already full
-- **Next step:** merge #42 step 3. Left in #42: drop `readBy` once the Android app reads
-  `readSeqs` (Android change first), and clear a leaver's `readReceipts`/`readSeqs` entry
-  on leave, remove, decline and account delete. Then #5 step 2 once the invite screen exists.
+- **Next step:** merge #42 step 4. #42's last item, dropping `readBy`, waits for the
+  Android app to read `readSeqs`; Android-dependent steps (that, #5 step 2) wait until the
+  backend issues are done. Next backend candidates: the unfiled items below (#31, #22, #35).
   The "Left open" review items of #37 stay in [data-writes](./decisions/data-writes.md#mongodb-transactions). Direct-chat gating and live status changes are decided against for now
   ([decided](./decisions/accounts-and-privacy.md#how-privacy-settings-apply-32)). The Render
   checks above are the user's
-- **Updated:** 2026-11-20 on `fix/42-read-seqs` from `899cdb6`. Commits on `main` must keep the author `shoonya0`
+- **Updated:** 2026-11-20 on `fix/42-leaver-read-state` from `cd84d7c`. Commits on `main` must keep the author `shoonya0`
 
 ## Where things stand
 
@@ -94,7 +94,9 @@ Not built yet: editing or deleting messages, and changing chat settings. The ful
 
 ## Recently finished
 
-- **#42 step 3 (`fix/42-read-seqs`):** each member's highest read `seq` is kept on the
+- **#42 step 4 (`fix/42-leaver-read-state`):** leavers' `readReceipts`/`readSeqs` entries
+  are cleared on remove, decline and delete, plus a one-time cleanup (`stale-read-state-42`).
+- **#42 step 3 (PR #166):** each member's highest read `seq` is kept on the
   chat (`readSeqs`) and sent in history and `delivery`; `readBy` stays until the app switches.
 - **#42 step 2 (PR #165):** a user's `chatInvitations` keeps the newest
   100 (`$push` with `$slice`); one more drops the oldest rather than being refused, so
@@ -187,7 +189,7 @@ There are 2 open issues. Where each risk sits in the code: [architecture-overvie
 |---|---|---|
 | Groups | Pending members still pass membership checks (#5 step 2) | #5 |
 | Online status and privacy | A status or privacy change reaches live events only at the next connect (decided) | none |
-| Messages and data | `messages.readBy` until the app reads `readSeqs`; leavers stay in `readReceipts` | #42 |
+| Messages and data | `messages.readBy` until the app reads `readSeqs` (waits for Android) | #42 |
 | Limits and errors | The per-account WebSocket cap is per server, not across servers | #40 |
 
 ## Next task

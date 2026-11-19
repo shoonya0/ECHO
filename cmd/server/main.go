@@ -147,6 +147,13 @@ func main() {
 		} else if n > 0 {
 			log.WithField("entries", n).Info("Removed chat entries of users who aren't participants")
 		}
+		// #42: read receipts and read seqs of former members; once (marker
+		// stale-read-state-42).
+		if n, err := services.RemoveStaleReadState(indexCtx); err != nil {
+			log.WithError(err).Error("Failed to remove stale read state")
+		} else if n > 0 {
+			log.WithField("chats", n).Info("Removed read state of users who aren't participants")
+		}
 	}()
 	// Redis backs token revocation and WebSocket pub/sub, so it is required.
 	if err := database.ConnectRedis(ctx); err != nil {
