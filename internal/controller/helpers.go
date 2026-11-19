@@ -142,6 +142,8 @@ func MapServiceErrorToHTTP(err error) (int, string) {
 		return http.StatusBadRequest, "Cannot open a direct chat with yourself"
 	case errors.Is(err, services.ErrRequestAlreadySent):
 		return http.StatusConflict, "Contact request already sent"
+	case errors.Is(err, services.ErrContactNotAllowed):
+		return http.StatusForbidden, "This user doesn't accept contact requests from you"
 	case errors.Is(err, services.ErrNoValidParticipants):
 		return http.StatusBadRequest, "No valid participants to remove"
 	case errors.Is(err, services.ErrNotParticipant):

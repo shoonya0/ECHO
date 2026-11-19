@@ -179,6 +179,8 @@ func userContactProjection() bson.M {
 		"contactInfo.pendingIn":  1,
 		"contactInfo.favorites":  1,
 		"contactInfo.contacts":   1,
+		// Who may send them a request (#32).
+		"settings.privacy.allowContactBy": 1,
 	}
 }
 
@@ -213,6 +215,64 @@ func checkContactRequest(user *models.User, target bson.ObjectID) error {
 	return nil
 }
 
+// checkAllowContact applies target's settings.privacy.allowContactBy to a
+// request from from (#32). "contacts" lets in people who share a group with
+// the target: as no one is a contact before a request, the people the target
+// already knows. A value the server doesn't know lets nobody in.
+func checkAllowContact(ctx context.Context, from bson.ObjectID, target *models.User) error {
+	switch constants.PrivacyScope(target.Settings.Privacy.AllowContactBy) {
+	case "", constants.PrivacyEveryone:
+		return nil
+	case constants.PrivacyContacts:
+		shared, err := sharesGroup(ctx, from, target.ID)
+		if err != nil {
+			return err
+		}
+		if shared {
+			return nil
+		}
+	}
+	return fmt.Errorf("%w", ErrContactNotAllowed)
+}
+
+// sharesGroup reports whether a and b are both members of one group, pending
+// invitees not counted. Direct chats don't count: anyone can open one with
+// anyone, so they would let everyone in.
+func sharesGroup(ctx context.Context, a, b bson.ObjectID) (bool, error) {
+	cur, err := database.DB.Collection(string(constants.UserColl)).Find(ctx,
+		bson.M{"_id": bson.M{"$in": bson.A{a, b}}},
+		options.Find().SetProjection(bson.M{"chats": 1}))
+	if err != nil {
+		return false, fmt.Errorf("read chats: %w", err)
+	}
+	var both []models.User
+	if err := cur.All(ctx, &both); err != nil {
+		return false, fmt.Errorf("read chats: %w", err)
+	}
+	if len(both) != 2 {
+		return false, nil
+	}
+	var common []bson.ObjectID
+	for chatID := range both[0].Chats {
+		if _, ok := both[1].Chats[chatID]; ok {
+			common = append(common, chatID)
+		}
+	}
+	if len(common) == 0 {
+		return false, nil
+	}
+	notMember := bson.A{string(constants.StatusPending), string(constants.StatusDeclined), string(constants.StatusBlocked)}
+	filter := bson.M{"_id": bson.M{"$in": common}, "chatType": string(constants.ChatTypeGroup)}
+	for _, id := range []bson.ObjectID{a, b} {
+		filter["participants."+id.Hex()+".requestStatus"] = bson.M{"$exists": true, "$nin": notMember}
+	}
+	n, err := database.DB.Collection(string(constants.ChatColl)).CountDocuments(ctx, filter, options.Count().SetLimit(1))
+	if err != nil {
+		return false, fmt.Errorf("find a shared group: %w", err)
+	}
+	return n > 0, nil
+}
+
 // SendContactRequest sends a contact request from userID to targetUserID.
 func SendContactRequest(ctx context.Context, userID, targetUserID bson.ObjectID) error {
 	if userID == targetUserID {
@@ -233,6 +293,9 @@ func SendContactRequest(ctx context.Context, userID, targetUserID bson.ObjectID)
 		return err
 	}
 	if err := checkContactRequest(user, targetUserID); err != nil {
+		return err
+	}
+	if err := checkAllowContact(ctx, userID, targetUser); err != nil {
 		return err
 	}
 
