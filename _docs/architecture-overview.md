@@ -116,6 +116,6 @@ Take extra care when changing these places.
 
 | Area | Why it is risky | Where | Issue |
 |---|---|---|---|
-| One Redis connection per channel | Connections grow with users and chats | `internal/realtime/pubsub.go:165` | #21 |
+| One pub/sub reader for every channel | A handler on it that waits on MongoDB or Redis holds up all live delivery on the server | `internal/realtime/pubsub.go:414` | #21 |
 | Block model | Blocks aren't enforced in chats; the startup block migration runs only once | `internal/services/chat.service.go`, `internal/services/migrations.go` | #27, #63 |
 | Writes across several documents | No transactions, so an update can half-finish | `services/chat.service.go`, `contact.service.go` | #37 |
