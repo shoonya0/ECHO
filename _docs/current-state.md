@@ -11,11 +11,12 @@ on `main`. To learn what the product does, read
 and with a link to exactly one feature state.md. Updated by /close-increment and
 /feature-docs update. -->
 
-- **Feature:** #31 part 2 (REST presence) on `fix/31-rest-presence`: done, reviewed (6 review
-  fixes), `TEST_DB_REQUIRED=1 verify --full` passed; PR open (`Fixes #31`), waits for merge.
-  Rules: [decided](./decisions.md#where-presence-comes-from-31). #5 step 2 waits for the
-  Android invite screen ([group-invites](./features/group-invites/state.md))
-- **#31 part 1 on Render (not checked yet):** in a shared chat, A sees B's online and offline
+- **Feature:** #32 (privacy settings) on `fix/32-privacy-settings`, started: showOnlineStatus
+  and showLastSeen in REST and events, showLastSeen default true, allowContactBy. #31 is
+  merged (PR #147). #5 step 2 waits for the Android invite screen
+  ([group-invites](./features/group-invites/state.md))
+- **#31 on Render (not checked yet):** in a shared chat, A sees B's online and offline, and
+  B's contacts list shows `isOnline` only while B is connected
 - **Not filed, from #31:** a user held only by a server that crashes gets no offline (its
   entry expires in 2 min); two servers connecting and disconnecting one user within
   milliseconds can order online and offline wrongly; during a deploy, old and new servers
@@ -47,9 +48,9 @@ and with a link to exactly one feature state.md. Updated by /close-increment and
   losing messages
 - **Not filed, from #22:** a `chat_added` arriving while a connection's chats load is
   missed; a connection's welcome is dropped when its 10-message queue is already full
-- **Next step:** review and PR for #31 part 2; then a status change while connected (live
-  event) and #32 privacy settings. The Render checks above are the user's
-- **Updated:** 2026-11-19 on `fix/31-rest-presence` at `4d38acc`. PRs merge by rebase only
+- **Next step:** build #32; later a live status change while connected. The Render checks
+  above are the user's
+- **Updated:** 2026-11-19 on `fix/32-privacy-settings` from `main` at `b0e483c`
 
 ## Where things stand
 
@@ -63,8 +64,10 @@ Not built yet: editing or deleting messages, and changing chat settings. The ful
 
 ## Recently finished
 
-- **CI race (PR #146):** a #22 test returned before its slow registration finished, which
-  then raced the next test on `chatLoadTimeout`; it failed `main` after #145, now fixed.
+- **#31 part 2 (PR #147):** REST presence is live from `online:<id>`, `status` is the
+  user's choice, invisible users stay offline, `lastSeen` is saved on offline, and the hub
+  reads the status from MongoDB ([decided](./decisions.md#where-presence-comes-from-31)).
+  Code review: 10 findings, 6 fixed.
 - **#31 part 1 (PR #145):** `presence` events carry the user's chats over
   `presence:global`; every server delivers them once per connection, so offline arrives
   and members on other servers get both. `online:<userID>` (one expiring entry per
@@ -72,13 +75,6 @@ Not built yet: editing or deleting messages, and changing chat settings. The ful
   stopped server's entry expires ([pub/sub](./PUBSUB_ARCHITECTURE.md#redis-channels),
   [app changes](../Android/_docs/08_SERVER_CHANGES/auth-and-connection.md)). Code review:
   8 findings, 6 fixed, 2 documented.
-- **#22 (PR #144):** the hub goroutine only changes maps. Each connection registers in its
-  own goroutine (32 at most, chats read within 5 s); one that can't be set up closes with
-  `1011` so the app reconnects. Disconnects release Redis channels in the background, a
-  user is announced online once and offline only when no connection is left or queued
-  ([pub/sub](./PUBSUB_ARCHITECTURE.md#connecting-and-disconnecting),
-  [app changes](../Android/_docs/08_SERVER_CHANGES/auth-and-connection.md)). Code review:
-  9 findings, 8 fixed; a live burst check found a presence flood, fixed.
 - **#69 (PR #143):** a startup repair, `RemoveStaleChatEntries`, removes `users.chats`
   entries whose chat doesn't list the user or is gone (forged joins before #9, failed
   cleanups). It runs on every start, in batches of 200 users.
@@ -187,7 +183,7 @@ There are 11 open issues. Where each risk sits in the code: [architecture-overvi
 | Groups | Pending members still pass membership checks (#5 step 2), and the participant count is maintained by hand | #5, #110 |
 | Accounts | Usernames aren't unique, and display copies go stale | #36 |
 | Contacts and blocking | Contact lists aren't cut to `limit`, and blocks written during a deploy can be missed | #39, #63 |
-| Online status and privacy | REST presence is live on the #31 part 2 branch; a status change isn't announced live, and privacy settings aren't applied | #31, #32 |
+| Online status and privacy | A status change isn't announced live, and privacy settings aren't applied | #32 |
 | Messages and data | Writes can half-finish, and some lists grow without limit | #37, #42 |
 | Limits and errors | WebSocket limits are per connection, not per user; mention lookups are one read each; `CheckOrigin` allows any origin | #40 |
 
