@@ -33,4 +33,6 @@ var (
 	ErrAccountInactive        = errors.New("account is not active")
 	ErrTokenRevoked           = errors.New("token has been revoked")
 	ErrTokenExpired           = errors.New("token has expired")
+	ErrInvalidUsername        = errors.New("invalid username format")
+	ErrUsernameTaken          = errors.New("username already taken")
 )

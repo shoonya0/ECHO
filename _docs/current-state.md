@@ -11,9 +11,14 @@ on `main`. To learn what the product does, read
 and with a link to exactly one feature state.md. Updated by /close-increment and
 /feature-docs update. -->
 
-- **Feature:** none · #40 per-account WebSocket limit on `fix/40-account-ws-limit`,
-  verified, PR #159. `main` at `62be337`: #37 steps 2 and 3, #110 and the #40 mentions and
-  `CheckOrigin` (PRs #151 to #158) are merged, so Render deploys them. #5 step 2 waits for the Android invite screen
+- **Feature:** none · #36 unique usernames on `fix/36-unique-usernames`: 3 to 30 letters,
+  digits, `_` or `.`, unique ignoring case (`username_ci`), `409` on signup and `PUT
+  profile/`, startup `RenameDuplicateUsernames` ([decided](./decisions/accounts-and-privacy.md#unique-usernames-36)).
+  Verified; code review: 3 of 9 fixed (spaced legacy names, index use, migration skip);
+  left: the JWT and copies keep old names (rest of #36), renamed names can break the format
+  `main` at `5337f1e`: #37 steps 2 and 3, #110 and
+  the last #40 items (mentions, `CheckOrigin`, per-account limit; PRs #151 to #159) are
+  merged, so Render deploys them. #5 step 2 waits for the Android invite screen
   ([group-invites](./features/group-invites/state.md))
 - **#37 part 1 on Render (not checked yet):** the startup log shows `Backfilled direct chat
   keys` once (not on the next start), any `Second direct chats of a pair` (chat IDs to merge
@@ -48,8 +53,10 @@ and with a link to exactly one feature state.md. Updated by /close-increment and
 - **#72 on Render (paused 2026-11-15):** `/health` answers `200`, but no chat with a message
   saved before PR #74 (`reactions: null`) is left to react to. Continue later, for example
   by setting `reactions: null` on a test message in Atlas first
-- **#40:** the per-account WebSocket limit (PR #159) is its last open item; once it merges,
-  #40 can close. The cap is per server, not shared through Redis.
+- **#40 WebSocket on Render (not checked yet):** a handshake with `Origin:
+  https://evil.example.com` gets `403`; a 6th connection of one account gets `429`; the
+  Android app still connects (it sends no `Origin`). Every #40 item is merged: proposed to
+  close #40. The connection cap is per server, not shared through Redis.
   Proposed, not filed: hide which emails have accounts (signup `409`, login timing). Split
   `websocket-requests.md` and `websocket-events.md` (~199 lines) before adding to them
 - **#69 on Render (not checked yet):** the startup log shows `Removed chat entries of users
@@ -61,12 +68,15 @@ and with a link to exactly one feature state.md. Updated by /close-increment and
   missed; a connection's welcome is dropped when its 10-message queue is already full
 - **Not filed:** #63 can't happen any more (no deployed version writes `blockedChats`);
   proposed to close it
-- **Next step:** merge PR #159 (5 connections per account per server,
-  [connect](./WEBSOCKET_PROTOCOL.md#connect)); then #40 can close. Then decide whether #37 can close: all its steps are merged; the review items under "Left
-  open" in [data-writes](./decisions/data-writes.md#mongodb-transactions) stay. Direct-chat gating and live status changes are decided against for now
+- **Next step:** the user decides on closing #40, #37 (all steps merged; the "Left open"
+  review items in [data-writes](./decisions/data-writes.md#mongodb-transactions) stay) and
+  #63. Open a PR for `fix/36-unique-usernames`; after it merges, Render's startup log shows
+  any `Renamed a username another account already had` and `Indexes ensured` with
+  `username_ci`. Then the rest of #36 (stale display copies), #42 (unbounded lists) or #43
+  (missed live messages). Direct-chat gating and live status changes are decided against for now
   ([decided](./decisions/accounts-and-privacy.md#how-privacy-settings-apply-32)). The Render
   checks above are the user's
-- **Updated:** 2026-11-19 on `fix/40-account-ws-limit` from `62be337`. Commits on `main` must keep the author `shoonya0`
+- **Updated:** 2026-11-19 on `fix/36-unique-usernames` from `5337f1e`. Commits on `main` must keep the author `shoonya0`
 
 ## Where things stand
 
@@ -80,6 +90,8 @@ Not built yet: editing or deleting messages, and changing chat settings. The ful
 
 ## Recently finished
 
+- **#40 per-account limit (PR #159):** one account holds up to 5 WebSocket connections per
+  server; more get `429`, or `1008` when two connect at once ([connect](./WEBSOCKET_PROTOCOL.md#connect)).
 - **#40 `CheckOrigin` (PR #158):** a WebSocket upgrade with an `Origin` other than the server's
   host or `WS_ALLOWED_ORIGINS` gets `403` ([connect](./WEBSOCKET_PROTOCOL.md#connect)).
 - **#40 mentions (PR #157):** a message keeps only mentions of chat participants, each once,
@@ -123,20 +135,6 @@ Not built yet: editing or deleting messages, and changing chat settings. The ful
 - **#69 (PR #143):** a startup repair, `RemoveStaleChatEntries`, removes `users.chats`
   entries whose chat doesn't list the user or is gone (forged joins before #9, failed
   cleanups). It runs on every start, in batches of 200 users.
-- **#35, account deletion (PR #142):** deleting an account closes its sockets, locks its
-  token, pulls the ID from every contact and block list, takes it out of groups and
-  channels (an owner hands on: another owner, else the earliest admin, else the earliest
-  accepted member; with nobody, the group's codes are deleted), shows its messages and
-  direct-chat entry as "Deleted user", then deletes the document
-  ([decided](./decisions/accounts-and-privacy.md#what-deleting-an-account-does),
-  [app changes](../Android/_docs/08_SERVER_CHANGES/auth-and-connection.md)). Review: 6 of
-  10 fixed; reactions and `readBy` keep the bare ID.
-- **#5 step 1 + #17 (PR #141):** invitees accept or decline (`groups/:groupID/accept`,
-  `decline`, `GET groups/pending`) and get live messages once they accept; a startup
-  backfill accepted members left pending before, by a cutoff stored in `migrations`
-  ([REST](./rest-api/groups.md#groups), [decided](./decisions/chats-and-groups.md#where-a-pending-group-invite-is-stored-5),
-  [app changes](../Android/_docs/08_SERVER_CHANGES/groups-and-invites.md)). Left: enforcing
-  pending (step 2), a group event on accept and decline.
 
 ## How to build, run, test
 
@@ -182,7 +180,7 @@ There are 8 open issues. Where each risk sits in the code: [architecture-overvie
 |---|---|---|
 | Live connections | Missed live messages can't be detected | #43 |
 | Groups | Pending members still pass membership checks (#5 step 2) | #5 |
-| Accounts | Usernames aren't unique, and display copies go stale | #36 |
+| Accounts | Display copies of names and avatars go stale (unique usernames: PR pending) | #36 |
 | Contacts and blocking | Contact lists aren't cut to `limit`, and blocks written during a deploy can be missed | #39, #63 |
 | Online status and privacy | A status or privacy change reaches live events only at the next connect (decided) | none |
 | Messages and data | Some lists grow without limit | #42 |

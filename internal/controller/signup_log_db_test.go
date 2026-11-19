@@ -26,7 +26,7 @@ func TestSignupLogsOnlyTheUserID(t *testing.T) {
 	})
 
 	const email = "logged@example.com"
-	w := postJSON(Signup, `{"email":"`+email+`","username":"u","password":"password123"}`)
+	w := postJSON(Signup, `{"email":"`+email+`","username":"user1","password":"password123"}`)
 	if w.Code != http.StatusOK {
 		t.Fatalf("status = %d, want 200 (body %s)", w.Code, w.Body)
 	}

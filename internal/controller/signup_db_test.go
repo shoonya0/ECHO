@@ -22,11 +22,11 @@ func TestSignupGeneratesTheUserID(t *testing.T) {
 	ctx := testutil.UseTestDB(t)
 
 	tests := []struct {
-		name, email string
-		sendID      bool
+		name, email, username string
+		sendID                bool
 	}{
-		{"client sends _id", "chosen@example.com", true},
-		{"no _id", "plain@example.com", false},
+		{"client sends _id", "chosen@example.com", "chosen", true},
+		{"no _id", "plain@example.com", "plain", false},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -36,7 +36,7 @@ func TestSignupGeneratesTheUserID(t *testing.T) {
 			if tt.sendID {
 				extra = `"_id":"` + deleted.Hex() + `",`
 			}
-			body := `{` + extra + `"email":"` + tt.email + `","username":"u","password":"password123"}`
+			body := `{` + extra + `"email":"` + tt.email + `","username":"` + tt.username + `","password":"password123"}`
 			w := postJSON(Signup, body)
 
 			if w.Code != http.StatusOK {

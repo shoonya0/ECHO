@@ -147,3 +147,16 @@ Details: [rest-api/](../../../_docs/rest-api/basics.md#the-basics),
 | One account holds at most 5 connections on a server. Another handshake gets HTTP `429` `Too many connections`; if two connect at once, one may open and then close with `1008` | Keep one socket per device and close the old one before reconnecting. On `429` or `1008`, don't retry in a loop: retry after a backoff, as an old connection may still be closing. |
 
 Details: [WEBSOCKET_PROTOCOL.md](../../../_docs/WEBSOCKET_PROTOCOL.md#stay-connected).
+
+## Usernames are unique and have a format (#36)
+
+- `signup` and `PUT profile/` take a username of 3 to 30 letters, digits, `_` or `.`
+  (spaces around it are trimmed); anything else gets `400`. Check it in the form first.
+- A name another account has, in any case, gets `409` "Username already taken". Signup's
+  `409` for a taken email still says "email already registered": tell them apart by message.
+- The username keeps its capitals. Sending your current name back in `PUT profile/` always
+  works, even an old one without the format.
+- Accounts that shared a name before #36 were renamed to `<name>_2` and so on; the app sees
+  the new name in the profile. Names copied into chats and messages may still show the old one.
+
+Details: [users.md](../../../_docs/rest-api/users.md#accounts).
