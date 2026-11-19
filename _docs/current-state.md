@@ -14,7 +14,9 @@ and with a link to exactly one feature state.md. Updated by /close-increment and
 - **Feature:** none · #36 current names on `fix/36-fresh-display-info`: message history and
   chat replies read names and avatars from `users` when built, new chats copy them from the
   DB instead of the JWT, and so does WebSocket connect
-  ([decided](./decisions/accounts-and-privacy.md#names-are-read-when-shown-36)). Verified.
+  ([decided](./decisions/accounts-and-privacy.md#names-are-read-when-shown-36)). Verified;
+  code review: 5 of 10 fixed (no 500 after a saved create, gone account is an error, reads
+  in the transaction and only on insert, 2 s connect read); a deleted reactor's name is `""`.
   Left on #36: the hub's name cache (typing, invite, remove) isn't cleared on a profile
   change, and join and leave show the name from connect.
 - **#36 usernames on Render (not checked yet):** PR #160 is merged; the startup log shows
