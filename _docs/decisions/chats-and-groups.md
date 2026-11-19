@@ -56,3 +56,12 @@ except the creator and people who join by invite code, and nobody can accept yet
 enforcing it now would lock those members out. The order is: build accept and decline,
 backfill existing members, then enforce it in `chatMemberFilter`. Direct-chat participants
 have no status, so the check must allow for that.
+
+## How a group's participant count is kept (#110)
+
+Decided on 2026-11-19: `stats.participantCount` isn't stored any more. Reads compute it
+from the size of `participants` (`participantCountExpr`; `GET groups/pending`, and the
+create reply sets it in Go), so a write that forgets a counter, or an old server copy
+during a deploy, can't leave it wrong. The `$inc` writes of #16 and the startup
+`BackfillParticipantCounts` are gone. Groups saved before keep a stored value that
+nothing reads. The size limit (#68) already counts `participants` itself.
