@@ -302,20 +302,23 @@ func SendContactRequest(ctx context.Context, userID, targetUserID bson.ObjectID)
 	coll := database.DB.Collection(string(constants.UserColl))
 
 	if _, err := UpdateOne(ctx, coll, bson.M{"_id": userID}, bson.M{
-		"$push": bson.M{"contactInfo.pendingOut": targetUserID},
-		"$set":  bson.M{"contactInfo.updatedAt": now},
+		"$addToSet": bson.M{"contactInfo.pendingOut": targetUserID},
+		"$set":      bson.M{"contactInfo.updatedAt": now},
 	}); err != nil {
 		return fmt.Errorf("failed to update requesting user: %w", err)
 	}
 
 	if _, err := UpdateOne(ctx, coll, bson.M{"_id": targetUserID}, bson.M{
-		"$push": bson.M{"contactInfo.pendingIn": userID},
-		"$set":  bson.M{"contactInfo.updatedAt": now},
+		"$addToSet": bson.M{"contactInfo.pendingIn": userID},
+		"$set":      bson.M{"contactInfo.updatedAt": now},
 	}); err != nil {
-		// Best-effort rollback: pull the pendingOut we just pushed
-		UpdateOne(ctx, coll, bson.M{"_id": userID}, bson.M{
+		// Best-effort rollback: pull the pendingOut we just added. A failed
+		// rollback is reported, not dropped (#37); transactions would close this.
+		if _, undoErr := UpdateOne(ctx, coll, bson.M{"_id": userID}, bson.M{
 			"$pull": bson.M{"contactInfo.pendingOut": targetUserID},
-		})
+		}); undoErr != nil {
+			return fmt.Errorf("failed to update target user: %w (and removing the sent request failed: %v)", err, undoErr)
+		}
 		return fmt.Errorf("failed to update target user: %w", err)
 	}
 
@@ -351,14 +354,14 @@ func AcceptOrDeclineContactRequest(ctx context.Context, userID, targetRequestID 
 	switch constants.ContactStatus(action) {
 	case constants.StatusAccepted:
 		userUpdate = bson.M{
-			"$pull": bson.M{"contactInfo.pendingIn": targetRequestID},
-			"$push": bson.M{"contactInfo.contacts": targetRequestID},
-			"$set":  bson.M{"contactInfo.updatedAt": now},
+			"$pull":     bson.M{"contactInfo.pendingIn": targetRequestID},
+			"$addToSet": bson.M{"contactInfo.contacts": targetRequestID},
+			"$set":      bson.M{"contactInfo.updatedAt": now},
 		}
 		targetUpdate = bson.M{
-			"$pull": bson.M{"contactInfo.pendingOut": userID},
-			"$push": bson.M{"contactInfo.contacts": userID},
-			"$set":  bson.M{"contactInfo.updatedAt": now},
+			"$pull":     bson.M{"contactInfo.pendingOut": userID},
+			"$addToSet": bson.M{"contactInfo.contacts": userID},
+			"$set":      bson.M{"contactInfo.updatedAt": now},
 		}
 	case constants.StatusDeclined:
 		userUpdate = bson.M{
@@ -547,8 +550,8 @@ func AddToFavorites(ctx context.Context, userID, targetUserID bson.ObjectID) err
 
 	now := time.Now()
 	_, err = UpdateOne(ctx, database.DB.Collection(string(constants.UserColl)), bson.M{"_id": userID}, bson.M{
-		"$push": bson.M{"contactInfo.favorites": targetUserID},
-		"$set":  bson.M{"contactInfo.updatedAt": now},
+		"$addToSet": bson.M{"contactInfo.favorites": targetUserID},
+		"$set":      bson.M{"contactInfo.updatedAt": now},
 	})
 	if err != nil {
 		return fmt.Errorf("failed to update user contact: %w", err)
