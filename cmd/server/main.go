@@ -74,6 +74,21 @@ func main() {
 			}
 			log.WithField("users", ids).Warn("Emails that differ only in case from another account's; left as stored, merge by hand")
 		}
+		// #37: direct chats from before the unique key; every start, since an older
+		// server copy can still create some during a deploy.
+		keyed, duplicates, err := services.BackfillDirectKeys(indexCtx)
+		if err != nil {
+			log.WithError(err).Error("Failed to backfill direct chat keys")
+		} else if keyed > 0 {
+			log.WithField("chats", keyed).Info("Backfilled direct chat keys")
+		}
+		if len(duplicates) > 0 {
+			ids := make([]string, len(duplicates))
+			for i, id := range duplicates {
+				ids[i] = id.Hex()
+			}
+			log.WithField("chats", ids).Warn("Second direct chats of a pair; left without a key, merge by hand")
+		}
 		// #18: groups created before the fix have no owner role; idempotent.
 		n, err = services.BackfillGroupOwnerRoles(indexCtx)
 		if err != nil {

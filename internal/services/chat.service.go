@@ -338,48 +338,21 @@ func CreateDirectChat(ctx context.Context, targetUserID bson.ObjectID) (*models.
 
 	existingChat := models.Chat{}
 
-	err = database.DB.Collection(string(constants.ChatColl)).FindOne(ctx, filter, options.FindOne().SetProjection(chatProjection)).Decode(&existingChat)
-	if err != nil {
-		if err == mongo.ErrNoDocuments {
-			targetUser, err := GetUserByID(ctx, targetUserID)
-			if err != nil {
-				return nil, fmt.Errorf("failed to get target user: %w", err)
-			}
-
-			chat := utils.NewChatWithDefaults(user.ID, "direct")
-			chat.Participants[user.ID] = models.ParticipantEmbed{
-				Role: string(constants.ChatRoleMember),
-				UserInfo: models.ContactUserInfo{
-					UserID:      user.ID,
-					DisplayName: user.Profile.DisplayName,
-					Username:    user.Username,
-					Avatar:      user.Profile.Avatar,
-				},
-			}
-			chat.Participants[targetUserID] = models.ParticipantEmbed{
-				Role: string(constants.ChatRoleMember),
-				UserInfo: models.ContactUserInfo{
-					UserID:      targetUserID,
-					DisplayName: targetUser.Profile.DisplayName,
-					Username:    targetUser.Username,
-					Avatar:      targetUser.Profile.Avatar,
-				},
-			}
-
-			_, err = database.DB.Collection(string(constants.ChatColl)).InsertOne(ctx, chat)
-			if err != nil {
-				return nil, fmt.Errorf("failed to insert chat: %w", err)
-			}
-
-			// The hub follows chats from these entries, so the chat is kept only
-			// when both users got theirs (#132).
-			if err := addDirectChatEntries(ctx, chat.ChatID, user.ID, targetUserID); err != nil {
-				return nil, err
-			}
-
-			AddMembersToLiveChat(ctx, chat.ChatID, user.ID, targetUserID) // #49
-			return &chat, nil
+	chats := database.DB.Collection(string(constants.ChatColl))
+	err = chats.FindOne(ctx, filter, options.FindOne().SetProjection(chatProjection)).Decode(&existingChat)
+	if errors.Is(err, mongo.ErrNoDocuments) {
+		var chat *models.Chat
+		chat, err = insertDirectChat(ctx, user, targetUserID)
+		if !mongo.IsDuplicateKeyError(err) {
+			return chat, err
 		}
+		// A concurrent call for the same pair inserted first (#37): use its
+		// chat. Its entries may still be on their way; the repair below writes
+		// them if they aren't.
+		err = chats.FindOne(ctx, bson.M{"directKey": directChatKey(user.ID, targetUserID)},
+			options.FindOne().SetProjection(chatProjection)).Decode(&existingChat)
+	}
+	if err != nil {
 		return nil, fmt.Errorf("failed to fetch existing chat: %w", err)
 	}
 
@@ -399,6 +372,64 @@ func CreateDirectChat(ctx context.Context, targetUserID bson.ObjectID) (*models.
 	}
 
 	return &existingChat, nil
+}
+
+// directChatKey is the directKey of the direct chat between a and b: both IDs,
+// smaller first, so either side gets the same key.
+func directChatKey(a, b bson.ObjectID) string {
+	x, y := a.Hex(), b.Hex()
+	if y < x {
+		x, y = y, x
+	}
+	return x + "_" + y
+}
+
+// insertDirectChat creates the direct chat between the user and the target, with
+// both users' entries, and puts their connections in it. If the pair already
+// has a keyed chat, it returns the insert's duplicate key error unwrapped.
+func insertDirectChat(ctx context.Context, user models.LoginUserResponse, targetUserID bson.ObjectID) (*models.Chat, error) {
+	targetUser, err := GetUserByID(ctx, targetUserID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get target user: %w", err)
+	}
+
+	chat := utils.NewChatWithDefaults(user.ID, "direct")
+	chat.DirectKey = directChatKey(user.ID, targetUserID)
+	chat.Participants[user.ID] = models.ParticipantEmbed{
+		Role: string(constants.ChatRoleMember),
+		UserInfo: models.ContactUserInfo{
+			UserID:      user.ID,
+			DisplayName: user.Profile.DisplayName,
+			Username:    user.Username,
+			Avatar:      user.Profile.Avatar,
+		},
+	}
+	chat.Participants[targetUserID] = models.ParticipantEmbed{
+		Role: string(constants.ChatRoleMember),
+		UserInfo: models.ContactUserInfo{
+			UserID:      targetUserID,
+			DisplayName: targetUser.Profile.DisplayName,
+			Username:    targetUser.Username,
+			Avatar:      targetUser.Profile.Avatar,
+		},
+	}
+
+	_, err = database.DB.Collection(string(constants.ChatColl)).InsertOne(ctx, chat)
+	if mongo.IsDuplicateKeyError(err) {
+		return nil, err
+	}
+	if err != nil {
+		return nil, fmt.Errorf("failed to insert chat: %w", err)
+	}
+
+	// The hub follows chats from these entries, so the chat is kept only when
+	// both users got theirs (#132).
+	if err := addDirectChatEntries(ctx, chat.ChatID, user.ID, targetUserID); err != nil {
+		return nil, err
+	}
+
+	AddMembersToLiveChat(ctx, chat.ChatID, user.ID, targetUserID) // #49
+	return &chat, nil
 }
 
 // addDirectChatEntries sets chats.<chatID> on both users. If either user

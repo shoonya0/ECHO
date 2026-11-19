@@ -15,6 +15,70 @@ import (
 	"go.mongodb.org/mongo-driver/v2/mongo/options"
 )
 
+// BackfillDirectKeys gives direct chats without a directKey theirs (#37): chats from
+// before #37, and any an older server copy creates during a deploy, so it runs on every
+// start. Oldest first, so a pair's first chat gets the key. A later chat of a pair
+// that already has one is left without and returned in duplicates: merging two chats'
+// messages is a person's call. That is checked here too, not only by the unique index,
+// which may be missing. A chat without exactly two participants is skipped. Returns the
+// number of chats keyed and the IDs of the duplicates.
+func BackfillDirectKeys(ctx context.Context) (keyed int64, duplicates []bson.ObjectID, err error) {
+	chats := database.DB.Collection(string(constants.ChatColl))
+	cur, err := chats.Find(ctx,
+		bson.M{"chatType": "direct", "directKey": bson.M{"$exists": false}},
+		options.Find().SetProjection(bson.M{"participants": 1}).SetSort(bson.D{{Key: "_id", Value: 1}}),
+	)
+	if err != nil {
+		return 0, nil, fmt.Errorf("find direct chats: %w", err)
+	}
+	defer func() { _ = cur.Close(ctx) }() // read-only cursor; a close error changes nothing
+
+	for cur.Next(ctx) {
+		var c struct {
+			ID           bson.ObjectID       `bson:"_id"`
+			Participants map[string]bson.Raw `bson:"participants"`
+		}
+		if err := cur.Decode(&c); err != nil {
+			return keyed, duplicates, fmt.Errorf("decode chat: %w", err)
+		}
+		pair := make([]bson.ObjectID, 0, 2)
+		for key := range c.Participants {
+			if id, err := bson.ObjectIDFromHex(key); err == nil {
+				pair = append(pair, id)
+			}
+		}
+		if len(pair) != 2 {
+			continue
+		}
+		key := directChatKey(pair[0], pair[1])
+
+		taken, err := chats.CountDocuments(ctx, bson.M{"directKey": key})
+		if err != nil {
+			return keyed, duplicates, fmt.Errorf("check key of chat %s: %w", c.ID.Hex(), err)
+		}
+		if taken > 0 {
+			duplicates = append(duplicates, c.ID)
+			continue
+		}
+		res, err := chats.UpdateOne(ctx,
+			bson.M{"_id": c.ID, "directKey": bson.M{"$exists": false}},
+			bson.M{"$set": bson.M{"directKey": key}},
+		)
+		if mongo.IsDuplicateKeyError(err) { // a new chat of the pair took it since the check
+			duplicates = append(duplicates, c.ID)
+			continue
+		}
+		if err != nil {
+			return keyed, duplicates, fmt.Errorf("key chat %s: %w", c.ID.Hex(), err)
+		}
+		keyed += res.ModifiedCount
+	}
+	if err := cur.Err(); err != nil {
+		return keyed, duplicates, fmt.Errorf("iterate direct chats: %w", err)
+	}
+	return keyed, duplicates, nil
+}
+
 // BackfillGroupOwnerRoles gives each group's owner (chat.ownerId) the "owner" participant
 // role. Groups created before #18 stored every participant, the creator included, as
 // "member", which left nobody allowed to add or remove members. Idempotent: it only
