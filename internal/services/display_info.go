@@ -17,6 +17,7 @@ type DisplayInfo struct {
 	Username    string
 	DisplayName string
 	Avatar      string
+	Exists      bool // false: the account is gone, shown as DeletedUserName
 }
 
 // LookupDisplayInfo reads the current name and avatar of each account, in one query.
@@ -46,7 +47,7 @@ func LookupDisplayInfo(ctx context.Context, ids []bson.ObjectID) (map[bson.Objec
 		return nil, fmt.Errorf("failed to decode display info: %w", err)
 	}
 	for _, u := range users {
-		out[u.ID] = DisplayInfo{Username: u.Username, DisplayName: u.Profile.DisplayName, Avatar: u.Profile.Avatar}
+		out[u.ID] = DisplayInfo{Username: u.Username, DisplayName: u.Profile.DisplayName, Avatar: u.Profile.Avatar, Exists: true}
 	}
 	for _, id := range ids {
 		if _, ok := out[id]; !ok {
@@ -129,13 +130,17 @@ func FillParticipantInfo(ctx context.Context, chat *models.Chat) error {
 // WithCurrentDisplayInfo returns the request's user with the name and avatar read
 // from the database. The request's user is built from the JWT, which keeps the
 // name from login for 7 days and has no avatar, so copies written from it were
-// stale or empty (#36).
+// stale or empty (#36). ErrUserNotFound when the account is gone: a deleted
+// identity mustn't be copied anywhere (code review of #36).
 func WithCurrentDisplayInfo(ctx context.Context, user models.LoginUserResponse) (models.LoginUserResponse, error) {
 	info, err := LookupDisplayInfo(ctx, []bson.ObjectID{user.ID})
 	if err != nil {
 		return user, err
 	}
 	d := info[user.ID]
+	if !d.Exists {
+		return user, fmt.Errorf("%w: %s", ErrUserNotFound, user.ID.Hex())
+	}
 	user.Username, user.Profile.DisplayName, user.Profile.Avatar = d.Username, d.DisplayName, d.Avatar
 	return user, nil
 }

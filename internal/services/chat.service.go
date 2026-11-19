@@ -313,10 +313,6 @@ func CreateDirectChat(ctx context.Context, targetUserID bson.ObjectID) (*models.
 	if user == (models.LoginUserResponse{}) {
 		return nil, fmt.Errorf("invalid user data")
 	}
-	user, err := WithCurrentDisplayInfo(ctx, user) // copied into the chat, so not the JWT's (#36)
-	if err != nil {
-		return nil, err
-	}
 	// A chat with yourself would have one participant: both entries share
 	// one map key (#38).
 	if user.ID == targetUserID {
@@ -421,6 +417,12 @@ var errDirectChatTaken = errors.New("the pair already has a direct chat")
 // both users' entries, and puts their connections in it. If the pair already
 // has a keyed chat, it returns errDirectChatTaken.
 func insertDirectChat(ctx context.Context, user models.LoginUserResponse, targetUserID bson.ObjectID) (*models.Chat, error) {
+	// Copied into the chat, so not the JWT's name (#36). Only here: an existing
+	// chat stores nothing new.
+	user, err := WithCurrentDisplayInfo(ctx, user)
+	if err != nil {
+		return nil, err
+	}
 	targetUser, err := GetUserByID(ctx, targetUserID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get target user: %w", err)
@@ -524,16 +526,12 @@ func CreateGroupChat(ctx context.Context, chatName, description string, particip
 	if creator == (models.LoginUserResponse{}) {
 		return nil, fmt.Errorf("invalid user data")
 	}
-	creator, err := WithCurrentDisplayInfo(ctx, creator) // copied into the group, so not the JWT's (#36)
-	if err != nil {
-		return nil, err
-	}
 
 	// The group, its members' chats entries and the invitations are written in
 	// one transaction (#37): a failed invitation used to return 500 with the
 	// group saved, and the client's retry made a second one.
 	var chat models.Chat
-	err = database.WithTransaction(ctx, func(ctx context.Context) error {
+	err := database.WithTransaction(ctx, func(ctx context.Context) error {
 		var err error
 		chat, err = createGroupChat(ctx, creator, chatName, description, participantIDs)
 		return err
@@ -549,6 +547,12 @@ func CreateGroupChat(ctx context.Context, chatName, description string, particip
 // chat is new, so it can't conflict; the users are then written through
 // UpdateMany over _id, in ID order, as every group write does.
 func createGroupChat(ctx context.Context, creator models.LoginUserResponse, chatName, description string, participantIDs []bson.ObjectID) (models.Chat, error) {
+	// Copied into the group, so not the JWT's name (#36); read inside the
+	// transaction with the other reads.
+	creator, err := WithCurrentDisplayInfo(ctx, creator)
+	if err != nil {
+		return models.Chat{}, err
+	}
 	users, err := GetUsersByIDs(ctx, participantIDs)
 	if err != nil {
 		return models.Chat{}, fmt.Errorf("failed to get users: %w", err)

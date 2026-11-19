@@ -2,6 +2,7 @@ package services
 
 import (
 	"context"
+	"errors"
 	"testing"
 
 	"github.com/shoonya0/ECHO/internal/constants"
@@ -136,5 +137,24 @@ func TestNewChatsStoreTheCreatorsCurrentName(t *testing.T) {
 	}
 	if got := stored(t, direct.ChatID); got != want {
 		t.Errorf("direct chat creator entry %+v, want %+v", got, want)
+	}
+}
+
+// An account that is gone has no name to copy: creating a chat as it fails
+// instead of storing a blank "Deleted user" creator (code review of #36).
+func TestWithCurrentDisplayInfoMissingAccount(t *testing.T) {
+	ctx := useTestDB(t)
+	gone := bson.NewObjectID()
+	other := insertProfile(t, ctx, "erin", "Erin", "")
+
+	if _, err := WithCurrentDisplayInfo(ctx, models.LoginUserResponse{ID: gone, Username: "ghost"}); !errors.Is(err, ErrUserNotFound) {
+		t.Fatalf("WithCurrentDisplayInfo: err %v, want ErrUserNotFound", err)
+	}
+	asGone := context.WithValue(ctx, constants.UserDataKey, models.LoginUserResponse{ID: gone, Username: "ghost"})
+	if _, err := CreateDirectChat(asGone, other); !errors.Is(err, ErrUserNotFound) {
+		t.Fatalf("CreateDirectChat: err %v, want ErrUserNotFound", err)
+	}
+	if n, err := database.DB.Collection(string(constants.ChatColl)).CountDocuments(ctx, bson.M{}); err != nil || n != 0 {
+		t.Fatalf("chats stored: %d (err %v), want 0", n, err)
 	}
 }

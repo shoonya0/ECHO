@@ -1,6 +1,7 @@
 package controller
 
 import (
+	"context"
 	"net/http"
 
 	"github.com/shoonya0/ECHO/internal/constants"
@@ -10,6 +11,7 @@ import (
 	"github.com/shoonya0/ECHO/internal/utils"
 
 	"github.com/gin-gonic/gin"
+	"github.com/sirupsen/logrus"
 	"go.mongodb.org/mongo-driver/v2/bson"
 )
 
@@ -36,9 +38,6 @@ func CreateDirectChatHTTP(ctx *gin.Context) {
 	}
 
 	chat, err := services.CreateDirectChat(reqCtx, targetObjectID)
-	if err == nil {
-		err = services.FillParticipantInfo(reqCtx, chat) // current names, not the stored copies (#36)
-	}
 	if err != nil {
 		log.Debug("failed to create direct chat: " + err.Error())
 		statusCode, msg := MapServiceErrorToHTTP(err)
@@ -46,6 +45,7 @@ func CreateDirectChatHTTP(ctx *gin.Context) {
 		return
 	}
 
+	fillParticipantNames(reqCtx, log, chat)
 	utils.SuccessResponse(ctx, "Direct chat created successfully", chat)
 }
 
@@ -82,9 +82,6 @@ func CreateGroupChatHTTP(ctx *gin.Context) {
 	}
 
 	chat, err := services.CreateGroupChat(reqCtx, request.Name, request.Description, participantIDs)
-	if err == nil {
-		err = services.FillParticipantInfo(reqCtx, chat) // current names, not the stored copies (#36)
-	}
 	if err != nil {
 		log.Debug("failed to create group chat: " + err.Error())
 		statusCode, msg := MapServiceErrorToHTTP(err)
@@ -92,6 +89,7 @@ func CreateGroupChatHTTP(ctx *gin.Context) {
 		return
 	}
 
+	fillParticipantNames(reqCtx, log, chat)
 	utils.SuccessResponse(ctx, "Group chat created successfully", chat)
 }
 
@@ -500,4 +498,13 @@ func GetAllInvitesOfUser(ctx *gin.Context) {
 	}
 
 	utils.SuccessResponse(ctx, "All invites fetched successfully", invites)
+}
+
+// fillParticipantNames puts the participants' current names in a chat reply (#36).
+// The chat is already saved, so a failed read keeps the stored copies: answering
+// 500 would make the client retry and create the group again (code review of #36).
+func fillParticipantNames(ctx context.Context, log logrus.Entry, chat *models.Chat) {
+	if err := services.FillParticipantInfo(ctx, chat); err != nil {
+		log.WithError(err).Warn("Could not read participants' current names; replying with the stored ones")
+	}
 }

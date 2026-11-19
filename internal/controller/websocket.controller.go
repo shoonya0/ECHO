@@ -25,6 +25,10 @@ import (
 	"go.mongodb.org/mongo-driver/v2/bson"
 )
 
+// connectNameTimeout bounds the name read at connect, so a slow database holds a
+// new connection only briefly before it falls back to the token's name (#36).
+const connectNameTimeout = 2 * time.Second
+
 // getUsernameFromClient returns the username for a client
 func getUsernameFromClient(client *models.Client) string {
 	userInfo, err := realtime.GetHubInstance().GetUserInfo(client.UserID)
@@ -149,7 +153,10 @@ func HandleWebSocketChat(ctx *gin.Context) {
 
 	// The JWT's name is from login and it has no avatar; join and leave events show
 	// these (#36). A failed read keeps the JWT's: a name isn't worth refusing the connection.
-	if current, err := services.WithCurrentDisplayInfo(reqCtx, user); err != nil {
+	nameCtx, cancelName := context.WithTimeout(reqCtx, connectNameTimeout)
+	current, err := services.WithCurrentDisplayInfo(nameCtx, user)
+	cancelName()
+	if err != nil {
 		log.WithError(err).Warn("Could not read the user's current name; using the token's")
 	} else {
 		user = current
