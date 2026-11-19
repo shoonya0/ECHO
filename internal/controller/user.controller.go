@@ -125,6 +125,12 @@ func UpdateProfile(ctx *gin.Context) {
 		return
 	}
 
+	// Live events read names through each server's cache; drop this user's (#36).
+	// If Redis fails, other servers show the old name until the entry expires.
+	if err := realtime.GetHubInstance().ProfileChanged(reqCtx, objectID.Hex()); err != nil {
+		log.WithError(err).Warn("Could not tell other servers about the profile change")
+	}
+
 	profile, err := services.GetUserBasicInfo(reqCtx, objectID)
 	if err != nil {
 		log.Debug("failed to get updated profile: " + err.Error())

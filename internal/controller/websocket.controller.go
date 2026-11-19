@@ -179,6 +179,7 @@ func HandleWebSocketChat(ctx *gin.Context) {
 		Email:       user.Email,
 		Username:    user.Username,
 		DisplayName: user.Profile.DisplayName,
+		Avatar:      user.Profile.Avatar,
 	})
 
 	// The registration decides from this presence whether to announce the

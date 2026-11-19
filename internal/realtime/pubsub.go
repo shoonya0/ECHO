@@ -123,6 +123,10 @@ func (pm *PubSubManager) Start() error {
 		return fmt.Errorf("failed to subscribe to session control channel: %w", err)
 	}
 
+	if err := pm.subscribeToChannel(ProfileControlChannel); err != nil {
+		return fmt.Errorf("failed to subscribe to profile control channel: %w", err)
+	}
+
 	// Subscribe to instance-specific channel for targeted messages
 	instanceChannel := InstanceChannelPrefix + pm.instanceID
 	if err := pm.subscribeToChannel(instanceChannel); err != nil {
@@ -482,6 +486,10 @@ func (pm *PubSubManager) handleRedisMessage(msg *redis.Message) {
 	// Not a WebSocketMessage, and never forwarded to clients.
 	if msg.Channel == SessionControlChannel {
 		pm.handleSessionControl(msg.Payload)
+		return
+	}
+	if msg.Channel == ProfileControlChannel {
+		pm.handleProfileControl(msg.Payload)
 		return
 	}
 
