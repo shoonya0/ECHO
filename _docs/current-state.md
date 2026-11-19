@@ -58,9 +58,9 @@ and with a link to exactly one feature state.md. Updated by /close-increment and
 - **Not filed:** #63 can't happen any more (no deployed version writes `blockedChats`);
   proposed to close it
 - **Next step:** #37 part 2, step 2: transactions for the contact request sent both ways
-  at once, accept, and the group and message writes. The replica set is set up
-  ([decided](./decisions.md#mongodb-transactions)). Existing local containers are recreated
-  by `docker compose -f docker/docker-compose.yml up -d` (data stays).
+  at once, accept, and the group and message writes, plus a startup check that `DB_URI`
+  supports them (PR #151 review). The replica set is set up
+  ([decided](./decisions.md#mongodb-transactions), [recreate old containers](./getting-started.md#run-it)).
   Direct-chat gating and live status changes are decided against for now
   ([decided](./decisions.md#how-privacy-settings-apply-32)). The Render checks above are the
   user's
