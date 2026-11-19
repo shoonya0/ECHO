@@ -37,9 +37,11 @@ back, so the transaction returns what it did (`joinOutcome`) and the 409 and the
 join come after the commit; a 409 always follows the chat again, as a commit that succeeded
 but answered with an error never got to. A decline whose user cleanup fails now fails as a whole.
 
-Left for step 3 of #37: read receipts (`MarkMessagesAsRead`, `updateChatReadReceipts`,
-which discards its error) and reactions still use `context.Background()` instead of the
-request's context. They are single-document writes, so they need no transaction.
+Step 3 (2026-11-19): read receipts (`MarkMessagesAsRead`) and reactions take the request's
+context instead of `context.Background()`. The chat's read receipt (`updateChatReadReceipts`)
+returns its error, which it used to discard. A failed one answers `READ_FAILED` and the chat
+isn't told; the messages' `readBy` may already be saved, and marking them again is safe. Each
+write repeats safely, so they run without a transaction.
 
 Left open (from the PR review of step 2a):
 - **No backoff.** The driver reruns a conflicting transaction at once, reads included, so
