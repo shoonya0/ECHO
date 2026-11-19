@@ -4,6 +4,7 @@ import (
 	"net/http"
 	"strconv"
 
+	"github.com/shoonya0/ECHO/internal/constants"
 	"github.com/shoonya0/ECHO/internal/models"
 	"github.com/shoonya0/ECHO/internal/realtime"
 	"github.com/shoonya0/ECHO/internal/services"
@@ -72,6 +73,15 @@ func UpdateProfile(ctx *gin.Context) {
 	if err != nil {
 		log.Debug("invalid user id format")
 		utils.ErrorResponse(ctx, http.StatusBadRequest, "invalid user id format", nil)
+		return
+	}
+
+	// A status the server doesn't know would be shown to contacts as is, and
+	// a miscased "Invisible" wouldn't hide the user (#31).
+	if updateReq.Presence != nil && updateReq.Presence.Status != "" &&
+		!constants.UserStatus(updateReq.Presence.Status).Valid() {
+		log.Debug("invalid presence status")
+		utils.ErrorResponse(ctx, http.StatusBadRequest, "presence.status must be online, away, dnd, invisible or offline", nil)
 		return
 	}
 

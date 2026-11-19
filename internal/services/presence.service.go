@@ -89,7 +89,7 @@ func ShowPresence(p *models.PresenceEmbed, connected, self bool) {
 		p.IsOnline = connected
 		return
 	}
-	hiding := status == constants.UserStatusInvisible || status == constants.UserStatusOffline
+	hiding := status.Hidden()
 	if connected && !hiding {
 		p.Status = string(status)
 		p.IsOnline = true
