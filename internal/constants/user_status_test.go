@@ -26,3 +26,26 @@ func TestUserStatusRules(t *testing.T) {
 		}
 	}
 }
+
+// Who a privacy scope lets in (#32): never set means everyone, a value the
+// server doesn't know means nobody.
+func TestPrivacyScopeLets(t *testing.T) {
+	cases := []struct {
+		scope          PrivacyScope
+		contact, other bool
+	}{
+		{"", true, true},
+		{PrivacyEveryone, true, true},
+		{PrivacyContacts, true, false},
+		{PrivacyNone, false, false},
+		{"friends", false, false},
+	}
+	for _, tc := range cases {
+		if got := tc.scope.Lets(true); got != tc.contact {
+			t.Errorf("%q.Lets(contact) = %v, want %v", tc.scope, got, tc.contact)
+		}
+		if got := tc.scope.Lets(false); got != tc.other {
+			t.Errorf("%q.Lets(other) = %v, want %v", tc.scope, got, tc.other)
+		}
+	}
+}

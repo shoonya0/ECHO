@@ -75,6 +75,19 @@ func (s PrivacyScope) Valid() bool {
 	return s == PrivacyEveryone || s == PrivacyContacts || s == PrivacyNone
 }
 
+// Lets reports whether s lets in someone who is, or isn't, one of the user's
+// accepted contacts. Never set means everyone; a value the server doesn't
+// know means nobody, so a bad value can't expose anyone (#32).
+func (s PrivacyScope) Lets(contact bool) bool {
+	switch s {
+	case "", PrivacyEveryone:
+		return true
+	case PrivacyContacts:
+		return contact
+	}
+	return false
+}
+
 // OnlineKeyPrefix starts the Redis sorted set online:<userID>, which records
 // the servers a user is connected to (#31).
 const OnlineKeyPrefix = "online:"

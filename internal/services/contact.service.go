@@ -235,8 +235,7 @@ func checkAllowContact(ctx context.Context, from bson.ObjectID, target *models.U
 	return fmt.Errorf("%w", ErrContactNotAllowed)
 }
 
-// sharesGroup reports whether a and b are both members of one group, pending
-// invitees not counted. Direct chats don't count: anyone can open one with
+// sharesGroup reports whether a and b are both accepted members of one group. Direct chats don't count: anyone can open one with
 // anyone, so they would let everyone in.
 func sharesGroup(ctx context.Context, a, b bson.ObjectID) (bool, error) {
 	cur, err := database.DB.Collection(string(constants.UserColl)).Find(ctx,
@@ -261,10 +260,10 @@ func sharesGroup(ctx context.Context, a, b bson.ObjectID) (bool, error) {
 	if len(common) == 0 {
 		return false, nil
 	}
-	notMember := bson.A{string(constants.StatusPending), string(constants.StatusDeclined), string(constants.StatusBlocked)}
+	// Accepted members only: any other status, known or not, doesn't count.
 	filter := bson.M{"_id": bson.M{"$in": common}, "chatType": string(constants.ChatTypeGroup)}
 	for _, id := range []bson.ObjectID{a, b} {
-		filter["participants."+id.Hex()+".requestStatus"] = bson.M{"$exists": true, "$nin": notMember}
+		filter["participants."+id.Hex()+".requestStatus"] = string(constants.StatusAccepted)
 	}
 	n, err := database.DB.Collection(string(constants.ChatColl)).CountDocuments(ctx, filter, options.Count().SetLimit(1))
 	if err != nil {
