@@ -11,11 +11,10 @@ on `main`. To learn what the product does, read
 and with a link to exactly one feature state.md. Updated by /close-increment and
 /feature-docs update. -->
 
-- **Feature:** none · nothing in progress. `main` at `06de366`, CI green: #31 part 1 (PR
-  #145) and a CI race fix (PR #146) are merged, so Render deploys them; #31 stays open for part 2 (REST presence: contacts and
-  profiles read `online:<id>`, `lastSeen` written on offline, status not from the JWT).
-  #5 step 2 waits for the Android invite screen
-  ([group-invites](./features/group-invites/state.md))
+- **Feature:** #31 part 2 (REST presence) on `fix/31-rest-presence`: code, tests, docs done
+  and `TEST_DB_REQUIRED=1 verify --full` passed; next `/code-review`, push, PR (`Fixes #31`).
+  Rules: [decided](./decisions.md#where-presence-comes-from-31). #5 step 2 waits for the
+  Android invite screen ([group-invites](./features/group-invites/state.md))
 - **#31 part 1 on Render (not checked yet):** in a shared chat, A sees B's online and offline
 - **Not filed, from #31:** a user held only by a server that crashes gets no offline (its
   entry expires in 2 min); two servers connecting and disconnecting one user within
@@ -48,10 +47,9 @@ and with a link to exactly one feature state.md. Updated by /close-increment and
   losing messages
 - **Not filed, from #22:** a `chat_added` arriving while a connection's chats load is
   missed; a connection's welcome is dropped when its 10-message queue is already full
-- **Next step:** #31 part 2 (REST presence) is the natural follow-up; the Render checks
-  above are the user's
-- **Updated:** 2026-11-19 on `main` at `06de366` (not committed yet: rides on the next
-  branch). PRs merge by rebase only, so commits keep the author `shoonya0`
+- **Next step:** review and PR for #31 part 2; then a status change while connected (live
+  event) and #32 privacy settings. The Render checks above are the user's
+- **Updated:** 2026-11-19 on `fix/31-rest-presence` at `4f55d5b`. PRs merge by rebase only
 
 ## Where things stand
 
@@ -189,7 +187,7 @@ There are 11 open issues. Where each risk sits in the code: [architecture-overvi
 | Groups | Pending members still pass membership checks (#5 step 2), and the participant count is maintained by hand | #5, #110 |
 | Accounts | Usernames aren't unique, and display copies go stale | #36 |
 | Contacts and blocking | Contact lists aren't cut to `limit`, and blocks written during a deploy can be missed | #39, #63 |
-| Online status and privacy | Contacts and profiles show a stored online status (live events fixed on the #31 branch), and privacy settings aren't applied | #31, #32 |
+| Online status and privacy | REST presence is live on the #31 part 2 branch; a status change isn't announced live, and privacy settings aren't applied | #31, #32 |
 | Messages and data | Writes can half-finish, and some lists grow without limit | #37, #42 |
 | Limits and errors | WebSocket limits are per connection, not per user; mention lookups are one read each; `CheckOrigin` allows any origin | #40 |
 
