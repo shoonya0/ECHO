@@ -301,21 +301,38 @@ func SendContactRequest(ctx context.Context, userID, targetUserID bson.ObjectID)
 	now := time.Now()
 	coll := database.DB.Collection(string(constants.UserColl))
 
-	if _, err := UpdateOne(ctx, coll, bson.M{"_id": userID}, bson.M{
-		"$push": bson.M{"contactInfo.pendingOut": targetUserID},
-		"$set":  bson.M{"contactInfo.updatedAt": now},
-	}); err != nil {
+	// Conditional on the request not being there yet, so of two concurrent
+	// requests (a double tap) one wins and the other gets ErrRequestAlreadySent
+	// (#37).
+	sent, err := UpdateOne(ctx, coll, bson.M{"_id": userID, "contactInfo.pendingOut": bson.M{"$ne": targetUserID}}, bson.M{
+		"$addToSet": bson.M{"contactInfo.pendingOut": targetUserID},
+		"$set":      bson.M{"contactInfo.updatedAt": now},
+	})
+	if err != nil {
 		return fmt.Errorf("failed to update requesting user: %w", err)
 	}
+	if sent.MatchedCount == 0 {
+		if _, err := fetchUserContact(ctx, userID); err != nil {
+			return err // gone, or unreadable
+		}
+		return fmt.Errorf("%w", ErrRequestAlreadySent)
+	}
 
-	if _, err := UpdateOne(ctx, coll, bson.M{"_id": targetUserID}, bson.M{
-		"$push": bson.M{"contactInfo.pendingIn": userID},
-		"$set":  bson.M{"contactInfo.updatedAt": now},
-	}); err != nil {
-		// Best-effort rollback: pull the pendingOut we just pushed
-		UpdateOne(ctx, coll, bson.M{"_id": userID}, bson.M{
+	received, err := UpdateOne(ctx, coll, bson.M{"_id": targetUserID}, bson.M{
+		"$addToSet": bson.M{"contactInfo.pendingIn": userID},
+		"$set":      bson.M{"contactInfo.updatedAt": now},
+	})
+	if err == nil && received.MatchedCount == 0 {
+		err = fmt.Errorf("%w", ErrUserNotFound) // deleted since the check
+	}
+	if err != nil {
+		// Best-effort rollback: pull the pendingOut just added. A failed
+		// rollback is reported, not dropped (#37); transactions would close this.
+		if _, undoErr := UpdateOne(ctx, coll, bson.M{"_id": userID}, bson.M{
 			"$pull": bson.M{"contactInfo.pendingOut": targetUserID},
-		})
+		}); undoErr != nil {
+			return fmt.Errorf("failed to update target user: %w (and removing the sent request failed: %v)", err, undoErr)
+		}
 		return fmt.Errorf("failed to update target user: %w", err)
 	}
 
@@ -351,14 +368,14 @@ func AcceptOrDeclineContactRequest(ctx context.Context, userID, targetRequestID 
 	switch constants.ContactStatus(action) {
 	case constants.StatusAccepted:
 		userUpdate = bson.M{
-			"$pull": bson.M{"contactInfo.pendingIn": targetRequestID},
-			"$push": bson.M{"contactInfo.contacts": targetRequestID},
-			"$set":  bson.M{"contactInfo.updatedAt": now},
+			"$pull":     bson.M{"contactInfo.pendingIn": targetRequestID},
+			"$addToSet": bson.M{"contactInfo.contacts": targetRequestID},
+			"$set":      bson.M{"contactInfo.updatedAt": now},
 		}
 		targetUpdate = bson.M{
-			"$pull": bson.M{"contactInfo.pendingOut": userID},
-			"$push": bson.M{"contactInfo.contacts": userID},
-			"$set":  bson.M{"contactInfo.updatedAt": now},
+			"$pull":     bson.M{"contactInfo.pendingOut": userID},
+			"$addToSet": bson.M{"contactInfo.contacts": userID},
+			"$set":      bson.M{"contactInfo.updatedAt": now},
 		}
 	case constants.StatusDeclined:
 		userUpdate = bson.M{
@@ -369,10 +386,29 @@ func AcceptOrDeclineContactRequest(ctx context.Context, userID, targetRequestID 
 		}
 	}
 
-	if _, err := UpdateOne(ctx, coll, userFilter, userUpdate); err != nil {
+	// Both writes are conditional on the request still being there, and their
+	// MatchedCount is checked (#37): a request cancelled or answered since the
+	// checks above is not found, and an accept whose second write finds nothing
+	// takes back the first, so neither side keeps a one-sided contact.
+	res, err := UpdateOne(ctx, coll, userFilter, userUpdate)
+	if err != nil {
 		return fmt.Errorf("failed to update user contact: %w", err)
 	}
-	if _, err := UpdateOne(ctx, coll, targetFilter, targetUpdate); err != nil {
+	if res.MatchedCount == 0 {
+		return fmt.Errorf("%w", ErrContactRequestNotFound)
+	}
+	res, err = UpdateOne(ctx, coll, targetFilter, targetUpdate)
+	if err == nil && res.MatchedCount == 0 {
+		err = fmt.Errorf("%w", ErrContactRequestNotFound)
+	}
+	if err != nil && constants.ContactStatus(action) == constants.StatusAccepted {
+		if _, undoErr := UpdateOne(ctx, coll, bson.M{"_id": userID}, bson.M{
+			"$pull": bson.M{"contactInfo.contacts": targetRequestID},
+		}); undoErr != nil {
+			return fmt.Errorf("failed to update target contact: %w (and taking back the contact failed: %v)", err, undoErr)
+		}
+	}
+	if err != nil {
 		return fmt.Errorf("failed to update target contact: %w", err)
 	}
 
@@ -546,12 +582,30 @@ func AddToFavorites(ctx context.Context, userID, targetUserID bson.ObjectID) err
 	}
 
 	now := time.Now()
-	_, err = UpdateOne(ctx, database.DB.Collection(string(constants.UserColl)), bson.M{"_id": userID}, bson.M{
-		"$push": bson.M{"contactInfo.favorites": targetUserID},
-		"$set":  bson.M{"contactInfo.updatedAt": now},
+	// Conditional on the checks above still holding, so a contact removed in
+	// between isn't favorited, and of two concurrent adds one gets
+	// ErrAlreadyInFavorites (#37).
+	res, err := UpdateOne(ctx, database.DB.Collection(string(constants.UserColl)), bson.M{
+		"_id":                   userID,
+		"contactInfo.contacts":  targetUserID,
+		"contactInfo.favorites": bson.M{"$ne": targetUserID},
+	}, bson.M{
+		"$addToSet": bson.M{"contactInfo.favorites": targetUserID},
+		"$set":      bson.M{"contactInfo.updatedAt": now},
 	})
 	if err != nil {
 		return fmt.Errorf("failed to update user contact: %w", err)
+	}
+	if res.MatchedCount == 0 {
+		// Read again to say which check failed.
+		user, err := fetchUserContact(ctx, userID)
+		if err != nil {
+			return err
+		}
+		if contains(user.ContactInfo.Favorites, targetUserID) {
+			return fmt.Errorf("%w", ErrAlreadyInFavorites)
+		}
+		return fmt.Errorf("%w", ErrNotInContacts)
 	}
 
 	return nil

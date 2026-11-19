@@ -11,13 +11,16 @@ on `main`. To learn what the product does, read
 and with a link to exactly one feature state.md. Updated by /close-increment and
 /feature-docs update. -->
 
-- **Feature:** #21 on `fix/21-shared-pubsub-connection` at `aac1742`: all pub/sub channels of
-  a server share one Redis connection and one reader
-  ([pub/sub](./PUBSUB_ARCHITECTURE.md#redis-channels)). `TEST_DB_REQUIRED=1 node
-  scripts/verify.mjs --full` passed, and a live contract run held 1 pub/sub connection.
-  Code review: 9 findings, 7 fixed, 2 documented (a reconnect's confirmation can release a
-  subscribe early; one shared output buffer). Now: PR. #5 step 2 waits for the Android invite
-  screen ([group-invites](./features/group-invites/state.md))
+- **Feature:** #37 part 1 on `fix/37-direct-chat-key`: one direct chat per pair (a unique
+  `directKey`, backfilled at startup;
+  [decided](./decisions.md#one-direct-chat-per-pair-37)) and conditional contact list writes
+  that check `MatchedCount`. `TEST_DB_REQUIRED=1 node scripts/verify.mjs --full` passed;
+  live: 10 concurrent opens gave 1 chat, and the local backfill keyed 413 chats with no
+  duplicates. Code review: 10 findings, all fixed. Now: PR. Part 2 (replica set in compose
+  and CI, then transactions) comes after. #5 step 2 waits for the Android invite screen
+  ([group-invites](./features/group-invites/state.md))
+- **#21 on Render (not checked yet):** Redis `CLIENT LIST TYPE pubsub` shows one connection
+  per running server
 - **#31 on Render (not checked yet):** in a shared chat, A sees B's online and offline, and
   B's contacts list shows `isOnline` only while B is connected
 - **#32 on Render (not checked yet):** the startup log shows `Turned on showLastSeen` once
@@ -53,12 +56,13 @@ and with a link to exactly one feature state.md. Updated by /close-increment and
   losing messages
 - **Not filed, from #22:** a `chat_added` arriving while a connection's chats load is
   missed; a connection's welcome is dropped when its 10-message queue is already full
-- **Next step:** PR for #21. After merge, on Render: Redis
-  `CLIENT LIST TYPE pubsub` shows one connection per server. Direct-chat gating and live
-  status changes are decided against for now
-  ([decided](./decisions.md#how-privacy-settings-apply-32)). The Render checks above are the user's
-- **Updated:** 2026-11-19 on `fix/21-shared-pubsub-connection` at `aac1742`. PRs merge by
-  rebase only, so commits keep the author `shoonya0`
+- **Not filed:** #63 can't happen any more (no deployed version writes `blockedChats`);
+  proposed to close it
+- **Next step:** PR for #37 part 1; after merge, on Render the startup log shows `Backfilled direct chat keys` and any `Second direct chats of a pair` (merge by hand). Direct-chat gating and live status changes are decided against
+  for now ([decided](./decisions.md#how-privacy-settings-apply-32)). The Render checks above
+  are the user's
+- **Updated:** 2026-11-19 on `fix/37-direct-chat-key`, from `main` at `ef58498`. Commits on
+  `main` must keep the author `shoonya0`
 
 ## Where things stand
 
@@ -72,6 +76,10 @@ Not built yet: editing or deleting messages, and changing chat settings. The ful
 
 ## Recently finished
 
+- **#21 (PR #149):** each server listens to all its Redis channels over one shared
+  connection and one reader; a subscribe returns once Redis confirms it, and one that isn't
+  confirmed is undone ([pub/sub](./PUBSUB_ARCHITECTURE.md#redis-channels)). Code review: 9
+  findings, 7 fixed, 2 documented.
 - **#32 (PR #148):** `showOnlineStatus` (`contacts`, `none`) and `showLastSeen` apply to
   contact lists and `presence` events, `allowContactBy` gates contact requests (`403`), and
   `showLastSeen` is on by default (one-time migration). Code review found `PUT profile/`
@@ -134,15 +142,6 @@ Not built yet: editing or deleting messages, and changing chat settings. The ful
 - **#131 (PR #134):** `GET users/suggestions` takes `page` 1 to 10000 (clamped, shared
   `services.MaxPage` with the contact lists), so a huge page no longer overflows the skip
   into a `500` ([REST](./rest-api/users.md#finding-people)).
-- **#51 (PR #133):** a message `content` is limited to 4000 characters (code points), not
-  bytes, so Hindi or emoji text is no longer cut at about a third
-  ([decided](./decisions.md#how-the-message-length-limit-counts-51),
-  [app changes](../Android/_docs/08_SERVER_CHANGES/messages.md)).
-- **#123 + #124 (PR #127):** a join or registration releases the chat channel again after
-  subscribing if a removal emptied the room meanwhile, and no `join` is announced for a
-  member removed during the join. The release test hooks are `PubSubManager` fields
-  ([pub/sub](./PUBSUB_ARCHITECTURE.md#connecting-and-disconnecting)). Not done from the
-  code review: a removal before the room entry (#117), one per-chat reconcile step.
 
 ## How to build, run, test
 
@@ -181,11 +180,11 @@ blocks are stored, and who counts as a member.
 
 ## Known issues and risks
 
-There are 11 open issues. Where each risk sits in the code: [architecture-overview.md](./architecture-overview.md#riskiest-areas).
+There are 8 open issues. Where each risk sits in the code: [architecture-overview.md](./architecture-overview.md#riskiest-areas).
 
 | Area | The problem, in short | Issues |
 |---|---|---|
-| Live connections | Missed live messages can't be detected (one Redis connection per channel: fixed on the #21 branch) | #21, #43 |
+| Live connections | Missed live messages can't be detected | #43 |
 | Groups | Pending members still pass membership checks (#5 step 2), and the participant count is maintained by hand | #5, #110 |
 | Accounts | Usernames aren't unique, and display copies go stale | #36 |
 | Contacts and blocking | Contact lists aren't cut to `limit`, and blocks written during a deploy can be missed | #39, #63 |

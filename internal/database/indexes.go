@@ -42,6 +42,20 @@ var indexSpecs = []collectionIndexes{
 		},
 	},
 	{
+		// Its own entry, so chats from before #37 that would break it can't stop
+		// the invite-code index.
+		coll: constants.ChatColl,
+		models: []mongo.IndexModel{
+			// One direct chat per pair (#37). Partial: groups and direct chats
+			// the startup backfill hasn't keyed yet have no key.
+			{
+				Keys: bson.D{{Key: "directKey", Value: 1}},
+				Options: options.Index().SetName("directKey_1").SetUnique(true).
+					SetPartialFilterExpression(bson.M{"directKey": bson.M{"$type": "string"}}),
+			},
+		},
+	},
+	{
 		coll: constants.MessageColl,
 		models: []mongo.IndexModel{
 			// Chat history: find {chatId} sorted by _id desc, paged by _id < cursor.

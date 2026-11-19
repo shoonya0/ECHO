@@ -63,3 +63,28 @@ func TestEnsureIndexesBuildsEmailCIDespiteCaseDuplicates(t *testing.T) {
 	}
 	t.Fatalf("email_ci missing; indexes: %v", specs)
 }
+
+// The unique directKey index (#37) is built over direct chats from before #37,
+// which have no key, even when a pair has two of them; the backfill keys them
+// later. With it, a second chat with the same key is refused.
+func TestEnsureIndexesBuildsDirectKeyOverUnkeyedChats(t *testing.T) {
+	ctx := testutil.UseTestDB(t)
+	chats := database.DB.Collection(string(constants.ChatColl))
+	pair := bson.M{"a": bson.M{}, "b": bson.M{}}
+	for range 2 {
+		if _, err := chats.InsertOne(ctx, bson.M{"chatType": "direct", "participants": pair}); err != nil {
+			t.Fatalf("insert chat: %v", err)
+		}
+	}
+
+	if err := database.EnsureIndexes(ctx); err != nil {
+		t.Fatalf("EnsureIndexes: %v", err)
+	}
+
+	if _, err := chats.InsertOne(ctx, bson.M{"chatType": "direct", "directKey": "a_b"}); err != nil {
+		t.Fatalf("insert keyed chat: %v", err)
+	}
+	if _, err := chats.InsertOne(ctx, bson.M{"chatType": "direct", "directKey": "a_b"}); err == nil {
+		t.Fatal("a second chat with the same directKey was stored")
+	}
+}
