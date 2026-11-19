@@ -101,6 +101,19 @@ them. Two old accounts whose emails differ only in case are both kept: login pic
 stored exactly as typed, and the migration logs them for a manual merge. A change-email
 flow, with the current password and a check of the new address, is a separate issue.
 
+## Where presence comes from (#31)
+
+Decided on 2026-11-19. Whether someone is connected comes from Redis `online:<userID>`
+(a mark per server, renewed every 30 s, expiring after 2 minutes), read when a reply is
+built; the stored `presence.isOnline` is never read. `presence.status` is the status the
+user chose; the hub reads it from MongoDB at connect, not from the token, which can be 7
+days old. `away` and `dnd` users are announced online; `invisible` (or `offline` by choice)
+users never are, and others see them as `offline` with no `lastSeen`. The server writes
+`presence.lastSeen` when it publishes the offline, with `$max` so writes can't go back;
+`PUT profile/` can no longer set `isOnline` or `lastSeen`. When Redis can't answer, replies
+show everyone offline rather than failing. A status change while connected isn't announced
+live yet, and the privacy settings `showOnlineStatus` and `showLastSeen` aren't applied.
+
 ## How login and signup limits find the client (#40)
 
 Decided on 2026-11-17. Login attempts on an account are counted per IP and account (10

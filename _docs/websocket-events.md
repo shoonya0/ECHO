@@ -176,7 +176,7 @@ profile as it was when that connection opened (#50); `avatar` is left out when e
 ```
 
 No `chatId`. Sent once to each connection sharing a chat with the user: `online` at their first
-connection on a server (so maybe twice), `offline` when their last one anywhere closes (#31).
+connection on a server (maybe twice; never if they chose `invisible`), `offline` when the last closes (#31).
 
 ## `chat_updated`: group members changed
 

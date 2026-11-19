@@ -16,8 +16,14 @@ Index: [REST API](./README.md). Shared rules: [the basics](./basics.md).
 | Route | What it does |
 |---|---|
 | `GET profile/` | Your profile |
-| `PUT profile/` | Updates your profile. Only your username, phone, profile, presence and settings fields can change. Anything else is ignored, `email` included: it can't be changed yet ([decided](../decisions.md#changing-the-email-36)). |
+| `PUT profile/` | Updates your profile. Only your username, phone, profile, presence and settings fields can change. Anything else is ignored, `email` included: it can't be changed yet ([decided](../decisions.md#changing-the-email-36)). `presence.isOnline` and `presence.lastSeen` are ignored too: the server sets them (#31). |
 | `DELETE profile/delete` | Deletes your account. You leave every group (an owner hands it on) and every contact list; your messages and direct chats stay for the others, shown as "Deleted user". Your token stops working at once (`401 ACCOUNT_NOT_FOUND`) (#35) |
+
+`presence` in replies (your profile, `login`, contacts) is live (#31): `isOnline` says whether
+the person is connected now. `status` is their choice (`online`, `away`, `dnd`, `invisible`)
+while they are connected; to others it is `offline` when they aren't, or chose `invisible`,
+and `lastSeen` is when their last connection closed. You see your own status as you set it.
+[Decided](../decisions.md#where-presence-comes-from-31).
 
 ## Finding people
 
