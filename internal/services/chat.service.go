@@ -583,13 +583,15 @@ func createGroupChat(ctx context.Context, creator models.LoginUserResponse, chat
 		return models.Chat{}, fmt.Errorf("failed to add group chat to creator: %w", ErrUserNotFound)
 	}
 
-	// Each invitee's invitation for the new code (sent again, it adds nothing).
+	// Each invitee's invitation for the new code.
 	if len(invitees) > 0 {
-		if _, err := database.DB.Collection(string(constants.UserColl)).UpdateMany(ctx,
-			bson.M{"_id": bson.M{"$in": invitees}},
-			bson.M{"$addToSet": bson.M{"chatInvitations": models.ChatInvitationEmbed{Token: invite.InviteCode, Status: "pending"}}},
-		); err != nil {
+		res, err := database.DB.Collection(string(constants.UserColl)).UpdateMany(ctx,
+			bson.M{"_id": bson.M{"$in": invitees}}, addInvitationUpdate(invite.InviteCode))
+		if err != nil {
 			return models.Chat{}, fmt.Errorf("failed to send the invitations: %w", err)
+		}
+		if res.MatchedCount < int64(len(invitees)) {
+			return models.Chat{}, fmt.Errorf("send the invitations: %w", ErrUserNotFound)
 		}
 	}
 	return chat, nil
@@ -831,13 +833,18 @@ func AddMembersToLiveChat(ctx context.Context, chatID bson.ObjectID, userIDs ...
 // ============ HELPER FUNCTIONS ============
 
 // updateChatLastMessage counts a new message in the chat and makes it the last
-// one. $max keeps the newest: message IDs grow with time, and a send that
-// commits after a newer one (a rerun) must not set an older message (#37).
+// one. $max keeps the newest: message IDs start with their second, so a send
+// that commits after a newer one (a rerun) can't set an older message (#37).
+// Two sends in the same second from different servers compare by their random
+// part, so either may win: as arbitrary as with $set. updatedAt uses $set, as
+// every chat write does: $max would stick to a time from a server whose clock
+// runs ahead.
 func updateChatLastMessage(ctx context.Context, chatID, messageID bson.ObjectID, timestamp time.Time) error {
 	res, err := database.DB.Collection(string(constants.ChatColl)).UpdateOne(ctx,
 		bson.M{"_id": chatID},
 		bson.M{
-			"$max": bson.M{"lastMessageId": messageID, "updatedAt": timestamp},
+			"$max": bson.M{"lastMessageId": messageID},
+			"$set": bson.M{"updatedAt": timestamp},
 			"$inc": bson.M{"stats.messageCount": 1},
 		},
 	)
@@ -1219,8 +1226,16 @@ func addGroupMembersTx(ctx context.Context, userID bson.ObjectID, chat models.Ch
 	if res.MatchedCount == 0 {
 		return addNotApplied(ctx, chatID, addedIDs)
 	}
-	_, err = giveChatEntry(ctx, chatID, addedIDs) // #5
-	return err
+	// The users were read in this transaction, so all of them match; one that
+	// doesn't would be a participant with no chats entry (#5, #112).
+	matched, err := giveChatEntry(ctx, chatID, addedIDs) // #5
+	if err != nil {
+		return err
+	}
+	if matched < int64(len(addedIDs)) {
+		return fmt.Errorf("add the group to new members' chats: %w", ErrUserNotFound)
+	}
+	return nil
 }
 
 // addNotApplied picks the error for an add whose update matched nothing, from the
@@ -1407,7 +1422,9 @@ func removeGroupMember(ctx context.Context, actingUserID bson.ObjectID, chatID b
 	userFilter := bson.M{"_id": bson.M{"$in": removedIDs}}
 	userUpdate := bson.M{"$unset": bson.M{"chats." + chatID.Hex(): ""}}
 
-	// Remove chat ref from each removed user
+	// Remove chat ref from each removed user. MatchedCount isn't checked: a
+	// member whose account is gone matches nothing and must still be removable
+	// from the chat (as with contacts).
 	_, err = database.DB.Collection(string(constants.UserColl)).UpdateMany(ctx, userFilter, userUpdate)
 	if err != nil {
 		return nil, fmt.Errorf("failed to update users: %w", err)
@@ -1625,13 +1642,17 @@ func SendInviteToUser(ctx context.Context, actingUserID bson.ObjectID, inviteID 
 // again adds nothing. Callers check who may send it.
 func addInvitation(ctx context.Context, inviteID string, targetUserID bson.ObjectID) (bool, error) {
 	res, err := database.DB.Collection(string(constants.UserColl)).UpdateOne(ctx,
-		bson.M{"_id": targetUserID},
-		bson.M{"$addToSet": bson.M{"chatInvitations": models.ChatInvitationEmbed{Token: inviteID, Status: "pending"}}},
-	)
+		bson.M{"_id": targetUserID}, addInvitationUpdate(inviteID))
 	if err != nil {
 		return false, fmt.Errorf("failed to update target user: %w", err)
 	}
 	return res.MatchedCount > 0, nil
+}
+
+// addInvitationUpdate gives a user a pending invitation for inviteID; sent again,
+// it adds nothing.
+func addInvitationUpdate(inviteID string) bson.M {
+	return bson.M{"$addToSet": bson.M{"chatInvitations": models.ChatInvitationEmbed{Token: inviteID, Status: "pending"}}}
 }
 
 // JoinGroupByInvite adds userID to the group that stores the invite code. The

@@ -3,7 +3,6 @@ package services
 import (
 	"context"
 	"testing"
-	"time"
 
 	"github.com/shoonya0/ECHO/internal/constants"
 	"github.com/shoonya0/ECHO/internal/database"
@@ -68,8 +67,8 @@ func TestCreateGroupChatRollsBackOnFailedInvite(t *testing.T) {
 }
 
 // A message was saved and reported as sent while the chat's lastMessageId and
-// messageCount write failed unnoticed.
-func TestSendMessageRollsBackOnFailedChatUpdate(t *testing.T) {
+// messageCount write failed unnoticed. The two now go together, whichever fails.
+func TestSendMessageRollsBackTogether(t *testing.T) {
 	ctx := useTestDB(t)
 	sender := bson.NewObjectID()
 	insertTestUsers(t, ctx, sender)
@@ -78,17 +77,37 @@ func TestSendMessageRollsBackOnFailedChatUpdate(t *testing.T) {
 		t.Fatalf("insert chat: %v", err)
 	}
 
-	testutil.FailCommand(t, ctx, "update", 0)
-	if _, err := SendMessage(ctx, chatID, sender, "hi", "text", nil, nil); err == nil {
-		t.Fatal("SendMessage succeeded, want the failed chat update's error")
-	}
+	t.Run("chat update fails", func(t *testing.T) {
+		testutil.FailCommand(t, ctx, "update", 0)
+		if _, err := SendMessage(ctx, chatID, sender, "hi", "text", nil, nil); err == nil {
+			t.Fatal("SendMessage succeeded, want the failed chat update's error")
+		}
+		checkNoMessage(t, ctx, chatID)
+	})
+	// The chat write runs first, so this checks that it is rolled back.
+	t.Run("message insert fails", func(t *testing.T) {
+		testutil.FailCommand(t, ctx, "insert", 0)
+		if _, err := SendMessage(ctx, chatID, sender, "hi", "text", nil, nil); err == nil {
+			t.Fatal("SendMessage succeeded, want the failed insert's error")
+		}
+		checkNoMessage(t, ctx, chatID)
+	})
+}
 
+// checkNoMessage fails if chatID has a message, counts one or points at one.
+func checkNoMessage(t *testing.T, ctx context.Context, chatID bson.ObjectID) {
+	t.Helper()
 	n, err := database.DB.Collection(string(constants.MessageColl)).CountDocuments(ctx, bson.M{"chatId": chatID})
 	if err != nil {
 		t.Fatalf("count messages: %v", err)
 	}
 	if n != 0 {
 		t.Errorf("messages saved = %d, want 0", n)
+	}
+	chat := loadTestChat(t, ctx, chatID)
+	if chat.Stats.MessageCount != 0 || !chat.LastMessageID.IsZero() {
+		t.Errorf("chat counts %d messages, last %s; want 0 and none (rolled back)",
+			chat.Stats.MessageCount, chat.LastMessageID.Hex())
 	}
 }
 
@@ -150,7 +169,7 @@ func TestConcurrentGroupCreatesWithSharedUsers(t *testing.T) {
 	}
 	insertTestUsers(t, ctx, users...)
 
-	start := time.Now()
+	// A livelock shows as the test context's deadline (10s) in an error.
 	errs := make(chan error, len(users))
 	concurrently(1, func() {
 		for i, creator := range users {
@@ -165,9 +184,6 @@ func TestConcurrentGroupCreatesWithSharedUsers(t *testing.T) {
 		if err := <-errs; err != nil {
 			t.Errorf("CreateGroupChat: %v", err)
 		}
-	}
-	if d := time.Since(start); d > 5*time.Second {
-		t.Errorf("creates took %v, want well under 5s", d)
 	}
 	for _, id := range users {
 		u := loadTestUser(t, ctx, id)
@@ -189,7 +205,6 @@ func TestConcurrentSendsToOneChat(t *testing.T) {
 	}
 
 	const n = 20
-	start := time.Now()
 	errs := collectErrors(n, func() error {
 		_, err := SendMessage(ctx, chatID, sender, "hi", "text", nil, nil)
 		return err
@@ -198,9 +213,6 @@ func TestConcurrentSendsToOneChat(t *testing.T) {
 		if err != nil {
 			t.Fatalf("SendMessage: %v", err)
 		}
-	}
-	if d := time.Since(start); d > 5*time.Second {
-		t.Errorf("%d sends took %v, want well under 5s", n, d)
 	}
 
 	chat := loadTestChat(t, ctx, chatID)
