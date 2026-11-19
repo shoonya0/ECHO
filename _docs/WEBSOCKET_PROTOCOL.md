@@ -24,6 +24,8 @@ so it can't connect. The Android app (OkHttp), Node (`ws`) and `wscat -H` all ca
 A request with an `Origin` header (a browser page) is refused with `403` unless the origin
 is the server's own host or is listed in `WS_ALLOWED_ORIGINS` (#40). Apps that send no
 `Origin`, as OkHttp doesn't, aren't affected.
+One account may hold 5 connections on a server; another gets `429` `Too many connections`
+(or, if two connect at once, close code `1008`). Close one to free a slot (#40).
 
 When you connect, the server:
 
