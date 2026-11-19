@@ -9,7 +9,8 @@ Part of [server changes the app must handle](./README.md).
 - On every (re)connect, and when a live `seq` skips a number, call
   `GET messages/:chatID/messages?afterSeq=<highest>` and page with `nextAfterSeq` while
   `hasMore`. Merge by message ID: you may get one you already have.
-- A gap can be a deleted account's messages, not a loss; the catch-up call settles it.
+- Numbers have no gaps, so a skip is a missed message. The `send_message` reply has
+  `seq` too: record your own message's number from it.
 
 Details: [chats.md](../../../_docs/rest-api/chats.md#catching-up-on-missed-messages).
 

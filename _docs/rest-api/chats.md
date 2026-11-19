@@ -43,8 +43,11 @@ saved them (#43). Live delivery can drop a message (a reconnect, a full send que
   skips a number, send `afterSeq=<that seq>`. A chat's `stats.lastSeq` is its newest one.
 - The reply is oldest first. While `hasMore` is `true`, send `pagination.nextAfterSeq` as
   the next `afterSeq`.
-- A skip isn't always a lost message: a deleted account's messages leave gaps. Messages an
-  older server copy saves during a deploy have no `seq` until the next start numbers them.
+- Numbers have no gaps: a skip means a message you missed. Messages are never deleted (a
+  deleted account's are kept as "Deleted user"). The `send_message` reply has `seq` too.
+- Messages from before #43 keep the lowest numbers, oldest first, though a startup job may
+  give them out after newer ones. Ones an older server copy saves during the #43 deploy
+  have no `seq` for up to 15 minutes, then get numbers after the newest.
 
 `afterSeq` that isn't a whole number from 0 up, or comes with `before`, gets `400`.
 

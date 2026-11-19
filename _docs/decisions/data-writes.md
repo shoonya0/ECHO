@@ -66,11 +66,14 @@ way to see a gap. Each message gets `seq`, taken from the chat's `stats.lastSeq`
 commit one after another and an aborted send takes its number back. Message IDs were
 rejected as the cursor: two servers can make IDs in the same second out of order, so a
 client could pass one without noticing. `GET messages/:chatID/messages?afterSeq=` reads
-`chatId_1_seq_1` (unique, partial on `seq` being set). A backfill on every start numbers
-messages without a `seq` (from before #43, or saved by an older copy during a deploy)
-oldest first after the chat's newest, in 500-message transactions; finding them reads
-every message, which is fine at this size. Left: no replay buffer (Redis Streams), the
-client catches up over REST.
+`chatId_1_seq_1` (unique, partial on `seq > 0`: the planner uses a partial index only
+for queries that imply its filter). A chat from before #43 is seeded on its first send or
+backfill: its k unnumbered messages keep 1 to k (`stats.oldSeqNext`, `oldSeqEnd`), so a
+new message can't be numbered before old history. The backfill hands those out oldest
+first in 500-message transactions, at start and again 15 minutes later for what the old
+copy saved during the deploy (numbered after the newest); then the `message-seqs-43`
+marker stops later starts from scanning every message. Left: no replay buffer (Redis
+Streams); the client catches up over REST.
 
 ## One direct chat per pair (#37)
 

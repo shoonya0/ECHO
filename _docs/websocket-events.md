@@ -29,7 +29,7 @@ The `response` comes in three shapes, so read them carefully.
     "success": true,
     "messageId": "<messageId>",
     "data": {
-      "messageId": "<messageId>",
+      "messageId": "<messageId>", "seq": 42,
       "timestamp": "2026-11-04T12:00:00Z",
       "chatId": "<chatId>",
       "messageType": "text"
