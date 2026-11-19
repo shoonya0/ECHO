@@ -48,8 +48,9 @@ and with a link to exactly one feature state.md. Updated by /close-increment and
   losing messages
 - **Not filed, from #22:** a `chat_added` arriving while a connection's chats load is
   missed; a connection's welcome is dropped when its 10-message queue is already full
-- **Next step:** merge the #32 PR (user). Open question: should `allowContactBy` also gate
-  `CreateDirectChat` (anyone can open one today)? The Render checks above are the user's
+- **Next step:** merge the #32 PR (user). Direct-chat gating and live status changes are
+  decided against for now ([decided](./decisions.md#how-privacy-settings-apply-32)). The
+  Render checks above are the user's
 - **Updated:** 2026-11-19 on `fix/32-privacy-settings` at `86453a4`
 
 ## Where things stand

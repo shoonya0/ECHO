@@ -130,7 +130,12 @@ later choices stay. The online uses the settings read at connect; the offline re
 same people but reads them again and leaves `lastSeen` out unless they still allow it.
 `allowContactBy` `none` refuses every contact request (`403`); `contacts` lets in people who
 share a group with you as accepted members. Pending invitees don't count, and neither do
-direct chats, since anyone can open one. A value the server doesn't know means nobody, so `PUT
+direct chats, since anyone can open one.
+
+Also decided on 2026-11-19, to keep the work small: `allowContactBy` doesn't gate opening a
+direct chat (`CreateDirectChat`), and a status or privacy change made while connected
+isn't sent live (no `set_presence` handler); it reaches events at the next connect. REST
+replies already show the change at once. Revisit if users ask for either. A value the server doesn't know means nobody, so `PUT
 profile/` answers `400` for anything but `everyone`, `contacts` or `none`.
 
 ## How login and signup limits find the client (#40)
