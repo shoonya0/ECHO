@@ -168,6 +168,10 @@ func MapServiceErrorToHTTP(err error) (int, string) {
 		return http.StatusConflict, "Users are already in the chat"
 	case errors.Is(err, services.ErrGroupFull):
 		return http.StatusConflict, "Group is full"
+	case errors.Is(err, services.ErrInvalidUsername):
+		return http.StatusBadRequest, "Username must be 3 to 30 letters, digits, _ or ."
+	case errors.Is(err, services.ErrUsernameTaken):
+		return http.StatusConflict, "Username already taken"
 	default:
 		return http.StatusInternalServerError, "Internal server error"
 	}

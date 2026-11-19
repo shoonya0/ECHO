@@ -2,6 +2,7 @@ package controller
 
 import (
 	"context"
+	"errors"
 	"net/http"
 	"strings"
 	"time"
@@ -47,6 +48,13 @@ func Signup(c *gin.Context) {
 		return
 	}
 	req.Email = utils.NormalizeEmail(req.Email)
+	req.Username = utils.NormalizeUsername(req.Username)
+	// Format first: a malformed name is a 400 whether or not the email is taken.
+	if !utils.ValidUsername(req.Username) {
+		status, msg := MapServiceErrorToHTTP(services.ErrInvalidUsername)
+		utils.ErrorResponse(c, status, msg, nil)
+		return
+	}
 
 	count, err := database.DB.Collection(string(constants.UserColl)).CountDocuments(c.Request.Context(), bson.M{"email": req.Email},
 		// Also an email stored with capitals before #36, so nobody can sign up over it.
@@ -61,6 +69,15 @@ func Signup(c *gin.Context) {
 		utils.ErrorResponse(c, http.StatusConflict, "email already registered", nil)
 		return
 	}
+	// Unique ignoring case (#36).
+	if err := services.CheckNewUsername(c.Request.Context(), req.Username, bson.ObjectID{}); err != nil {
+		if !errors.Is(err, services.ErrUsernameTaken) {
+			log.WithError(err).Error("failed to check username")
+		}
+		status, msg := MapServiceErrorToHTTP(err)
+		utils.ErrorResponse(c, status, msg, nil)
+		return
+	}
 
 	hash, err := bcrypt.GenerateFromPassword([]byte(req.Password), bcrypt.DefaultCost)
 	if err != nil {
@@ -72,8 +89,14 @@ func Signup(c *gin.Context) {
 	user := utils.NewUserWithDefaults(req.Email, req.Username, string(hash))
 
 	if _, err := database.DB.Collection(string(constants.UserColl)).InsertOne(c.Request.Context(), user); err != nil {
-		// A concurrent signup with the same email can pass the count check
-		// above; the unique email index rejects the second insert.
+		// A concurrent signup with the same email or username can pass the
+		// checks above; the unique indexes reject the second insert.
+		if database.IsDuplicateKeyOn(err, database.UsernameIndex) {
+			log.Debug("username already taken")
+			status, msg := MapServiceErrorToHTTP(services.ErrUsernameTaken)
+			utils.ErrorResponse(c, status, msg, nil)
+			return
+		}
 		if mongo.IsDuplicateKeyError(err) {
 			log.Debug("email already registered")
 			utils.ErrorResponse(c, http.StatusConflict, "email already registered", nil)

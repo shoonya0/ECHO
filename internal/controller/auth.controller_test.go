@@ -52,7 +52,7 @@ func TestAuthServerErrorsHideInternals(t *testing.T) {
 		handler gin.HandlerFunc
 		body    string
 	}{
-		{"signup", Signup, `{"email":"a@example.com","username":"a","password":"password123"}`},
+		{"signup", Signup, `{"email":"a@example.com","username":"alice","password":"password123"}`},
 		{"login", Login, `{"email":"a@example.com","password":"password123"}`},
 	}
 	for _, tt := range tests {
