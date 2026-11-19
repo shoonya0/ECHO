@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 
 	"github.com/shoonya0/ECHO/internal/constants"
 	"github.com/shoonya0/ECHO/internal/logger"
@@ -18,6 +19,21 @@ import (
 // matches, whether or not the startup migration has lowered it yet. The
 // email_ci index has the same collation, so those queries can use it.
 var EmailCollation = &options.Collation{Locale: "en", Strength: 2}
+
+// UsernameCollation compares usernames without regard to case (#36): Alice and
+// alice are one name. Queries that check whether a name is taken use it, so they
+// agree with the username_ci index.
+var UsernameCollation = &options.Collation{Locale: "en", Strength: 2}
+
+// UsernameIndex is the unique, case-insensitive username index. A write refused
+// by it means the name is taken (IsDuplicateKeyOn).
+const UsernameIndex = "username_ci"
+
+// IsDuplicateKeyOn reports whether err is a duplicate-key error from the named
+// index, so a caller can tell a taken username from a taken email.
+func IsDuplicateKeyOn(err error, index string) bool {
+	return mongo.IsDuplicateKeyError(err) && strings.Contains(err.Error(), "index: "+index+" ")
+}
 
 // collectionIndexes is the set of secondary indexes one collection needs.
 type collectionIndexes struct {
@@ -85,6 +101,22 @@ var indexSpecs = []collectionIndexes{
 			{
 				Keys:    bson.D{{Key: "email", Value: 1}},
 				Options: options.Index().SetName("email_ci").SetCollation(EmailCollation),
+			},
+		},
+	},
+	{
+		// Its own entry, so duplicate emails failing email_1 can't stop it.
+		coll: constants.UserColl,
+		models: []mongo.IndexModel{
+			// One account per username, ignoring case (#36). The startup
+			// RenameDuplicateUsernames runs first, so names shared before #36
+			// can't stop the build. Partial: documents without a username
+			// (test fixtures, broken seeds) aren't all one "missing" name.
+			{
+				Keys: bson.D{{Key: "username", Value: 1}},
+				Options: options.Index().SetName(UsernameIndex).SetUnique(true).
+					SetCollation(UsernameCollation).
+					SetPartialFilterExpression(bson.M{"username": bson.M{"$type": "string"}}),
 			},
 		},
 	},
