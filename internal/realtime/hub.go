@@ -336,12 +336,24 @@ func (eh *Hub) handleClientRegistration(client *models.Client) {
 		return
 	}
 
+	// The welcome goes first, while nothing else can reach the queue: once the
+	// connection is in a room or the user's map, messages could fill it (#168).
+	userID := client.UserID.Hex()
+	welcomeMsg := models.WebSocketMessage{
+		Type:      models.WSMessageTypeResponse,
+		UserID:    userID,
+		Data:      map[string]interface{}{"status": "connected", "clientId": client.ID, "instanceId": eh.instanceID},
+		Timestamp: time.Now(),
+	}
+	if !client.TrySend(welcomeMsg) {
+		eh.logger.Warn("Failed to send welcome message")
+	}
+
 	// Add client to hub
 	eh.Clients[client.ID] = client
 	removePending(eh.Hub, client)
 
 	// Add to user mapping
-	userID := client.UserID.Hex()
 	if eh.UserClients[userID] == nil {
 		eh.UserClients[userID] = make(map[string]*models.Client)
 	}
@@ -365,6 +377,20 @@ func (eh *Hub) handleClientRegistration(client *models.Client) {
 		return
 	}
 
+	// A chat gained between the read above and the subscribe was announced
+	// while this server didn't listen on the user's channel yet: read again
+	// (#168). Anything gained after this read arrives on the channel.
+	ctx, cancel = context.WithTimeout(eh.Ctx, chatLoadTimeout)
+	again, err := loadChats(ctx, client.UserID)
+	cancel()
+	if err != nil {
+		eh.closeForRetry(client, fmt.Errorf("reload chats: %w", err))
+		return
+	}
+	if added := eh.joinNewChats(client, again); len(added) > 0 {
+		eh.pubSubManager.subscribeChats(added)
+	}
+
 	// Without the hub lock, so a slow Redis can't block every broadcast. It
 	// reaches the members of the user's chats over presence:global (#31).
 	if !eh.publishOnline(client) {
@@ -374,17 +400,25 @@ func (eh *Hub) handleClientRegistration(client *models.Client) {
 	// Off the hub goroutine, so registrations don't wait on Redis (#22, #76).
 	go eh.checkNewSession(client)
 
-	// Send welcome message
-	welcomeMsg := models.WebSocketMessage{
-		Type:      models.WSMessageTypeResponse,
-		UserID:    userID,
-		Data:      map[string]interface{}{"status": "connected", "clientId": client.ID, "instanceId": eh.instanceID},
-		Timestamp: time.Now(),
-	}
+}
 
-	if !client.TrySend(welcomeMsg) {
-		eh.logger.Warn("Failed to send welcome message")
+// joinNewChats adds the registered, open client to each of chatIDs' rooms it
+// isn't in yet, under the hub's lock (#19), and returns those chats.
+func (eh *Hub) joinNewChats(client *models.Client, chatIDs []string) []string {
+	eh.Mutex.Lock()
+	defer eh.Mutex.Unlock()
+	if _, registered := eh.Clients[client.ID]; !registered || client.IsClosed() {
+		return nil
 	}
+	var added []string
+	for _, chatID := range chatIDs {
+		if _, in := eh.ClientChats[client.ID][chatID]; in {
+			continue
+		}
+		addClientToRoom(eh.Hub, client, chatID)
+		added = append(added, chatID)
+	}
+	return added
 }
 
 // closeForRetry closes a connection the hub couldn't set up with 1011, so the app
