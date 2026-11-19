@@ -91,8 +91,8 @@ couldn't read your message. All codes are listed in
 }
 ```
 
-- `sender` is the object messages loaded [over REST](./rest-api/chats.md#messages) have, as saved
-  with the message (#50). `attachments` and `mentions` (user IDs) appear only when there
+- `sender` is the object messages loaded [over REST](./rest-api/chats.md#messages) have, with
+  the sender's name and avatar when it was sent (#50); history loads the current ones (#36). `attachments` and `mentions` (user IDs) appear only when there
   are some, and so does the envelope `avatar`. You also get this event for your own messages.
 
 ## `typing`: someone is typing

@@ -300,6 +300,10 @@ func GetChatMessages(ctx context.Context, userID bson.ObjectID, chatID bson.Obje
 	}
 
 	messages, hasMore = trimMessagePage(messages, limit)
+	// The stored names are from when the message was written (#36).
+	if err := fillMessageNames(ctx, messages); err != nil {
+		return nil, false, err
+	}
 	return messages, hasMore, nil
 }
 
@@ -413,6 +417,12 @@ var errDirectChatTaken = errors.New("the pair already has a direct chat")
 // both users' entries, and puts their connections in it. If the pair already
 // has a keyed chat, it returns errDirectChatTaken.
 func insertDirectChat(ctx context.Context, user models.LoginUserResponse, targetUserID bson.ObjectID) (*models.Chat, error) {
+	// Copied into the chat, so not the JWT's name (#36). Only here: an existing
+	// chat stores nothing new.
+	user, err := WithCurrentDisplayInfo(ctx, user)
+	if err != nil {
+		return nil, err
+	}
 	targetUser, err := GetUserByID(ctx, targetUserID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get target user: %w", err)
@@ -537,6 +547,12 @@ func CreateGroupChat(ctx context.Context, chatName, description string, particip
 // chat is new, so it can't conflict; the users are then written through
 // UpdateMany over _id, in ID order, as every group write does.
 func createGroupChat(ctx context.Context, creator models.LoginUserResponse, chatName, description string, participantIDs []bson.ObjectID) (models.Chat, error) {
+	// Copied into the group, so not the JWT's name (#36); read inside the
+	// transaction with the other reads.
+	creator, err := WithCurrentDisplayInfo(ctx, creator)
+	if err != nil {
+		return models.Chat{}, err
+	}
 	users, err := GetUsersByIDs(ctx, participantIDs)
 	if err != nil {
 		return models.Chat{}, fmt.Errorf("failed to get users: %w", err)

@@ -11,12 +11,17 @@ on `main`. To learn what the product does, read
 and with a link to exactly one feature state.md. Updated by /close-increment and
 /feature-docs update. -->
 
-- **Feature:** none · #36 unique usernames on `fix/36-unique-usernames`: 3 to 30 letters,
-  digits, `_` or `.`, unique ignoring case (`username_ci`), `409` on signup and `PUT
-  profile/`, startup `RenameDuplicateUsernames` ([decided](./decisions/accounts-and-privacy.md#unique-usernames-36)).
-  Verified; code review: 3 of 9 fixed (spaced legacy names, index use, migration skip);
-  left: the JWT and copies keep old names (rest of #36), renamed names can break the format
-  `main` at `5337f1e`: #37 steps 2 and 3, #110 and
+- **Feature:** none · #36 current names on `fix/36-fresh-display-info`: message history and
+  chat replies read names and avatars from `users` when built, new chats copy them from the
+  DB instead of the JWT, and so does WebSocket connect
+  ([decided](./decisions/accounts-and-privacy.md#names-are-read-when-shown-36)). Verified;
+  code review: 5 of 10 fixed (no 500 after a saved create, gone account is an error, reads
+  in the transaction and only on insert, 2 s connect read); a deleted reactor's name is `""`.
+  Left on #36: the hub's name cache (typing, invite, remove) isn't cleared on a profile
+  change, and join and leave show the name from connect.
+- **#36 usernames on Render (not checked yet):** PR #160 is merged; the startup log shows
+  any `Renamed a username another account already had`, then `Indexes ensured` with
+  `username_ci`. `main` at `db8204b`: #37 steps 2 and 3, #110 and
   the last #40 items (mentions, `CheckOrigin`, per-account limit; PRs #151 to #159) are
   merged, so Render deploys them. #5 step 2 waits for the Android invite screen
   ([group-invites](./features/group-invites/state.md))
@@ -70,13 +75,12 @@ and with a link to exactly one feature state.md. Updated by /close-increment and
   proposed to close it
 - **Next step:** the user decides on closing #40, #37 (all steps merged; the "Left open"
   review items in [data-writes](./decisions/data-writes.md#mongodb-transactions) stay) and
-  #63. Open a PR for `fix/36-unique-usernames`; after it merges, Render's startup log shows
-  any `Renamed a username another account already had` and `Indexes ensured` with
-  `username_ci`. Then the rest of #36 (stale display copies), #42 (unbounded lists) or #43
+  #63. Open a PR for `fix/36-fresh-display-info`; then the last #36 step (clear the hub's
+  name cache on every server on a profile change), #42 (unbounded lists) or #43
   (missed live messages). Direct-chat gating and live status changes are decided against for now
   ([decided](./decisions/accounts-and-privacy.md#how-privacy-settings-apply-32)). The Render
   checks above are the user's
-- **Updated:** 2026-11-19 on `fix/36-unique-usernames` from `5337f1e`. Commits on `main` must keep the author `shoonya0`
+- **Updated:** 2026-11-19 on `fix/36-fresh-display-info` from `db8204b`. Commits on `main` must keep the author `shoonya0`
 
 ## Where things stand
 
@@ -90,6 +94,9 @@ Not built yet: editing or deleting messages, and changing chat settings. The ful
 
 ## Recently finished
 
+- **#36 usernames (PR #160):** 3 to 30 letters, digits, `_` or `.`, unique ignoring case
+  (`username_ci`); `409` on signup and `PUT profile/`; names shared before are renamed at
+  startup ([decided](./decisions/accounts-and-privacy.md#unique-usernames-36)).
 - **#40 per-account limit (PR #159):** one account holds up to 5 WebSocket connections per
   server; more get `429`, or `1008` when two connect at once ([connect](./WEBSOCKET_PROTOCOL.md#connect)).
 - **#40 `CheckOrigin` (PR #158):** a WebSocket upgrade with an `Origin` other than the server's
@@ -180,7 +187,7 @@ There are 8 open issues. Where each risk sits in the code: [architecture-overvie
 |---|---|---|
 | Live connections | Missed live messages can't be detected | #43 |
 | Groups | Pending members still pass membership checks (#5 step 2) | #5 |
-| Accounts | Display copies of names and avatars go stale (unique usernames: PR pending) | #36 |
+| Accounts | Live events can show a name up to 5 minutes old, or from connect (REST fix: PR pending) | #36 |
 | Contacts and blocking | Contact lists aren't cut to `limit`, and blocks written during a deploy can be missed | #39, #63 |
 | Online status and privacy | A status or privacy change reaches live events only at the next connect (decided) | none |
 | Messages and data | Some lists grow without limit | #42 |
