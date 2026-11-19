@@ -45,6 +45,21 @@ const (
 	UserStatusOffline   UserStatus = "offline"
 )
 
+// Valid reports whether s is a status a user may choose.
+func (s UserStatus) Valid() bool {
+	switch s {
+	case UserStatusOnline, UserStatusAway, UserStatusDND, UserStatusInvisible, UserStatusOffline:
+		return true
+	}
+	return false
+}
+
+// Hidden reports whether a user who chose s is shown to others as offline
+// and never announced online: invisible, or offline by choice (#31).
+func (s UserStatus) Hidden() bool {
+	return s == UserStatusInvisible || s == UserStatusOffline
+}
+
 // OnlineKeyPrefix starts the Redis sorted set online:<userID>, which records
 // the servers a user is connected to (#31).
 const OnlineKeyPrefix = "online:"
