@@ -7,6 +7,8 @@ import (
 	"sync"
 	"time"
 
+	"github.com/shoonya0/ECHO/internal/constants"
+
 	"github.com/redis/go-redis/v9"
 )
 
@@ -30,7 +32,7 @@ var offlineRecheckMargin = 5 * time.Second
 // presence lock for long.
 const presenceRedisTimeout = time.Second
 
-func onlineKey(userID string) string { return "online:" + userID }
+func onlineKey(userID string) string { return constants.OnlineKeyPrefix + userID }
 
 func nowScore() string { return strconv.FormatInt(time.Now().UnixMilli(), 10) }
 
