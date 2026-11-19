@@ -11,7 +11,11 @@ import (
 type Chat struct {
 	ChatID   bson.ObjectID `json:"_id,omitempty" bson:"_id,omitempty"`
 	ChatType string        `json:"chatType" bson:"chatType"` // "direct", "group", "channel"
-	Name     string        `json:"name" bson:"name"`
+	// DirectKey names a direct chat's pair, the two user IDs in order, under a
+	// unique index, so a pair has one direct chat (#37). Groups have none.
+	// Never sent to clients.
+	DirectKey string `json:"-" bson:"directKey,omitempty"`
+	Name      string `json:"name" bson:"name"`
 	// kirtan-krishan
 	Description string `json:"description,omitempty" bson:"description,omitempty"`
 	Avatar      string `json:"avatar,omitempty" bson:"avatar,omitempty"`
