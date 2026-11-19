@@ -56,8 +56,8 @@ func UpdateProfile(ctx *gin.Context) {
 		return
 	}
 
-	// The struct checks the types; the map says which fields were sent. The
-	// update is built from the map: rebuilt from the struct, each group the
+	// The struct checks the types and gives the values; the map only says
+	// which fields were sent. Built from the struct alone, each group the
 	// request touched had its unsent fields written as "" and false, so saving
 	// one setting reset the others, privacy included (#32 review).
 	var updateReq models.UpdateUserRequest
@@ -108,7 +108,7 @@ func UpdateProfile(ctx *gin.Context) {
 		}
 	}
 
-	updateDoc := BuildPartialDocument(sent)
+	updateDoc := sentFieldsOnly(BuildPartialDocument(updateReq), BuildPartialDocument(sent))
 
 	// Drop backend/service-owned fields (accountStatus, timestamps, etc.)
 	// before they can reach MongoDB. Any client attempt to set them is logged.
