@@ -34,7 +34,8 @@ conflicts show on Render. Tests make one write fail with `testutil.FailCommand`
 declining an invite (step 2b-2) do the same. Their "already a member" path repairs a
 missing chats entry and answers 409; an error inside the transaction would roll that repair
 back, so the transaction returns what it did (`joinOutcome`) and the 409 and the live-hub
-join come after the commit. A decline whose user cleanup fails now fails as a whole.
+join come after the commit; a 409 always follows the chat again, as a commit that succeeded
+but answered with an error never got to. A decline whose user cleanup fails now fails as a whole.
 
 Left for step 3 of #37: read receipts (`MarkMessagesAsRead`, `updateChatReadReceipts`,
 which discards its error) and reactions still use `context.Background()` instead of the
@@ -50,6 +51,10 @@ Left open (from the PR review of step 2a):
 - **One failpoint per server.** `testutil.FailCommand` sets MongoDB's single `failCommand`
   failpoint; only `internal/services` may use it, or packages testing in parallel
   overwrite each other's setting. Make it a lock if a second package needs it.
+- **Join and accept read the invite codes twice** (from the step 2b-2 review). One extra read
+  per transaction; pass the codes in from the first read if join latency shows up.
+- **`joinOutcome` is join-only.** If a second write needs "commit, then answer an error",
+  make it a generic result of `WithTransaction` instead of another outcome type.
 
 ## One direct chat per pair (#37)
 
