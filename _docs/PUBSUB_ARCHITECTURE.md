@@ -116,11 +116,11 @@ can't keep the user online (#31).
 1. Reads the `chats` list on the user's MongoDB document, and keeps only the chats where
    the user is also in `participants` and not pending (`GetUserChats`). A startup repair
    removes entries for chats that don't list the user (#69).
-2. Adds the connection to its lookup tables.
-3. Subscribes this server to `user:<userID>` and to `chat:<chatID>` for each of those chats.
+2. Queues the welcome (first, so room messages can't crowd it out, #168); joins its tables.
+3. Subscribes this server to `user:<userID>` and to `chat:<chatID>` for each of those chats,
+   then reads the list again for a chat gained meanwhile, whose `chat_added` it missed (#168).
 4. Marks the user in `online:<userID>`, and announces them as online to the members of
    their chats if this is their first connection here.
-5. Sends the welcome message.
 
 Up to 32 connections go through these steps at once, so a slow call delays only the
 connections waiting on it (#22).

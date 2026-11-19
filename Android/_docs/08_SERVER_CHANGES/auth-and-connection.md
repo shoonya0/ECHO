@@ -2,6 +2,12 @@
 
 Part of [server changes the app must handle](./README.md).
 
+## The welcome is always the first message (#168)
+
+- After connecting, the first message is the welcome `response` (`"status": "connected"`);
+  it is no longer lost when chat messages arrive at once. Treat the connection as ready on it.
+- A group you were added to while connecting is followed too; no reconnect needed.
+
 ## Presence: offline arrives, once per connection (#31)
 
 - `presence` events reach every connection that shares a chat with the user, on any
