@@ -75,7 +75,19 @@ conflict and the retry must see what the other side committed. Writes to two use
 smaller ID first (`writeInIDOrder`): in the other order, a request A→B and B→A at once each
 held one user and aborted the other thousands of times until the request timed out. The
 contact writes (request, accept or decline, remove, block) run this way; the group and
-message writes are next.
+message writes are next. A transaction that finally fails in MongoDB (commit, retries run
+out, context ended) is logged at error by `WithTransaction`; the callers' own errors aren't.
+
+Left for step 2b (from the PR review of step 2a):
+- **Order for more than two users.** A group write touches a chat and N users;
+  `writeInIDOrder` takes two. Write the chat first, then the users sorted by ID, through
+  one helper, or two group operations can livelock as A→B and B→A did.
+- **No backoff.** The driver reruns a conflicting transaction at once, reads included, so
+  many writes to one popular user or chat repeat reads until the first commits. Only worth
+  our own retry loop with jitter if it shows up in load or logs.
+- **Commit vs. client timeout.** A client that disconnects during the commit can get an
+  error for a write that was saved, and its retry gets "already sent". True of every
+  write, not only transactions; leave unless clients report it.
 
 ## One direct chat per pair (#37)
 
@@ -88,10 +100,10 @@ which would block it), then keys unkeyed chats oldest first (an older server cop
 create some during a deploy). A pair's later duplicates stay unkeyed and are logged
 (`Second direct chats of a pair`): merging their messages is a person's call.
 
-Contact list writes are conditional on the list not holding the ID yet and check
-`MatchedCount`, so of two concurrent requests or favorites one wins and the other gets the
-usual "already" error. Their two writes now share a transaction (see above), so neither
-side keeps a half-written change.
+Favorite writes are conditional on the list not holding the ID yet and check
+`MatchedCount`, so of two concurrent favorites one wins and the other gets the usual
+"already" error. Contact requests and answers do the same through a transaction instead
+(see above), so neither side keeps a half-written change.
 
 ## How blocks are stored
 
