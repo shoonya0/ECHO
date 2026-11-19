@@ -11,10 +11,12 @@ on `main`. To learn what the product does, read
 and with a link to exactly one feature state.md. Updated by /close-increment and
 /feature-docs update. -->
 
-- **Feature:** none · #42 step 4 on `fix/42-leaver-read-state` (PR open): remove, decline
-  and account delete clear the leaver's `readReceipts`/`readSeqs`; `mark_read` writes only
-  for participants; a one-time startup job clears older entries. #42 step 3 merged (PR
-  #166). Backend issues come before Android work (user, 2026-11-20)
+- **Feature:** none · #168 on `fix/168-connect-delivery` (PR open): the welcome is queued
+  before the connection joins any room, and the chats are read again after the user
+  channel is subscribed, so a chat gained while connecting is joined. #42 step 4 merged
+  (PR #167). Backend issues come before Android work; minimum fixes until v1 (user)
+- **#168 on Render (not checked yet):** connecting still gets the welcome first, and
+  messages arrive in every chat
 - **#42 step 4 on Render (not checked yet):** the startup log shows `Removed read state of
   users who aren't participants` once (or nothing), and `migrations` holds
   `stale-read-state-42`
@@ -72,15 +74,13 @@ and with a link to exactly one feature state.md. Updated by /close-increment and
 - **#22 on Render (not checked yet):** connecting gets the welcome, and messages and
   presence arrive; two devices of one account connect and disconnect without either
   losing messages
-- **Not filed, from #22:** a `chat_added` arriving while a connection's chats load is
-  missed; a connection's welcome is dropped when its 10-message queue is already full
-- **Next step:** merge #42 step 4. #42's last item, dropping `readBy`, waits for the
-  Android app to read `readSeqs`; Android-dependent steps (that, #5 step 2) wait until the
-  backend issues are done. Next backend candidates: the unfiled items below (#31, #22, #35).
+- **From #22:** filed as #168
+- **Next step:** merge #168. #42 (`readBy`) and #5 step 2 wait for Android. Other unfiled
+  findings (#31 presence, #35 delete safety, #40 email enumeration) were not chosen for v1.
   The "Left open" review items of #37 stay in [data-writes](./decisions/data-writes.md#mongodb-transactions). Direct-chat gating and live status changes are decided against for now
   ([decided](./decisions/accounts-and-privacy.md#how-privacy-settings-apply-32)). The Render
   checks above are the user's
-- **Updated:** 2026-11-20 on `fix/42-leaver-read-state` from `cd84d7c`. Commits on `main` must keep the author `shoonya0`
+- **Updated:** 2026-11-20 on `fix/168-connect-delivery` from `8ca8a38`. Commits on `main` must keep the author `shoonya0`
 
 ## Where things stand
 
@@ -94,7 +94,9 @@ Not built yet: editing or deleting messages, and changing chat settings. The ful
 
 ## Recently finished
 
-- **#42 step 4 (`fix/42-leaver-read-state`):** leavers' `readReceipts`/`readSeqs` entries
+- **#168 (`fix/168-connect-delivery`):** the welcome is always first, and a chat gained while
+  connecting is joined (the chats are read again once the user channel is subscribed).
+- **#42 step 4 (PR #167):** leavers' `readReceipts`/`readSeqs` entries
   are cleared on remove, decline and delete, plus a one-time cleanup (`stale-read-state-42`).
 - **#42 step 3 (PR #166):** each member's highest read `seq` is kept on the
   chat (`readSeqs`) and sent in history and `delivery`; `readBy` stays until the app switches.
@@ -133,15 +135,6 @@ Not built yet: editing or deleting messages, and changing chat settings. The ful
   ID order); a request A→B and B→A at once no longer leaves both pending. Rollback tests
   use `testutil.FailCommand` ([decided](./decisions/data-writes.md#mongodb-transactions)).
   Four code reviews; open items are in that decision. Step 3 followed in PR #155.
-- **#37 part 1 (PR #150):** a pair has one direct chat: `directKey` under a unique index,
-  the race loser returns the winner's chat, and a startup backfill keys older chats and
-  logs duplicates ([decided](./decisions/data-writes.md#one-direct-chat-per-pair-37)). Contact list
-  writes are conditional and check `MatchedCount`, so double submits get "already" errors.
-  Code review: 10 findings, all fixed. Left: transactions (part 2).
-- **#21 (PR #149):** each server listens to all its Redis channels over one shared
-  connection and one reader; a subscribe returns once Redis confirms it, and one that isn't
-  confirmed is undone ([pub/sub](./PUBSUB_ARCHITECTURE.md#redis-channels)). Code review: 9
-  findings, 7 fixed, 2 documented.
 
 Older work: [finished-work/](./finished-work/README.md).
 
@@ -183,13 +176,14 @@ blocks are stored, and who counts as a member.
 
 ## Known issues and risks
 
-There are 2 open issues. Where each risk sits in the code: [architecture-overview.md](./architecture-overview.md#riskiest-areas).
+There are 3 open issues. Where each risk sits in the code: [architecture-overview.md](./architecture-overview.md#riskiest-areas).
 
 | Area | The problem, in short | Issues |
 |---|---|---|
 | Groups | Pending members still pass membership checks (#5 step 2) | #5 |
 | Online status and privacy | A status or privacy change reaches live events only at the next connect (decided) | none |
 | Messages and data | `messages.readBy` until the app reads `readSeqs` (waits for Android) | #42 |
+| Live delivery | A chat gained while connecting; the welcome under load (fix on `fix/168-connect-delivery`) | #168 |
 | Limits and errors | The per-account WebSocket cap is per server, not across servers | #40 |
 
 ## Next task
