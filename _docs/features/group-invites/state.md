@@ -1,9 +1,9 @@
 # Group invites: state
 
-## Now (updated 2026-11-19 at `cd6f26d`)
+## Now (updated 2026-11-19 at `45d90af`)
 
 - **Status:** 🟡 increment 1 merged; increment 2 waits for the Android invite screen
-- **Current task:** none here. #110 (branch `fix/110-derive-participant-count`): the
+- **Current task:** none here. #110 is merged (PR #156): the
   pending list computes `participantCount` from `participants`, and decline no longer
   lowers a stored count
   ([decided](../../decisions/chats-and-groups.md#how-a-groups-participant-count-is-kept-110))
