@@ -3,6 +3,7 @@ package controller
 import (
 	"context"
 	"net/http"
+	"strconv"
 
 	"github.com/shoonya0/ECHO/internal/constants"
 	"github.com/shoonya0/ECHO/internal/models"
@@ -209,7 +210,31 @@ func GetChatMessagesHTTP(ctx *gin.Context) {
 		before = &beforeID
 	}
 
-	messages, hasMore, err := services.GetChatMessages(reqCtx, user.ID, chatID, limit, before)
+	// afterSeq catches up: the highest seq the client already has (#43). It pages
+	// forward, so it can't be combined with before.
+	var afterSeq *int64
+	if afterStr := ctx.Query("afterSeq"); afterStr != "" {
+		n, err := strconv.ParseInt(afterStr, 10, 64)
+		if err != nil || n < 0 {
+			log.Debug("invalid afterSeq")
+			utils.ErrorResponse(ctx, http.StatusBadRequest, "Invalid afterSeq", nil)
+			return
+		}
+		if before != nil {
+			log.Debug("before and afterSeq together")
+			utils.ErrorResponse(ctx, http.StatusBadRequest, "Use either before or afterSeq, not both", nil)
+			return
+		}
+		afterSeq = &n
+	}
+
+	var messages []models.Message
+	var hasMore bool
+	if afterSeq != nil {
+		messages, hasMore, err = services.GetChatMessagesAfterSeq(reqCtx, user.ID, chatID, limit, *afterSeq)
+	} else {
+		messages, hasMore, err = services.GetChatMessages(reqCtx, user.ID, chatID, limit, before)
+	}
 	if err != nil {
 		log.Debug("failed to get chat messages: " + err.Error())
 		statusCode, msg := MapServiceErrorToHTTP(err)
@@ -218,16 +243,21 @@ func GetChatMessagesHTTP(ctx *gin.Context) {
 	}
 
 	var nextCursor *string
-	if hasMore {
+	var nextAfterSeq *int64
+	if hasMore && afterSeq != nil {
+		next := messages[len(messages)-1].Seq
+		nextAfterSeq = &next
+	} else if hasMore {
 		cursor := messages[len(messages)-1].ID.Hex()
 		nextCursor = &cursor
 	}
 
 	type PaginationResponse struct {
-		Limit      int     `json:"limit"`
-		Count      int     `json:"count"`
-		HasMore    bool    `json:"hasMore"`
-		NextCursor *string `json:"nextCursor"` // pass as ?before= for the next (older) page
+		Limit        int     `json:"limit"`
+		Count        int     `json:"count"`
+		HasMore      bool    `json:"hasMore"`
+		NextCursor   *string `json:"nextCursor"`             // pass as ?before= for the next (older) page
+		NextAfterSeq *int64  `json:"nextAfterSeq,omitempty"` // with ?afterSeq=: pass as afterSeq for the next (newer) page (#43)
 	}
 
 	type ChatMessagesResponse struct {
@@ -240,10 +270,11 @@ func GetChatMessagesHTTP(ctx *gin.Context) {
 		Chat:     chatID,
 		Messages: messages,
 		Pagination: PaginationResponse{
-			Limit:      limit,
-			Count:      len(messages),
-			HasMore:    hasMore,
-			NextCursor: nextCursor,
+			Limit:        limit,
+			Count:        len(messages),
+			HasMore:      hasMore,
+			NextCursor:   nextCursor,
+			NextAfterSeq: nextAfterSeq,
 		},
 	}
 

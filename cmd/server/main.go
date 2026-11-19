@@ -90,6 +90,13 @@ func main() {
 		if err := database.EnsureIndexes(indexCtx); err != nil {
 			log.WithError(err).Error("Failed to ensure MongoDB indexes; queries will run without them")
 		}
+		// #43: numbers messages saved without a seq; every start, since an older
+		// server copy saves them during a deploy.
+		if n, err := services.BackfillMessageSeqs(indexCtx); err != nil {
+			log.WithError(err).Error("Failed to number messages")
+		} else if n > 0 {
+			log.WithField("messages", n).Info("Numbered messages")
+		}
 		// #36: emails stored with capitals; idempotent. Logins don't wait for it:
 		// they match emails ignoring case.
 		n, conflicts, err := services.NormalizeEmails(indexCtx)
