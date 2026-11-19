@@ -4,6 +4,9 @@ Older entries moved here from
 [current-state.md](./current-state.md#recently-finished), newest first. Links point to
 the docs that describe each change today. Newer work is listed on that page.
 
+- **#122 (PR #125):** the server reads a connection's requests only after the hub has
+  registered it (at most 10 s), so a `join_chat` sent right after connecting is no longer
+  dropped ([pub/sub](./PUBSUB_ARCHITECTURE.md#connecting-and-disconnecting)).
 - **#54 (PR #121):** a disconnect the hub handles before the connection's registration
   closes its send queue and drops the presence it stored; the registration then skips the
   closed connection ([pub/sub](./PUBSUB_ARCHITECTURE.md#connecting-and-disconnecting)).
