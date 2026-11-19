@@ -17,6 +17,11 @@ type UserPresence struct {
 	LastSeen   time.Time     `json:"last_seen"`
 	ClientID   string        `json:"client_id"`
 	DeviceInfo string        `json:"device_info,omitempty"`
+	// Privacy (#32): ShowOnline is settings.privacy.showOnlineStatus. With
+	// "contacts", Contacts are the only users the events reach.
+	ShowOnline   string   `json:"show_online,omitempty"`
+	ShowLastSeen bool     `json:"show_last_seen,omitempty"`
+	Contacts     []string `json:"contacts,omitempty"`
 }
 
 // PresenceManager keeps presence for users connected to this instance.

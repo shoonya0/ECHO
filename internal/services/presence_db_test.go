@@ -96,24 +96,35 @@ func TestRecordLastSeenNeverMovesBack(t *testing.T) {
 	}
 }
 
-// #31: the status the hub announces comes from MongoDB, not the token.
-func TestGetPresenceStatus(t *testing.T) {
+// #31, #32: the status and privacy settings the hub announces with come from
+// MongoDB, not the token. Contacts are read only for "contacts" scope.
+func TestGetPresenceSettings(t *testing.T) {
 	ctx := useTestDB(t)
 	users := database.DB.Collection(string(constants.UserColl))
-	away, unset := bson.NewObjectID(), bson.NewObjectID()
+	away, unset, scoped, friend := bson.NewObjectID(), bson.NewObjectID(), bson.NewObjectID(), bson.NewObjectID()
 	if _, err := users.InsertMany(ctx, []any{
-		bson.M{"_id": away, "presence": bson.M{"status": "away"}},
+		bson.M{"_id": away, "presence": bson.M{"status": "away"},
+			"settings":    bson.M{"privacy": bson.M{"showOnlineStatus": "everyone", "showLastSeen": true}},
+			"contactInfo": bson.M{"contacts": bson.A{friend}}},
 		bson.M{"_id": unset, "username": "nopresence"},
+		bson.M{"_id": scoped, "presence": bson.M{"status": "dnd"},
+			"settings":    bson.M{"privacy": bson.M{"showOnlineStatus": "contacts"}},
+			"contactInfo": bson.M{"contacts": bson.A{friend}}},
 	}); err != nil {
 		t.Fatalf("insert: %v", err)
 	}
-	if got, err := GetPresenceStatus(ctx, away); err != nil || got != constants.UserStatusAway {
-		t.Fatalf("away user: %q, %v", got, err)
+	got, err := GetPresenceSettings(ctx, away)
+	if err != nil || got.Status != constants.UserStatusAway || !got.Privacy.ShowLastSeen || got.Contacts != nil {
+		t.Fatalf("away user: %+v, %v; want away, lastSeen shown, no contacts loaded", got, err)
 	}
-	if got, err := GetPresenceStatus(ctx, unset); err != nil || got != constants.UserStatusOnline {
-		t.Fatalf("user without presence: %q, %v; want online", got, err)
+	if got, err := GetPresenceSettings(ctx, unset); err != nil || got.Status != constants.UserStatusOnline {
+		t.Fatalf("user without presence: %+v, %v; want online", got, err)
 	}
-	if _, err := GetPresenceStatus(ctx, bson.NewObjectID()); !errors.Is(err, ErrUserNotFound) {
+	got, err = GetPresenceSettings(ctx, scoped)
+	if err != nil || got.Status != constants.UserStatusDND || len(got.Contacts) != 1 || got.Contacts[0] != friend {
+		t.Fatalf("contacts-only user: %+v, %v; want dnd and their one contact", got, err)
+	}
+	if _, err := GetPresenceSettings(ctx, bson.NewObjectID()); !errors.Is(err, ErrUserNotFound) {
 		t.Fatalf("missing user: err = %v, want ErrUserNotFound", err)
 	}
 }

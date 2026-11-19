@@ -148,21 +148,45 @@ func RecordLastSeen(ctx context.Context, userID bson.ObjectID, at time.Time) err
 	return nil
 }
 
-// GetPresenceStatus returns the status userID chose, read from MongoDB rather
-// than from their token, which can be days old (#31).
-func GetPresenceStatus(ctx context.Context, userID bson.ObjectID) (constants.UserStatus, error) {
+// PresenceSettings is what the hub needs to announce a user (#31, #32).
+type PresenceSettings struct {
+	Status  constants.UserStatus
+	Privacy models.PrivacySettingsEmbed
+	// Contacts are the user's accepted contacts, read only when
+	// showOnlineStatus is "contacts": the only users their events reach.
+	Contacts []bson.ObjectID
+}
+
+// GetPresenceSettings returns the status userID chose and their privacy
+// settings, read from MongoDB rather than from their token, which can be days
+// old (#31).
+func GetPresenceSettings(ctx context.Context, userID bson.ObjectID) (PresenceSettings, error) {
 	var user struct {
 		Presence models.PresenceEmbed `bson:"presence"`
+		Settings struct {
+			Privacy models.PrivacySettingsEmbed `bson:"privacy"`
+		} `bson:"settings"`
+		ContactInfo models.ContactInfoEmbed `bson:"contactInfo"`
 	}
-	err := database.DB.Collection(string(constants.UserColl)).FindOne(ctx,
-		bson.M{"_id": userID},
-		options.FindOne().SetProjection(bson.M{"presence.status": 1}),
-	).Decode(&user)
+	coll := database.DB.Collection(string(constants.UserColl))
+	projection := bson.M{"presence.status": 1, "settings.privacy": 1}
+	err := coll.FindOne(ctx, bson.M{"_id": userID}, options.FindOne().SetProjection(projection)).Decode(&user)
 	if err != nil {
 		if errors.Is(err, mongo.ErrNoDocuments) {
-			return "", fmt.Errorf("%w: %s", ErrUserNotFound, userID.Hex())
+			return PresenceSettings{}, fmt.Errorf("%w: %s", ErrUserNotFound, userID.Hex())
 		}
-		return "", fmt.Errorf("get presence status: %w", err)
+		return PresenceSettings{}, fmt.Errorf("get presence settings: %w", err)
 	}
-	return chosenStatus(user.Presence), nil
+	settings := PresenceSettings{Status: chosenStatus(user.Presence), Privacy: user.Settings.Privacy}
+	if constants.PrivacyScope(settings.Privacy.ShowOnlineStatus) != constants.PrivacyContacts {
+		return settings, nil
+	}
+	// Read separately, so users who show everyone don't load their contacts.
+	err = coll.FindOne(ctx, bson.M{"_id": userID},
+		options.FindOne().SetProjection(bson.M{"contactInfo.contacts": 1})).Decode(&user)
+	if err != nil {
+		return PresenceSettings{}, fmt.Errorf("get contacts for presence: %w", err)
+	}
+	settings.Contacts = user.ContactInfo.Contacts
+	return settings, nil
 }

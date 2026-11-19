@@ -65,17 +65,26 @@ func connectionLogFields(user models.LoginUserResponse, client *models.Client) l
 	}
 }
 
-// chosenPresenceStatus returns the status the user chose, read from MongoDB:
-// the token's copy dates from login, up to 7 days ago (#31). When the read
-// fails the user counts as invisible: an outage mustn't announce a user who
-// chose to hide. REST still shows them, from their stored status.
-func chosenPresenceStatus(ctx context.Context, log logrus.Entry, userID bson.ObjectID) constants.UserStatus {
-	status, err := services.GetPresenceStatus(ctx, userID)
+// connectionPresence returns the presence a new connection registers with:
+// the status and privacy settings the user chose, read from MongoDB, since
+// the token's copy dates from login, up to 7 days ago (#31, #32). When the
+// read fails the user counts as invisible: an outage mustn't announce a user
+// who chose to hide. REST still shows them, from their stored settings.
+func connectionPresence(ctx context.Context, log logrus.Entry, user models.LoginUserResponse, clientID string) *realtime.UserPresence {
+	presence := &realtime.UserPresence{UserID: user.ID, ClientID: clientID, DeviceInfo: user.Presence.DeviceInfo}
+	settings, err := services.GetPresenceSettings(ctx, user.ID)
 	if err != nil {
-		log.WithError(err).WithField(string(constants.UserIDKey), userID.Hex()).Warn("Could not read the user's presence status; not announcing them")
-		return constants.UserStatusInvisible
+		log.WithError(err).WithField(string(constants.UserIDKey), user.ID.Hex()).Warn("Could not read the user's presence settings; not announcing them")
+		presence.Status = realtime.UserStatus(constants.UserStatusInvisible)
+		return presence
 	}
-	return status
+	presence.Status = realtime.UserStatus(settings.Status)
+	presence.ShowOnline = settings.Privacy.ShowOnlineStatus
+	presence.ShowLastSeen = settings.Privacy.ShowLastSeen
+	for _, id := range settings.Contacts {
+		presence.Contacts = append(presence.Contacts, id.Hex())
+	}
+	return presence
 }
 
 // HandleWebSocketChat upgrades the request to a WebSocket and serves the chat
@@ -134,12 +143,7 @@ func HandleWebSocketChat(ctx *gin.Context) {
 	// The registration decides from this presence whether to announce the
 	// user online (#31). QueueRegister gives up if the hub stopped;
 	// WaitRegistered reports it (#22).
-	hub.QueueRegister(client, &realtime.UserPresence{
-		UserID:     user.ID,
-		Status:     realtime.UserStatus(chosenPresenceStatus(reqCtx, log, user.ID)),
-		ClientID:   client.ID,
-		DeviceInfo: user.Presence.DeviceInfo,
-	})
+	hub.QueueRegister(client, connectionPresence(reqCtx, log, user, client.ID))
 
 	// Read requests only once the hub has registered the connection: a
 	// join_chat handled earlier would be dropped (#122).
