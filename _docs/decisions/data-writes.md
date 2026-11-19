@@ -73,7 +73,13 @@ new message can't be numbered before old history. The backfill hands those out o
 first in 500-message transactions, at start and again 15 minutes later for what the old
 copy saved during the deploy (numbered after the newest); then the `message-seqs-43`
 marker stops later starts from scanning every message. Left: no replay buffer (Redis
-Streams); the client catches up over REST.
+Streams); the client catches up over REST. This is also why every send writes its chat document
+(`stats.lastSeq`, `lastMessageId`, `messageCount`): #42 asked to drop that write, but
+gap-free numbers need one document that serializes a chat's sends. Kept on 2026-11-20.
+
+Read state uses the same numbers (#42): `mark_read` raises `chats.readSeqs.<userId>`
+with `$max`, and a message with `seq` n is read by each member at n or more. Each message's
+`readBy` is still written until the Android app reads `readSeqs`; then it goes.
 
 ## One direct chat per pair (#37)
 

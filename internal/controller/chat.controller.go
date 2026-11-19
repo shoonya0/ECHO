@@ -242,6 +242,16 @@ func GetChatMessagesHTTP(ctx *gin.Context) {
 		return
 	}
 
+	// Who has read how far: a message with seq n is read by each member whose
+	// value is n or more (#42). Membership was checked by the read above.
+	readSeqs, err := services.ChatReadSeqs(reqCtx, chatID)
+	if err != nil {
+		log.Debug("failed to get read seqs: " + err.Error())
+		statusCode, msg := MapServiceErrorToHTTP(err)
+		utils.ErrorResponse(ctx, statusCode, msg, nil)
+		return
+	}
+
 	var nextCursor *string
 	var nextAfterSeq *int64
 	if hasMore && afterSeq != nil {
@@ -263,12 +273,14 @@ func GetChatMessagesHTTP(ctx *gin.Context) {
 	type ChatMessagesResponse struct {
 		Chat       bson.ObjectID      `json:"chat"`
 		Messages   []models.Message   `json:"messages"`
+		ReadSeqs   map[string]int64   `json:"readSeqs"` // user ID -> highest seq read (#42)
 		Pagination PaginationResponse `json:"pagination"`
 	}
 
 	response := ChatMessagesResponse{
 		Chat:     chatID,
 		Messages: messages,
+		ReadSeqs: readSeqs,
 		Pagination: PaginationResponse{
 			Limit:        limit,
 			Count:        len(messages),

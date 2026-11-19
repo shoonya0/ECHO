@@ -24,7 +24,12 @@ user" (#36). There is no route that lists your chats, and none that renames a gr
 | `before` | Message ID to start from. Leave it out for the newest page. |
 | `afterSeq` | Catch up: messages with a `seq` above this, oldest first. Not with `before`. |
 
-The reply's `data` has `chat`, `messages` and `pagination`:
+The reply's `data` has `chat`, `messages`, `readSeqs` and `pagination`. `readSeqs` maps a
+member's user ID to the highest `seq` they have read (#42): a message with `seq` n is read
+by everyone whose value is n or more. Members who haven't read a numbered message aren't
+listed. Each message's `readBy` still works for now; prefer `readSeqs`, as `readBy` will go.
+
+`pagination` looks like this:
 
 ```json
 { "limit": 50, "count": 50, "hasMore": true, "nextCursor": "<messageId>" }
