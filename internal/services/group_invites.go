@@ -87,34 +87,67 @@ func notPendingError(ctx context.Context, chatID, userID bson.ObjectID) error {
 // one (#5). Calling it again as an accepted member returns ErrAlreadyParticipant
 // after making sure the join is complete. The member already counts toward the size limit and participantCount,
 // so neither changes. Afterwards the group is on their chats list and their open
-// connections follow it (#17).
+// connections follow it (#17). The group and the user change in one transaction
+// (#37), the group first.
 func AcceptGroupInvite(ctx context.Context, userID, chatID bson.ObjectID) error {
+	var out joinOutcome
+	err := database.WithTransaction(ctx, func(ctx context.Context) error {
+		var err error
+		out, err = acceptGroupInvite(ctx, userID, chatID)
+		return err
+	})
+	if err != nil {
+		return err
+	}
+	return out.finish(ctx, userID)
+}
+
+func acceptGroupInvite(ctx context.Context, userID, chatID bson.ObjectID) (joinOutcome, error) {
 	res, err := database.DB.Collection(string(constants.ChatColl)).UpdateOne(ctx,
 		pendingInviteFilter(chatID, userID),
 		bson.M{"$set": acceptedFields(userID, time.Now())},
 	)
 	if err != nil {
-		return fmt.Errorf("failed to accept the invite: %w", err)
+		return joinOutcome{}, fmt.Errorf("failed to accept the invite: %w", err)
 	}
+	joined := joinOutcome{chatID: chatID, follow: true}
 	if res.MatchedCount == 0 {
 		err := notPendingError(ctx, chatID, userID)
-		if errors.Is(err, ErrAlreadyParticipant) {
-			// A retry of an accept that stopped after the status write (the client
-			// got a 500) finishes it; the answer stays 409.
-			if ferr := finishGroupJoin(ctx, chatID, userID); ferr != nil {
-				return ferr
-			}
+		if !errors.Is(err, ErrAlreadyParticipant) {
+			return joinOutcome{}, err
 		}
-		return err
+		// An accept from before the transactions (#37) could stop after the
+		// status write (the client got a 500); its retry finishes it, and the
+		// answer stays 409 once the repair has committed.
+		joined.already = true
 	}
-	return finishGroupJoin(ctx, chatID, userID)
+	if err := finishGroupJoin(ctx, chatID, userID); err != nil {
+		return joinOutcome{}, err
+	}
+	return joined, nil
 }
 
 // DeclineGroupInvite takes userID, a pending member of the group chatID, out of the
-// group (#5). They can be added again later. Their chats entry and invitations to the
-// group go too; if that write fails it is only logged, since the hub and the pending
-// list ignore an entry for a group the user isn't in.
+// group (#5). They can be added again later. Their chats entry and invitations to
+// the group go too, in the same transaction (#37), so a failed cleanup fails the
+// decline and a retry repeats it.
 func DeclineGroupInvite(ctx context.Context, userID, chatID bson.ObjectID) error {
+	err := database.WithTransaction(ctx, func(ctx context.Context) error {
+		return declineGroupInvite(ctx, userID, chatID)
+	})
+	if err != nil {
+		return err
+	}
+	// A pending member may follow the chat live with join_chat (#48) until #5's
+	// second step enforces pending, so take their connections out of its room.
+	if err := RemoveMembersFromLiveChat(chatID.Hex(), []string{userID.Hex()}); err != nil {
+		logger.WithContext(ctx).WithField("chat", chatID.Hex()).WithError(err).
+			Debug("Could not take a declined invitee out of the live room")
+	}
+	return nil
+}
+
+func declineGroupInvite(ctx context.Context, userID, chatID bson.ObjectID) error {
 	res, err := database.DB.Collection(string(constants.ChatColl)).UpdateOne(ctx,
 		pendingInviteFilter(chatID, userID),
 		bson.M{
@@ -131,27 +164,18 @@ func DeclineGroupInvite(ctx context.Context, userID, chatID bson.ObjectID) error
 		return notPendingError(ctx, chatID, userID)
 	}
 
-	log := logger.WithContext(ctx).WithField("chat", chatID.Hex())
-	// A pending member may follow the chat live with join_chat (#48) until #5's
-	// second step enforces pending, so take their connections out of its room.
-	if err := RemoveMembersFromLiveChat(chatID.Hex(), []string{userID.Hex()}); err != nil {
-		log.WithError(err).Debug("Could not take a declined invitee out of the live room")
-	}
 	codes, err := groupInviteCodes(ctx, chatID)
 	if err != nil {
-		log.WithError(err).Warn("Declined invitee keeps their invitations to the group")
-		codes = nil
+		return err
 	}
 	update := bson.M{"$unset": bson.M{"chats." + chatID.Hex(): ""}}
 	if len(codes) > 0 {
 		update["$pull"] = bson.M{"chatInvitations": bson.M{"token": bson.M{"$in": codes}}}
 	}
-	userRes, err := database.DB.Collection(string(constants.UserColl)).UpdateOne(ctx, bson.M{"_id": userID}, update)
-	switch {
-	case err != nil:
-		log.WithError(err).Warn("Declined invitee keeps the group on their chats list")
-	case userRes.MatchedCount == 0:
-		log.Debug("Declined invitee has no user document") // the account is gone (#35)
+	// MatchedCount isn't checked: an invitee whose account is gone (#35) can
+	// still be taken out of the group.
+	if _, err := database.DB.Collection(string(constants.UserColl)).UpdateOne(ctx, bson.M{"_id": userID}, update); err != nil {
+		return fmt.Errorf("failed to remove the group from the invitee: %w", err)
 	}
 	return nil
 }

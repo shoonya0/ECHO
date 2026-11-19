@@ -1655,18 +1655,52 @@ func addInvitationUpdate(inviteID string) bson.M {
 	return bson.M{"$addToSet": bson.M{"chatInvitations": models.ChatInvitationEmbed{Token: inviteID, Status: "pending"}}}
 }
 
+// joinOutcome is what a join's transaction did, acted on once it has committed:
+// an error inside the transaction would roll back the repair it made (#37).
+type joinOutcome struct {
+	chatID  bson.ObjectID
+	follow  bool // the user's open connections should follow the chat (#49)
+	already bool // they were a member already: the answer is ErrAlreadyParticipant
+}
+
+// finish acts on a committed join: open connections follow the chat, and a
+// member who was already one gets ErrAlreadyParticipant.
+func (o joinOutcome) finish(ctx context.Context, userID bson.ObjectID) error {
+	if o.follow {
+		AddMembersToLiveChat(ctx, o.chatID, userID) // #49
+	}
+	if o.already {
+		return fmt.Errorf("%w", ErrAlreadyParticipant)
+	}
+	return nil
+}
+
 // JoinGroupByInvite adds userID to the group that stores the invite code. The
 // code must not be deleted or past its stored expiry, and the chat must be a
-// group.
+// group. The group and the user change in one transaction (#37), the group
+// first.
 func JoinGroupByInvite(ctx context.Context, userID bson.ObjectID, inviteID string) error {
-	chatObjectID, _, err := findInvite(ctx, inviteID)
+	var out joinOutcome
+	err := database.WithTransaction(ctx, func(ctx context.Context) error {
+		var err error
+		out, err = joinGroupByInvite(ctx, userID, inviteID)
+		return err
+	})
 	if err != nil {
 		return err
+	}
+	return out.finish(ctx, userID)
+}
+
+func joinGroupByInvite(ctx context.Context, userID bson.ObjectID, inviteID string) (joinOutcome, error) {
+	chatObjectID, _, err := findInvite(ctx, inviteID)
+	if err != nil {
+		return joinOutcome{}, err
 	}
 
 	user, err := GetUserBasicInfo(ctx, userID)
 	if err != nil {
-		return fmt.Errorf("failed to get user: %w", err)
+		return joinOutcome{}, fmt.Errorf("failed to get user: %w", err)
 	}
 
 	userParticipant := utils.NewParticipantWithDefaults(
@@ -1700,24 +1734,30 @@ func JoinGroupByInvite(ctx context.Context, userID bson.ObjectID, inviteID strin
 	joinFilter["$expr"] = roomForParticipants(1)
 	res, err := database.DB.Collection(string(constants.ChatColl)).UpdateOne(ctx, joinFilter, updateInviteCodeUserIDs)
 	if err != nil {
-		return fmt.Errorf("failed to update invite code user IDs: %w", err)
+		return joinOutcome{}, fmt.Errorf("failed to update invite code user IDs: %w", err)
 	}
 	if res.MatchedCount == 0 {
-		// Not a new member. A pending member (#5) accepts here (#103); anyone
-		// else gets the reason the join didn't apply.
-		if err := resolveMissedJoin(ctx, chatObjectID, userID, inviteID, now); err != nil {
-			return err
+		// Not a new member. A pending member (#5) accepts here (#103); a member
+		// gets their chats entry repaired; anyone else gets the reason the join
+		// didn't apply.
+		out, err := resolveMissedJoin(ctx, chatObjectID, userID, inviteID, now)
+		if err != nil || out.already {
+			return out, err
 		}
 	}
 
-	return finishGroupJoin(ctx, chatObjectID, userID)
+	if err := finishGroupJoin(ctx, chatObjectID, userID); err != nil {
+		return joinOutcome{}, err
+	}
+	return joinOutcome{chatID: chatObjectID, follow: true}, nil
 }
 
 // finishGroupJoin completes userID becoming an accepted member of the group chatID,
 // by a code or by accepting their invite (#5): the chat goes on their chats list,
-// their invitations to the group are dropped as used (#30, #103), and their open
-// connections follow it (#49). $max adds a missing entry as 0 and keeps an unread
-// count that is already there.
+// their invitations to the group are dropped as used (#30, #103). $max adds a
+// missing entry as 0 and keeps an unread count that is already there. It runs in
+// the join's transaction; the caller makes their open connections follow the
+// chat once it commits (#49, joinOutcome).
 func finishGroupJoin(ctx context.Context, chatID, userID bson.ObjectID) error {
 	codes, err := groupInviteCodes(ctx, chatID)
 	if err != nil {
@@ -1736,8 +1776,6 @@ func finishGroupJoin(ctx context.Context, chatID, userID bson.ObjectID) error {
 	if userRes.MatchedCount == 0 {
 		return fmt.Errorf("add chat to user: %w", ErrUserNotFound)
 	}
-
-	AddMembersToLiveChat(ctx, chatID, userID) // #49
 	return nil
 }
 
@@ -1774,26 +1812,27 @@ func usableInviteFilter(chatID bson.ObjectID, inviteID string, now time.Time) bs
 
 // resolveMissedJoin handles a join whose update matched nothing, from one read of
 // the group. A pending member with a code usable at now (the time the join's
-// filter used) is accepted, and it returns nil (#103). Otherwise it returns why:
-//   - ErrAlreadyParticipant: userID is already a member. An earlier join can stop
-//     after adding them to participants but before adding the chat to their chats
-//     list, which the hub needs for live messages, and a retry would never get
-//     past this point, so a missing entry is added here (an existing one keeps
-//     its unread count).
+// filter used) is accepted, and it returns no error (#103). A member already in
+// the group gets an outcome with already set: a join from before the
+// transactions (#37) could stop after adding them to participants but before
+// adding the chat to their chats list, which the hub needs for live messages,
+// so a missing entry is added here (an existing one keeps its unread count) and
+// the caller answers ErrAlreadyParticipant after the commit. Otherwise it
+// returns why:
 //   - ErrInvalidInvite: there is no such group, or the code isn't usable.
 //   - ErrGroupFull: a new member wouldn't fit (#68).
 //   - a plain error: membership changed during the join; a retry may work.
-func resolveMissedJoin(ctx context.Context, chatID, userID bson.ObjectID, inviteID string, now time.Time) error {
+func resolveMissedJoin(ctx context.Context, chatID, userID bson.ObjectID, inviteID string, now time.Time) (joinOutcome, error) {
 	var chat models.Chat
 	err := database.DB.Collection(string(constants.ChatColl)).FindOne(ctx,
 		bson.M{"_id": chatID, "chatType": string(constants.ChatTypeGroup)},
 		options.FindOne().SetProjection(bson.M{"participants": 1, "settings.maxParticipants": 1, "inviteCode": 1}),
 	).Decode(&chat)
 	if errors.Is(err, mongo.ErrNoDocuments) {
-		return fmt.Errorf("%w", ErrInvalidInvite)
+		return joinOutcome{}, fmt.Errorf("%w", ErrInvalidInvite)
 	}
 	if err != nil {
-		return fmt.Errorf("failed to check the group: %w", err)
+		return joinOutcome{}, fmt.Errorf("failed to check the group: %w", err)
 	}
 
 	usable := slices.ContainsFunc(chat.InviteCode, func(c models.InviteCodeEmbed) bool {
@@ -1803,16 +1842,16 @@ func resolveMissedJoin(ctx context.Context, chatID, userID bson.ObjectID, invite
 	switch {
 	case member && participant.RequestStatus == string(constants.StatusPending):
 		if !usable {
-			return fmt.Errorf("%w", ErrInvalidInvite)
+			return joinOutcome{}, fmt.Errorf("%w", ErrInvalidInvite)
 		}
 		accepted, err := acceptPendingMember(ctx, chatID, userID, inviteID, now)
 		if err != nil {
-			return err
+			return joinOutcome{}, err
 		}
 		if !accepted {
-			return fmt.Errorf("accept did not apply: membership changed meanwhile")
+			return joinOutcome{}, fmt.Errorf("accept did not apply: membership changed meanwhile")
 		}
-		return nil
+		return joinOutcome{}, nil
 	case member:
 		chatRef := "chats." + chatID.Hex()
 		res, err := database.DB.Collection(string(constants.UserColl)).UpdateOne(ctx,
@@ -1820,19 +1859,16 @@ func resolveMissedJoin(ctx context.Context, chatID, userID bson.ObjectID, invite
 			bson.M{"$set": bson.M{chatRef: 0}},
 		)
 		if err != nil {
-			return fmt.Errorf("failed to restore chat ref of user: %w", err)
+			return joinOutcome{}, fmt.Errorf("failed to restore chat ref of user: %w", err)
 		}
-		if res.ModifiedCount > 0 {
-			// Their connections read the chats without this one (#49).
-			AddMembersToLiveChat(ctx, chatID, userID)
-		}
-		return fmt.Errorf("%w", ErrAlreadyParticipant)
+		// Their connections read the chats without this one (#49).
+		return joinOutcome{chatID: chatID, follow: res.ModifiedCount > 0, already: true}, nil
 	case !usable:
-		return fmt.Errorf("%w", ErrInvalidInvite)
+		return joinOutcome{}, fmt.Errorf("%w", ErrInvalidInvite)
 	case len(chat.Participants)+1 > groupSizeLimit(chat.Settings.MaxParticipants):
-		return fmt.Errorf("%w", ErrGroupFull)
+		return joinOutcome{}, fmt.Errorf("%w", ErrGroupFull)
 	default:
-		return fmt.Errorf("join did not apply: membership changed meanwhile")
+		return joinOutcome{}, fmt.Errorf("join did not apply: membership changed meanwhile")
 	}
 }
 
