@@ -636,24 +636,8 @@ func SendMessage(ctx context.Context, chatID, senderID bson.ObjectID, content, m
 		UpdatedAt: now,
 	}
 
-	// Handle mentions
-	if len(mentions) > 0 {
-		mentionUserIDs := make([]bson.ObjectID, 0, len(mentions))
-		mentionUserNames := make([]string, 0, len(mentions))
-
-		for _, mention := range mentions {
-			if userID, err := bson.ObjectIDFromHex(mention); err == nil {
-				mentionUserIDs = append(mentionUserIDs, userID)
-				if user, err := GetUserByID(ctx, userID); err == nil {
-					mentionUserNames = append(mentionUserNames, user.Username)
-				}
-			}
-		}
-
-		message.Mentions = models.MentionsEmbed{
-			UserIDs:   mentionUserIDs,
-			UserNames: mentionUserNames,
-		}
+	if message.Mentions, err = resolveMentions(ctx, chatID, mentions); err != nil {
+		return nil, err
 	}
 
 	// The message and the chat's lastMessageId and messageCount are written
@@ -678,6 +662,76 @@ func SendMessage(ctx context.Context, chatID, senderID bson.ObjectID, content, m
 	broadcastNewMessage(chatID, message)
 
 	return &message, nil
+}
+
+// resolveMentions turns the mentioned user IDs of a message into its mentions: each
+// participant of the chat once, in the order sent, with the username beside it.
+// Invalid IDs and users who aren't participants are left out, so a message can't show
+// the username of any account. It reads the chat and the users once each, not once
+// per mention (#40).
+func resolveMentions(ctx context.Context, chatID bson.ObjectID, mentions []string) (models.MentionsEmbed, error) {
+	ids := make([]bson.ObjectID, 0, len(mentions))
+	seen := make(map[bson.ObjectID]bool, len(mentions))
+	for _, mention := range mentions {
+		id, err := bson.ObjectIDFromHex(mention)
+		if err != nil || seen[id] {
+			continue
+		}
+		seen[id] = true
+		ids = append(ids, id)
+	}
+	if len(ids) == 0 {
+		return models.MentionsEmbed{}, nil
+	}
+
+	projection := bson.M{"_id": 1}
+	for _, id := range ids {
+		projection[participantField(id)] = 1
+	}
+	var chat models.Chat
+	err := database.DB.Collection(string(constants.ChatColl)).FindOne(ctx, bson.M{"_id": chatID},
+		options.FindOne().SetProjection(projection)).Decode(&chat)
+	if errors.Is(err, mongo.ErrNoDocuments) {
+		return models.MentionsEmbed{}, fmt.Errorf("%w", ErrChatNotFound)
+	}
+	if err != nil {
+		return models.MentionsEmbed{}, fmt.Errorf("failed to read the mentioned participants: %w", err)
+	}
+	members := make([]bson.ObjectID, 0, len(ids))
+	for _, id := range ids {
+		if _, ok := chat.Participants[id]; ok {
+			members = append(members, id)
+		}
+	}
+	if len(members) == 0 {
+		return models.MentionsEmbed{}, nil
+	}
+
+	cursor, err := database.DB.Collection(string(constants.UserColl)).Find(ctx,
+		bson.M{"_id": bson.M{"$in": members}}, options.Find().SetProjection(bson.M{"username": 1}))
+	if err != nil {
+		return models.MentionsEmbed{}, fmt.Errorf("failed to read the mentioned users: %w", err)
+	}
+	var users []struct {
+		ID       bson.ObjectID `bson:"_id"`
+		Username string        `bson:"username"`
+	}
+	if err := cursor.All(ctx, &users); err != nil {
+		return models.MentionsEmbed{}, fmt.Errorf("failed to read the mentioned users: %w", err)
+	}
+	names := make(map[bson.ObjectID]string, len(users))
+	for _, u := range users {
+		names[u.ID] = u.Username
+	}
+
+	var result models.MentionsEmbed
+	for _, id := range members {
+		if name, ok := names[id]; ok {
+			result.UserIDs = append(result.UserIDs, id)
+			result.UserNames = append(result.UserNames, name)
+		}
+	}
+	return result, nil
 }
 
 // UpdateTypingStatus updates typing indicator for a user in a chat
