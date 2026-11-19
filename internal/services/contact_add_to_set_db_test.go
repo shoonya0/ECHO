@@ -2,6 +2,7 @@ package services
 
 import (
 	"context"
+	"errors"
 	"sync"
 	"testing"
 
@@ -28,6 +29,36 @@ func concurrently(n int, f func()) {
 	done.Wait()
 }
 
+// collectErrors runs f n times at once and returns what each call returned.
+func collectErrors(n int, f func() error) []error {
+	errs := make(chan error, n)
+	concurrently(n, func() { errs <- f() })
+	close(errs)
+	var out []error
+	for err := range errs {
+		out = append(out, err)
+	}
+	return out
+}
+
+// checkOneSucceeded fails unless exactly one call returned nil and every other
+// returned want.
+func checkOneSucceeded(t *testing.T, errs []error, want error) {
+	t.Helper()
+	ok := 0
+	for _, err := range errs {
+		switch {
+		case err == nil:
+			ok++
+		case !errors.Is(err, want):
+			t.Errorf("a call failed with %v, want %v", err, want)
+		}
+	}
+	if ok != 1 {
+		t.Errorf("%d calls succeeded, want 1", ok)
+	}
+}
+
 func loadContactInfo(t *testing.T, ctx context.Context, id bson.ObjectID) models.ContactInfoEmbed {
 	t.Helper()
 	var u struct {
@@ -50,7 +81,8 @@ func countID(ids []bson.ObjectID, id bson.ObjectID) int {
 }
 
 // A double tap sent two requests that both passed the checks, and $push stored
-// each ID twice (#37). The lists now hold each ID at most once.
+// each ID twice (#37). The writes are now conditional: one call succeeds, the
+// others get the error a second call gets, and each ID is stored once.
 func TestConcurrentContactWritesStoreEachIDOnce(t *testing.T) {
 	ctx := useTestDB(t)
 
@@ -58,7 +90,8 @@ func TestConcurrentContactWritesStoreEachIDOnce(t *testing.T) {
 		sender, target := bson.NewObjectID(), bson.NewObjectID()
 		insertTestUsers(t, ctx, sender, target)
 
-		concurrently(10, func() { _ = SendContactRequest(ctx, sender, target) }) // the losers get "already sent"
+		errs := collectErrors(10, func() error { return SendContactRequest(ctx, sender, target) })
+		checkOneSucceeded(t, errs, ErrRequestAlreadySent)
 
 		if n := countID(loadContactInfo(t, ctx, sender).PendingOut, target); n != 1 {
 			t.Errorf("sender's pendingOut holds the target %d times, want 1", n)
@@ -76,7 +109,8 @@ func TestConcurrentContactWritesStoreEachIDOnce(t *testing.T) {
 			t.Fatalf("make contacts: %v", err)
 		}
 
-		concurrently(10, func() { _ = AddToFavorites(ctx, user, friend) })
+		errs := collectErrors(10, func() error { return AddToFavorites(ctx, user, friend) })
+		checkOneSucceeded(t, errs, ErrAlreadyInFavorites)
 
 		if n := countID(loadContactInfo(t, ctx, user).Favorites, friend); n != 1 {
 			t.Errorf("favorites hold the friend %d times, want 1", n)
