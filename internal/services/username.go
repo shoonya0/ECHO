@@ -35,10 +35,17 @@ func CheckNewUsername(ctx context.Context, username string, self bson.ObjectID) 
 	return nil
 }
 
+// usernameFilter matches accounts other than self named username. It states the
+// $type of username_ci's partial filter, without which the planner can't use the
+// index and scans every user (code review of #36).
+func usernameFilter(username string, self bson.ObjectID) bson.M {
+	return bson.M{"username": bson.M{"$eq": username, "$type": "string"}, "_id": bson.M{"$ne": self}}
+}
+
 // usernameTaken reports whether an account other than self has the name in any case.
 func usernameTaken(ctx context.Context, username string, self bson.ObjectID) (bool, error) {
 	n, err := database.DB.Collection(string(constants.UserColl)).CountDocuments(ctx,
-		bson.M{"username": username, "_id": bson.M{"$ne": self}},
+		usernameFilter(username, self),
 		options.Count().SetCollation(database.UsernameCollation).SetLimit(1))
 	if err != nil {
 		return false, fmt.Errorf("check username: %w", err)
@@ -61,14 +68,26 @@ const maxRenameSuffix = 1000
 // sharing a name, the oldest (smallest _id) keeps it; each later one gets the
 // first free name of the form <name>_2, <name>_3, ... It runs on every start before
 // the indexes, since an older server copy can still sign up a taken name during a
-// deploy; once the index exists there is nothing left to rename. Names are grouped
-// by MongoDB with the index's collation, so the migration and the index agree on
-// what a duplicate is. Each rename is filtered on the old name, so a change in
-// between isn't overwritten. The copies of the old name in chats and messages stay
-// as they are, like those of any profile change (#36). A failure on one account
-// stops the run; the next start continues. Returns the renames done.
+// deploy. Once the index exists no duplicate can be written, so the run stops there
+// without reading the users (code review of #36). Names are grouped by MongoDB with
+// the index's collation, so the migration and the index agree on what a duplicate
+// is. Each rename is filtered on the old name, so a change in between isn't
+// overwritten. Two servers starting together before the index exists can both pick
+// one free <name>_<n> for different accounts; the index build then fails and is
+// logged, and the next start renames the pair. The copies of the old name in chats
+// and messages stay as they are, like those of any profile change (#36). A failure on
+// one account stops the run; the next start continues. Returns the renames done.
 func RenameDuplicateUsernames(ctx context.Context) ([]UsernameRename, error) {
 	users := database.DB.Collection(string(constants.UserColl))
+	specs, err := users.Indexes().ListSpecifications(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("list user indexes: %w", err)
+	}
+	for _, s := range specs {
+		if s.Name == database.UsernameIndex {
+			return nil, nil
+		}
+	}
 	cur, err := users.Aggregate(ctx, mongo.Pipeline{
 		{{Key: "$match", Value: bson.M{"username": bson.M{"$type": "string"}}}},
 		{{Key: "$sort", Value: bson.M{"_id": 1}}},

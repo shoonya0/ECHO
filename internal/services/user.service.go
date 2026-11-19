@@ -483,7 +483,10 @@ func checkUsernameChange(ctx context.Context, userID bson.ObjectID, updateMap, e
 	}
 	name = utils.NormalizeUsername(name)
 	updateMap["username"] = name
-	if stored, _ := getNestedPath(existingDoc, "username").(string); name == stored {
+	// Compared trimmed: signup didn't trim before #36. The stored form is kept, so
+	// a legacy "bob " isn't rewritten into a clash with someone's "Bob".
+	if stored, _ := getNestedPath(existingDoc, "username").(string); name == utils.NormalizeUsername(stored) {
+		updateMap["username"] = stored
 		return nil
 	}
 	return CheckNewUsername(ctx, name, userID)

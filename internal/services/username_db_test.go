@@ -3,6 +3,7 @@ package services
 import (
 	"context"
 	"errors"
+	"strings"
 	"testing"
 
 	"go.mongodb.org/mongo-driver/v2/bson"
@@ -45,6 +46,8 @@ func TestUpdateProfileUsername(t *testing.T) {
 	insertNamed(t, ctx, "alice")
 	bob := insertNamed(t, ctx, "bob")
 	legacy := insertNamed(t, ctx, "old name")
+	insertNamed(t, ctx, "Carol")
+	spaced := insertNamed(t, ctx, "carol ") // signup didn't trim before #36
 
 	tests := []struct {
 		name    string
@@ -60,6 +63,7 @@ func TestUpdateProfileUsername(t *testing.T) {
 		{"free name", bob, "bobby", nil, "bobby"},
 		{"legacy name sent back", legacy, "old name", nil, "old name"},
 		{"legacy name changed must have the format", legacy, "old name 2", ErrInvalidUsername, "old name"},
+		{"legacy name with spaces sent back", spaced, "carol ", nil, "carol "}, // code review of #36
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -108,5 +112,41 @@ func TestRenameDuplicateUsernames(t *testing.T) {
 	}
 	if err := database.EnsureIndexes(ctx); err != nil {
 		t.Fatalf("EnsureIndexes after the renames: %v", err)
+	}
+	// With the index there, the run stops before reading the users.
+	if renames, err := RenameDuplicateUsernames(ctx); err != nil || len(renames) != 0 {
+		t.Fatalf("run with the index: renames %v, err %v; want none", renames, err)
+	}
+}
+
+// The taken check must use username_ci, not scan every user on each signup.
+// The index is partial, so the query has to state the $type the filter needs
+// (code review of #36).
+func TestUsernameTakenUsesTheIndex(t *testing.T) {
+	ctx := testutil.UseTestDB(t)
+	if err := database.EnsureIndexes(ctx); err != nil {
+		t.Fatalf("EnsureIndexes: %v", err)
+	}
+	insertNamed(t, ctx, "alice")
+
+	var plan struct {
+		QueryPlanner struct {
+			WinningPlan bson.Raw `bson:"winningPlan"`
+		} `bson:"queryPlanner"`
+	}
+	err := database.DB.RunCommand(ctx, bson.D{
+		{Key: "explain", Value: bson.D{
+			{Key: "count", Value: string(constants.UserColl)},
+			{Key: "query", Value: usernameFilter("ALICE", bson.NewObjectID())},
+			{Key: "collation", Value: bson.M{"locale": "en", "strength": 2}},
+		}},
+		{Key: "verbosity", Value: "queryPlanner"},
+	}).Decode(&plan)
+	if err != nil {
+		t.Fatalf("explain: %v", err)
+	}
+	winning := plan.QueryPlanner.WinningPlan.String()
+	if !strings.Contains(winning, database.UsernameIndex) {
+		t.Fatalf("winning plan doesn't use %s: %s", database.UsernameIndex, winning)
 	}
 }
