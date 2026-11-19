@@ -5,9 +5,12 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
+	"net/url"
+	"strings"
 	"time"
 	"unicode/utf8"
 
+	"github.com/shoonya0/ECHO/internal/config"
 	"github.com/shoonya0/ECHO/internal/constants"
 	"github.com/shoonya0/ECHO/internal/logger"
 	"github.com/shoonya0/ECHO/internal/models"
@@ -44,13 +47,34 @@ func normalizeChatID(chatID string) string {
 	return id.Hex()
 }
 
-// WebSocket upgrader with CORS support
 var upgrader = websocket.Upgrader{
 	ReadBufferSize:  1024,
 	WriteBufferSize: 1024,
-	CheckOrigin: func(r *http.Request) bool {
-		return true // Allow all origins (configure for production)
-	},
+	CheckOrigin:     checkOrigin,
+}
+
+// checkOrigin allows an upgrade without an Origin header (the Android app sends none),
+// from the server's own host, or from an origin in config.Cfg.AllowedOrigins. Any
+// other web page is refused with 403, so a site can't open a socket in a visitor's
+// name once auth also works by cookie or query token (#40).
+func checkOrigin(r *http.Request) bool {
+	origin := r.Header.Get("Origin")
+	if origin == "" {
+		return true
+	}
+	u, err := url.Parse(origin)
+	if err != nil || u.Host == "" {
+		return false
+	}
+	if strings.EqualFold(u.Host, r.Host) {
+		return true
+	}
+	for _, allowed := range config.Cfg.AllowedOrigins {
+		if strings.EqualFold(origin, allowed) {
+			return true
+		}
+	}
+	return false
 }
 
 // wsLog returns the shared logger for connection-level WebSocket events.
@@ -108,8 +132,9 @@ func HandleWebSocketChat(ctx *gin.Context) {
 
 	conn, err := upgrader.Upgrade(ctx.Writer, ctx.Request, nil) // Upgrade HTTP connection to WebSocket
 	if err != nil {
-		log.WithError(err).Error("Failed to upgrade WebSocket connection")
-		utils.ErrorResponse(ctx, http.StatusBadRequest, "Failed to upgrade WebSocket connection", nil)
+		// The upgrader has already answered (403 for a refused origin, 400 for a bad
+		// handshake); a second reply would be appended to it.
+		log.WithError(err).Warn("Failed to upgrade WebSocket connection")
 		return
 	}
 
