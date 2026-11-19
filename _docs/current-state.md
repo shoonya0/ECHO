@@ -11,8 +11,8 @@ on `main`. To learn what the product does, read
 and with a link to exactly one feature state.md. Updated by /close-increment and
 /feature-docs update. -->
 
-- **Feature:** #31 part 2 (REST presence) on `fix/31-rest-presence`: code, tests, docs done
-  and `TEST_DB_REQUIRED=1 verify --full` passed; next `/code-review`, push, PR (`Fixes #31`).
+- **Feature:** #31 part 2 (REST presence) on `fix/31-rest-presence`: done, reviewed (6 review
+  fixes), `TEST_DB_REQUIRED=1 verify --full` passed; PR open (`Fixes #31`), waits for merge.
   Rules: [decided](./decisions.md#where-presence-comes-from-31). #5 step 2 waits for the
   Android invite screen ([group-invites](./features/group-invites/state.md))
 - **#31 part 1 on Render (not checked yet):** in a shared chat, A sees B's online and offline
@@ -49,7 +49,7 @@ and with a link to exactly one feature state.md. Updated by /close-increment and
   missed; a connection's welcome is dropped when its 10-message queue is already full
 - **Next step:** review and PR for #31 part 2; then a status change while connected (live
   event) and #32 privacy settings. The Render checks above are the user's
-- **Updated:** 2026-11-19 on `fix/31-rest-presence` at `4f55d5b`. PRs merge by rebase only
+- **Updated:** 2026-11-19 on `fix/31-rest-presence` at `4d38acc`. PRs merge by rebase only
 
 ## Where things stand
 
