@@ -51,8 +51,8 @@ func TestJoinGroupByInviteRollsBackOnFailedUserUpdate(t *testing.T) {
 	if _, ok := got.Participants[joiner]; ok {
 		t.Error("joiner is a participant without a chats entry, want the join rolled back")
 	}
-	if got.Stats.ParticipantCount != 1 {
-		t.Errorf("participantCount = %d, want 1", got.Stats.ParticipantCount)
+	if n := len(got.Participants); n != 1 {
+		t.Errorf("participants = %d, want 1", n)
 	}
 }
 
@@ -87,7 +87,7 @@ func TestDeclineGroupInviteRollsBackOnFailedUserUpdate(t *testing.T) {
 	if _, ok := got.Participants[invitee]; !ok {
 		t.Error("invitee left the group while keeping its chats entry, want the decline rolled back")
 	}
-	if got.Stats.ParticipantCount != 2 {
-		t.Errorf("participantCount = %d, want 2", got.Stats.ParticipantCount)
+	if n := len(got.Participants); n != 2 {
+		t.Errorf("participants = %d, want 2", n)
 	}
 }

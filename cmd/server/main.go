@@ -108,12 +108,6 @@ func main() {
 		} else if n > 0 {
 			log.WithField("users", n).Info("Migrated legacy blocks")
 		}
-		// #16: participant counts that drifted before the fix; idempotent.
-		if n, err := services.BackfillParticipantCounts(indexCtx); err != nil {
-			log.WithError(err).Error("Failed to backfill participant counts")
-		} else if n > 0 {
-			log.WithField("groups", n).Info("Backfilled participant counts")
-		}
 		// #5: members made pending before invites could be answered; idempotent.
 		if n, err := services.AcceptLegacyPendingMembers(indexCtx, startedAt); err != nil {
 			log.WithError(err).Error("Failed to accept legacy pending members")

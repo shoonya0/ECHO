@@ -225,28 +225,6 @@ func MigrateLegacyBlocks(ctx context.Context) (int64, error) {
 	return migrated, nil
 }
 
-// BackfillParticipantCounts sets stats.participantCount on every group to the number of
-// entries in participants. Before #16 adds and joins never raised the count and removals
-// lowered it, so it drifted and could go negative. Idempotent: it only updates groups
-// whose count differs. A group whose participants isn't a document is skipped, so one
-// malformed group can't fail the update for all the others. Returns the number of
-// groups updated.
-func BackfillParticipantCounts(ctx context.Context) (int64, error) {
-	size := bson.M{"$size": bson.M{"$objectToArray": "$participants"}}
-	res, err := database.DB.Collection(string(constants.ChatColl)).UpdateMany(ctx,
-		bson.M{
-			"chatType":     string(constants.ChatTypeGroup),
-			"participants": bson.M{"$type": "object"},
-			"$expr":        bson.M{"$ne": bson.A{"$stats.participantCount", size}},
-		},
-		mongo.Pipeline{{{Key: "$set", Value: bson.M{"stats.participantCount": size}}}},
-	)
-	if err != nil {
-		return 0, fmt.Errorf("backfill participant counts: %w", err)
-	}
-	return res.ModifiedCount, nil
-}
-
 // NormalizeEmails stores every email trimmed and in lower case, the form signup and login
 // use since #36. Signup and login already match emails ignoring case, so this is a cleanup,
 // not something logins wait for. A user whose normalized email is already another account's

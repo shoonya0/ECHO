@@ -121,9 +121,6 @@ func checkDeleted(t *testing.T, ctx context.Context, f deleteFixture) {
 		if _, ok := chat.Participants[f.a]; ok {
 			t.Errorf("group %s still lists the deleted user", chatID.Hex())
 		}
-		if chat.Stats.ParticipantCount != len(chat.Participants) {
-			t.Errorf("group %s: participantCount %d, want %d", chatID.Hex(), chat.Stats.ParticipantCount, len(chat.Participants))
-		}
 		return chat.OwnerID, chat
 	}
 	// The earliest-joined admin, even when a plain member joined before them.

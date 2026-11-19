@@ -136,10 +136,8 @@ func leaveChatOnDelete(ctx context.Context, chatID, userID bson.ObjectID) error 
 			set := bson.M{"updatedAt": time.Now()}
 			unset := bson.M{key: ""}
 			ownershipOnDelete(chat, userID, filter, set, unset)
-			// The filter requires the user to be present, so this removes one (#16).
 			update = bson.M{
 				"$set": set, "$unset": unset,
-				"$inc":  bson.M{"stats.participantCount": -1},
 				"$pull": bson.M{"adminIds": userID},
 			}
 		}

@@ -4,6 +4,14 @@ Older entries moved here from
 [current-state.md](./current-state.md#recently-finished), newest first. Links point to
 the docs that describe each change today. Newer work is listed on that page.
 
+- **#40, login and signup (PR #139):** login attempts are counted per IP + account (10 in
+  15 min) and per account (100 an hour), before bcrypt, by account ID, and cleared on
+  success; 50 logins per IP in 10 min, 10 signups per IP an hour. Over that: `429`
+  `RATE_LIMITED` with `Retry-After` ([REST](./rest-api/users.md#accounts),
+  [decided](./decisions/accounts-and-privacy.md#how-login-and-signup-limits-find-the-client-40),
+  [app changes](../Android/_docs/08_SERVER_CHANGES/auth-and-connection.md)). The client IP
+  comes from `CLIENT_IP_HEADER`; `X-Forwarded-For` is no longer trusted. Code and security
+  reviews fixed; left: case-sensitive emails (#36), ~2x at a window's edge.
 - **#79 (PR #138):** `Hub.Restart` and the WebSocket controller's cancelled-context check
   are removed: nothing cancels the hub in production, and the path started duplicate loops
   and raced on `hub.Ctx`. Each background loop gets its context from `startLoops`.

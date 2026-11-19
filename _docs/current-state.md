@@ -11,15 +11,16 @@ on `main`. To learn what the product does, read
 and with a link to exactly one feature state.md. Updated by /close-increment and
 /feature-docs update. -->
 
-- **Feature:** none · #37 step 3 on `fix/37-read-receipts-reactions-context`, verified,
-  PR not opened yet. `main` at `03a04d2`: #37 step 2 (PRs #151 to #154) is merged, so
-  Render deploys it. #5 step 2 waits for the Android invite screen
+- **Feature:** none · #110 on `fix/110-derive-participant-count`, verified, PR not opened
+  yet. `main` at `cd6f26d`: #37 steps 2 and 3 (PRs #151 to #155) are merged, so Render
+  deploys them. #5 step 2 waits for the Android invite screen
   ([group-invites](./features/group-invites/state.md))
 - **#37 part 1 on Render (not checked yet):** the startup log shows `Backfilled direct chat
   keys` once (not on the next start), any `Second direct chats of a pair` (chat IDs to merge
   by hand), and `Indexes ensured` with `directKey_1`
 - **#37 step 2 on Render (not checked yet):** the server starts (no `MongoDB can't run
-  transactions`); contacts, groups (create, add, remove, join, accept, decline) and sends work
+  transactions`); contacts, groups (create, add, remove, join, accept, decline) and sends work;
+  step 3: marking messages read and reacting still work
 - **#21 on Render (not checked yet):** Redis `CLIENT LIST TYPE pubsub` shows one connection
   per running server
 - **#31 on Render (not checked yet):** in a shared chat, A sees B's online and offline, and
@@ -59,13 +60,13 @@ and with a link to exactly one feature state.md. Updated by /close-increment and
   missed; a connection's welcome is dropped when its 10-message queue is already full
 - **Not filed:** #63 can't happen any more (no deployed version writes `blockedChats`);
   proposed to close it
-- **Next step:** open the PR for #37 step 3 (read receipts and reactions take the request's
-  context; the chat's read receipt returns its error,
-  [decided](./decisions/data-writes.md#mongodb-transactions)), then decide whether #37 can
-  close (the review items under "Left open" there stay). Direct-chat gating and live status changes are decided against for now
+- **Next step:** open the PR for #110 (participantCount computed on read,
+  [decided](./decisions/chats-and-groups.md#how-a-groups-participant-count-is-kept-110)).
+  Then decide whether #37 can close: all its steps are merged; the review items under "Left
+  open" in [data-writes](./decisions/data-writes.md#mongodb-transactions) stay. Direct-chat gating and live status changes are decided against for now
   ([decided](./decisions/accounts-and-privacy.md#how-privacy-settings-apply-32)). The Render
   checks above are the user's
-- **Updated:** 2026-11-19 on `fix/37-read-receipts-reactions-context` from `03a04d2`. Commits on `main` must keep the author `shoonya0`
+- **Updated:** 2026-11-19 on `fix/110-derive-participant-count` from `cd6f26d`. Commits on `main` must keep the author `shoonya0`
 
 ## Where things stand
 
@@ -79,12 +80,15 @@ Not built yet: editing or deleting messages, and changing chat settings. The ful
 
 ## Recently finished
 
+- **#37 step 3 (PR #155):** read receipts and reactions run on the request's context, and a
+  failed chat read receipt answers `READ_FAILED` without telling the chat
+  ([decided](./decisions/data-writes.md#mongodb-transactions)).
 - **#37 part 2 (PRs #151 to #154):** MongoDB runs as a one-node replica set in compose and
   CI, and the server won't start on a standalone one. Contact, group, join, invite and
   message writes each commit as a whole (`database.WithTransaction`, chat first, users in
   ID order); a request A→B and B→A at once no longer leaves both pending. Rollback tests
   use `testutil.FailCommand` ([decided](./decisions/data-writes.md#mongodb-transactions)).
-  Four code reviews; open items are in that decision. Left: step 3 (read receipts, reactions).
+  Four code reviews; open items are in that decision. Step 3 followed in PR #155.
 - **#37 part 1 (PR #150):** a pair has one direct chat: `directKey` under a unique index,
   the race loser returns the winner's chat, and a startup backfill keys older chats and
   logs duplicates ([decided](./decisions/data-writes.md#one-direct-chat-per-pair-37)). Contact list
@@ -132,14 +136,6 @@ Not built yet: editing or deleting messages, and changing chat settings. The ful
   ([decided](./decisions/accounts-and-privacy.md#changing-the-email-36), [REST](./rest-api/users.md#accounts),
   [app changes](../Android/_docs/08_SERVER_CHANGES/auth-and-connection.md)). Left on #36:
   unique usernames, stale display copies.
-- **#40, login and signup (PR #139):** login attempts are counted per IP + account (10 in
-  15 min) and per account (100 an hour), before bcrypt, by account ID, and cleared on
-  success; 50 logins per IP in 10 min, 10 signups per IP an hour. Over that: `429`
-  `RATE_LIMITED` with `Retry-After` ([REST](./rest-api/users.md#accounts),
-  [decided](./decisions/accounts-and-privacy.md#how-login-and-signup-limits-find-the-client-40),
-  [app changes](../Android/_docs/08_SERVER_CHANGES/auth-and-connection.md)). The client IP
-  comes from `CLIENT_IP_HEADER`; `X-Forwarded-For` is no longer trusted. Code and security
-  reviews fixed; left: case-sensitive emails (#36), ~2x at a window's edge.
 
 ## How to build, run, test
 
@@ -184,7 +180,7 @@ There are 8 open issues. Where each risk sits in the code: [architecture-overvie
 | Area | The problem, in short | Issues |
 |---|---|---|
 | Live connections | Missed live messages can't be detected | #43 |
-| Groups | Pending members still pass membership checks (#5 step 2), and the participant count is maintained by hand | #5, #110 |
+| Groups | Pending members still pass membership checks (#5 step 2) | #5 |
 | Accounts | Usernames aren't unique, and display copies go stale | #36 |
 | Contacts and blocking | Contact lists aren't cut to `limit`, and blocks written during a deploy can be missed | #39, #63 |
 | Online status and privacy | A status or privacy change reaches live events only at the next connect (decided) | none |

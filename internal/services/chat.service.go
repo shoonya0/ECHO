@@ -104,6 +104,7 @@ func GetChat(ctx context.Context, chatInfo models.ChatInfo) (models.Chat, error)
 	if err != nil {
 		return chat, fmt.Errorf("failed to get chat: %w", err)
 	}
+	chat.Stats.ParticipantCount = len(chat.Participants) // not stored (#110)
 
 	return chat, nil
 }
@@ -550,7 +551,6 @@ func createGroupChat(ctx context.Context, creator models.LoginUserResponse, chat
 	chat.Participants = participants
 	chat.Name = chatName
 	chat.Description = description
-	chat.Stats.ParticipantCount = len(participants)
 	chat.Settings.MaxParticipants = constants.DefaultMaxGroupParticipants
 
 	// Create invite code
@@ -563,6 +563,8 @@ func createGroupChat(ctx context.Context, creator models.LoginUserResponse, chat
 	if _, err := database.DB.Collection(string(constants.ChatColl)).InsertOne(ctx, chat); err != nil {
 		return models.Chat{}, fmt.Errorf("failed to create group chat: %w", err)
 	}
+	// Only for the reply: the count isn't stored, reads compute it (#110).
+	chat.Stats.ParticipantCount = len(participants)
 
 	invitees := make([]bson.ObjectID, 0, len(users))
 	for _, u := range users {
@@ -1213,11 +1215,10 @@ func addGroupMembersTx(ctx context.Context, userID bson.ObjectID, chat models.Ch
 		)
 	}
 
-	// The filter requires every user to be absent, so the update adds exactly
-	// len(users) participants or nothing at all (#16).
+	// The filter requires every user to be absent, so the update adds all of
+	// them or nobody.
 	res, err := database.DB.Collection(string(constants.ChatColl)).UpdateOne(ctx, updateFilter, bson.M{
 		"$set": setEntries,
-		"$inc": bson.M{"stats.participantCount": len(users)},
 	})
 	if err != nil {
 		return fmt.Errorf("failed to update chat: %w", err)
@@ -1270,14 +1271,17 @@ func groupSizeLimit(stored int) int {
 	return constants.DefaultMaxGroupParticipants
 }
 
+// participantCountExpr counts the entries of a chat's participants map. A group's
+// participantCount is computed with it when read, not stored, so no write can leave it
+// wrong (#110).
+var participantCountExpr = bson.M{"$size": bson.M{"$objectToArray": bson.M{"$ifNull": bson.A{"$participants", bson.M{}}}}}
+
 // roomForParticipants is an update-filter $expr that matches a group only if n more
-// participants fit within its size limit (#68). It counts the participants map
-// itself, not stats.participantCount, so a drifted count can't let a group grow.
+// participants fit within its size limit (#68). It counts the participants map itself.
 func roomForParticipants(n int) bson.M {
 	stored := bson.M{"$ifNull": bson.A{"$settings.maxParticipants", 0}}
 	limit := bson.M{"$cond": bson.A{bson.M{"$gt": bson.A{stored, 0}}, stored, constants.DefaultMaxGroupParticipants}}
-	size := bson.M{"$size": bson.M{"$objectToArray": bson.M{"$ifNull": bson.A{"$participants", bson.M{}}}}}
-	return bson.M{"$lte": bson.A{bson.M{"$add": bson.A{size, n}}, limit}}
+	return bson.M{"$lte": bson.A{bson.M{"$add": bson.A{participantCountExpr, n}}, limit}}
 }
 
 // loadGroupSize reads the group chatID's participants and its size limit. It
@@ -1401,12 +1405,8 @@ func removeGroupMember(ctx context.Context, actingUserID bson.ObjectID, chatID b
 		updateFilter["ownerId"] = bson.M{"$nin": removedIDs}
 	}
 
-	// Update chat: remove participants + decrement count
 	chatUpdate := bson.M{
 		"$unset": unsetEntries,
-		"$inc": bson.M{
-			"stats.participantCount": -len(unsetEntries),
-		},
 		"$set": bson.M{
 			"updatedAt": time.Now(),
 		},
@@ -1734,8 +1734,6 @@ func joinGroupByInvite(ctx context.Context, userID bson.ObjectID, inviteID strin
 		"$addToSet": bson.M{
 			"inviteCode.$.userIDs": userID,
 		},
-		// The filter requires userID to be absent, so this adds one (#16).
-		"$inc": bson.M{"stats.participantCount": 1},
 	}
 
 	now := time.Now()

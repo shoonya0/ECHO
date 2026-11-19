@@ -1,13 +1,13 @@
 # Group invites: state
 
-## Now (updated 2026-11-19 at `21dee86`)
+## Now (updated 2026-11-19 at `cd6f26d`)
 
 - **Status:** 🟡 increment 1 merged; increment 2 waits for the Android invite screen
-- **Current task:** none here. #37 step 2b-2 put accept and decline in transactions
-  (`group_invites.go`): the group and the user change together, a failed cleanup fails a
-  decline, and the 409 of an accept retry comes after its repair commits (`joinOutcome`,
-  [decided](../../decisions/data-writes.md#mongodb-transactions))
-- **Stopped at:** `TEST_DB_REQUIRED=1 node scripts/verify.mjs --full` passed
+- **Current task:** none here. #110 (branch `fix/110-derive-participant-count`): the
+  pending list computes `participantCount` from `participants`, and decline no longer
+  lowers a stored count
+  ([decided](../../decisions/chats-and-groups.md#how-a-groups-participant-count-is-kept-110))
+- **Stopped at:** `node scripts/verify.mjs` and `TEST_DB_REQUIRED=1 go test ./...` passed
 - **Open questions / blockers:** none
 - **Don't forget:** a pending invite is stored as the invitee's `users.chats.<groupId>`
   entry. The backfill tells legacy pending members from new ones by the cutoff in the
@@ -15,6 +15,12 @@
   `websocket-requests.md` is at 200 lines: split it before adding to it
 
 ## Recent sessions (newest first, keep 5)
+
+### 2026-11-19: #110 (participant count computed on read)
+
+- Changed: `group_invites.go`, `chat.service.go`, `account_delete.go`, `migrations.go`, `main.go`
+- Verified: `verify` passed; `TEST_DB_REQUIRED=1 go test ./...` all ok
+- Docs touched: this file, decisions/chats-and-groups, current-state
 
 ### 2026-11-19: #37 step 2b-2 (accept, decline, join in transactions)
 
@@ -39,9 +45,3 @@
 - Changed: `group_invites.go`, `chat.service.go` (invitee chats entry, `GetUserChats`, `finishGroupJoin`)
 - Verified: `TEST_DB_REQUIRED=1 go test ./internal/...` → all ok
 - Docs touched: tasks, state
-
-### 2026-11-18: plan and docs
-
-- Changed: feature docs only
-- Verified: not verified (no code)
-- Docs touched: this folder, registry row, Active work
