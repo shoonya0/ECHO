@@ -30,8 +30,9 @@ This starts `echo-mongodb` on port 27017 (user and password are both `echo`) and
 `echo-redis` on port 6379. MongoDB runs as a one-node replica set (`rs0`), as Atlas does,
 so transactions work. It is healthy once it is the primary, a few seconds after start.
 
-If your `echo-mongodb` container is from before the replica set (2026-11-19), run the
-command above once: it recreates the container and keeps the data. `docker start` or a
+When `docker/docker-compose.yml` changes (the replica set, then `enableTestCommands` for
+`testutil.FailCommand`, both 2026-11-19), run the command above once: it recreates the
+container and keeps the data. Without it, rollback tests skip (fail in CI). `docker start` or a
 reboot only restarts the old standalone one, and transaction tests then fail with
 `Transaction numbers are only allowed on a replica set member`. The replica set member is
 `localhost:27017`, so connect from the host on that port. From anywhere else (another

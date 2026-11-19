@@ -12,7 +12,7 @@ the docs that describe each change today. Newer work is listed on that page.
   into a `500` ([REST](./rest-api/users.md#finding-people)).
 - **#51 (PR #133):** a message `content` is limited to 4000 characters (code points), not
   bytes, so Hindi or emoji text is no longer cut at about a third
-  ([decided](./decisions.md#how-the-message-length-limit-counts-51),
+  ([decided](./decisions/chats-and-groups.md#how-the-message-length-limit-counts-51),
   [app changes](../Android/_docs/08_SERVER_CHANGES/messages.md)).
 - **#123 + #124 (PR #127):** a join or registration releases the chat channel again after
   subscribing if a removal emptied the room meanwhile, and no `join` is announced for a
@@ -74,7 +74,7 @@ Older work, from #122 (PR #125) and #49 (PR #130) back: [finished-work.md](./fin
   the group; `send` works for pending members, and joining clears every invitation to the
   group. Live messages start at the next connection ([REST](./rest-api/groups.md#groups),
   [app changes](../Android/_docs/08_SERVER_CHANGES/README.md)). A dedicated accept and decline
-  action is left to #5 ([decisions](./decisions.md#how-a-pending-member-accepts-103-5)).
+  action is left to #5 ([decisions](./decisions/chats-and-groups.md#how-a-pending-member-accepts-103-5)).
 - **#68 (PR #111):** a group holds at most `settings.maxParticipants` (default 100). Create,
   add and join past it add nobody: REST `409`, WebSocket `GROUP_FULL`, checked in the
   update filter ([REST](./rest-api/groups.md#groups), [app changes](../Android/_docs/08_SERVER_CHANGES/README.md)).

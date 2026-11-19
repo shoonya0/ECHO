@@ -12,4 +12,4 @@ Docs for this feature live in `_docs/features/group-invites/`.
   task needs.
 - After any piece of work here, save the state: `/feature-docs update`. Link facts; don't copy them.
 - Until increment 2, pending members still pass membership checks; don't enforce
-  `requestStatus` piecemeal (decisions.md, "Who counts as a chat member").
+  `requestStatus` piecemeal (`_docs/decisions/chats-and-groups.md`, "Who counts as a chat member").

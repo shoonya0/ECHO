@@ -16,7 +16,7 @@ Index: [REST API](./README.md). Shared rules: [the basics](./basics.md).
 | Route | What it does |
 |---|---|
 | `GET profile/` | Your profile |
-| `PUT profile/` | Updates your profile. Only your username, phone, profile, presence and settings fields can change. Anything else is ignored, `email` included: it can't be changed yet ([decided](../decisions.md#changing-the-email-36)). `presence.isOnline` and `presence.lastSeen` are ignored too: the server sets them. `presence.status` other than `online`, `away`, `dnd`, `invisible` or `offline` (case matters) answers `400` (#31). Only the fields you send change: before #32, sending one field of a group reset the group's others. |
+| `PUT profile/` | Updates your profile. Only your username, phone, profile, presence and settings fields can change. Anything else is ignored, `email` included: it can't be changed yet ([decided](../decisions/accounts-and-privacy.md#changing-the-email-36)). `presence.isOnline` and `presence.lastSeen` are ignored too: the server sets them. `presence.status` other than `online`, `away`, `dnd`, `invisible` or `offline` (case matters) answers `400` (#31). Only the fields you send change: before #32, sending one field of a group reset the group's others. |
 | `DELETE profile/delete` | Deletes your account. You leave every group (an owner hands it on) and every contact list; your messages and direct chats stay for the others, shown as "Deleted user". Your token stops working at once (`401 ACCOUNT_NOT_FOUND`) (#35) |
 
 `presence` in replies (your profile, `login`, contacts) is live (#31): `isOnline` says whether
@@ -24,7 +24,7 @@ the person is connected now. `status` is their choice (`online`, `away`, `dnd`, 
 while they are connected; to others it is `offline` when they aren't, or chose `invisible`,
 and `lastSeen` is when their last connection closed. You see your own status as you set it.
 `settings.privacy` narrows what others see (#32): `showOnlineStatus` (`everyone`,
-`contacts`, `none`) and `showLastSeen`. [Decided](../decisions.md#how-privacy-settings-apply-32).
+`contacts`, `none`) and `showLastSeen`. [Decided](../decisions/accounts-and-privacy.md#how-privacy-settings-apply-32).
 
 ## Finding people
 

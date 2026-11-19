@@ -11,14 +11,14 @@ on `main`. To learn what the product does, read
 and with a link to exactly one feature state.md. Updated by /close-increment and
 /feature-docs update. -->
 
-- **Feature:** #37 step 2a on `fix/37-transactions`: contact writes in transactions, no
-  start on a standalone MongoDB; verified, PR next. #5 step 2 waits for the Android invite
+- **Feature:** #37 step 2b-1 on `fix/37-group-transactions`: group create, add, remove and
+  send message in transactions; verified, PR next. #5 step 2 waits for the Android invite
   screen ([group-invites](./features/group-invites/state.md))
 - **#37 part 1 on Render (not checked yet):** the startup log shows `Backfilled direct chat
   keys` once (not on the next start), any `Second direct chats of a pair` (chat IDs to merge
   by hand), and `Indexes ensured` with `directKey_1`
-- **#37 step 2a on Render (not checked yet):** the server starts (no `MongoDB can't run
-  transactions`), and a contact request, accept and remove work
+- **#37 step 2a/2b-1 on Render (not checked yet):** the server starts (no `MongoDB can't
+  run transactions`); contacts, group create, add, remove and sending messages work
 - **#21 on Render (not checked yet):** Redis `CLIENT LIST TYPE pubsub` shows one connection
   per running server
 - **#31 on Render (not checked yet):** in a shared chat, A sees B's online and offline, and
@@ -42,7 +42,7 @@ and with a link to exactly one feature state.md. Updated by /close-increment and
   `X-Forwarded-For` must still get `429`, and two real clients mustn't share a count. If
   Render's edge doesn't set `True-Client-IP`, unset `CLIENT_IP_HEADER` and note it on #40.
   The user runs this check (it sends traffic to production). Details:
-  [decided](./decisions.md#how-login-and-signup-limits-find-the-client-40)
+  [decided](./decisions/accounts-and-privacy.md#how-login-and-signup-limits-find-the-client-40)
 - **#72 on Render (paused 2026-11-15):** `/health` answers `200`, but no chat with a message
   saved before PR #74 (`reactions: null`) is left to react to. Continue later, for example
   by setting `reactions: null` on a test message in Atlas first
@@ -58,13 +58,13 @@ and with a link to exactly one feature state.md. Updated by /close-increment and
   missed; a connection's welcome is dropped when its 10-message queue is already full
 - **Not filed:** #63 can't happen any more (no deployed version writes `blockedChats`);
   proposed to close it
-- **Next step:** #37 step 2b: transactions for `CreateGroupChat`, adding, removing and
-  joining members, and `SendMessage` with its chat stats (rules in
-  [decided](./decisions.md#mongodb-transactions)). Direct-chat gating and live status
-  changes are decided against for now ([decided](./decisions.md#how-privacy-settings-apply-32)).
-  The Render checks above are the user's
-- **Updated:** 2026-11-19 on `fix/37-transactions` from `40cc898`. Commits on `main` must
-  keep the author `shoonya0`
+- **Next step:** #37 step 2b-2: join by code, accept and decline an invite in
+  transactions ([decided](./decisions/data-writes.md#mongodb-transactions)). Direct-chat
+  gating and live status changes are decided against for now
+  ([decided](./decisions/accounts-and-privacy.md#how-privacy-settings-apply-32)). The Render
+  checks above are the user's
+- **Updated:** 2026-11-19 on `fix/37-group-transactions` from `118520d`. Commits on `main`
+  must keep the author `shoonya0`
 
 ## Where things stand
 
@@ -80,7 +80,7 @@ Not built yet: editing or deleting messages, and changing chat settings. The ful
 
 - **#37 part 1 (PR #150):** a pair has one direct chat: `directKey` under a unique index,
   the race loser returns the winner's chat, and a startup backfill keys older chats and
-  logs duplicates ([decided](./decisions.md#one-direct-chat-per-pair-37)). Contact list
+  logs duplicates ([decided](./decisions/data-writes.md#one-direct-chat-per-pair-37)). Contact list
   writes are conditional and check `MatchedCount`, so double submits get "already" errors.
   Code review: 10 findings, all fixed. Left: transactions (part 2).
 - **#21 (PR #149):** each server listens to all its Redis channels over one shared
@@ -90,10 +90,10 @@ Not built yet: editing or deleting messages, and changing chat settings. The ful
 - **#32 (PR #148):** `showOnlineStatus` (`contacts`, `none`) and `showLastSeen` apply to
   contact lists and `presence` events, `allowContactBy` gates contact requests (`403`), and
   `showLastSeen` is on by default (one-time migration). Code review found `PUT profile/`
-  resetting unsent settings, fixed ([decided](./decisions.md#how-privacy-settings-apply-32)).
+  resetting unsent settings, fixed ([decided](./decisions/accounts-and-privacy.md#how-privacy-settings-apply-32)).
 - **#31 part 2 (PR #147):** REST presence is live from `online:<id>`, `status` is the
   user's choice, invisible users stay offline, `lastSeen` is saved on offline, and the hub
-  reads the status from MongoDB ([decided](./decisions.md#where-presence-comes-from-31)).
+  reads the status from MongoDB ([decided](./decisions/accounts-and-privacy.md#where-presence-comes-from-31)).
   Code review: 10 findings, 6 fixed.
 - **#31 part 1 (PR #145):** `presence` events carry the user's chats over
   `presence:global`; every server delivers them once per connection, so offline arrives
@@ -110,26 +110,26 @@ Not built yet: editing or deleting messages, and changing chat settings. The ful
   channels (an owner hands on: another owner, else the earliest admin, else the earliest
   accepted member; with nobody, the group's codes are deleted), shows its messages and
   direct-chat entry as "Deleted user", then deletes the document
-  ([decided](./decisions.md#what-deleting-an-account-does),
+  ([decided](./decisions/accounts-and-privacy.md#what-deleting-an-account-does),
   [app changes](../Android/_docs/08_SERVER_CHANGES/auth-and-connection.md)). Review: 6 of
   10 fixed; reactions and `readBy` keep the bare ID.
 - **#5 step 1 + #17 (PR #141):** invitees accept or decline (`groups/:groupID/accept`,
   `decline`, `GET groups/pending`) and get live messages once they accept; a startup
   backfill accepted members left pending before, by a cutoff stored in `migrations`
-  ([REST](./rest-api/groups.md#groups), [decided](./decisions.md#where-a-pending-group-invite-is-stored-5),
+  ([REST](./rest-api/groups.md#groups), [decided](./decisions/chats-and-groups.md#where-a-pending-group-invite-is-stored-5),
   [app changes](../Android/_docs/08_SERVER_CHANGES/groups-and-invites.md)). Left: enforcing
   pending (step 2), a group event on accept and decline.
 - **#36, emails (PR #140):** emails are stored trimmed and lower case; signup and login
   match them ignoring case (`email_ci`), so legacy capitals work before the startup
   `NormalizeEmails` lowers them; `PUT profile/` no longer changes `email`
-  ([decided](./decisions.md#changing-the-email-36), [REST](./rest-api/users.md#accounts),
+  ([decided](./decisions/accounts-and-privacy.md#changing-the-email-36), [REST](./rest-api/users.md#accounts),
   [app changes](../Android/_docs/08_SERVER_CHANGES/auth-and-connection.md)). Left on #36:
   unique usernames, stale display copies.
 - **#40, login and signup (PR #139):** login attempts are counted per IP + account (10 in
   15 min) and per account (100 an hour), before bcrypt, by account ID, and cleared on
   success; 50 logins per IP in 10 min, 10 signups per IP an hour. Over that: `429`
   `RATE_LIMITED` with `Retry-After` ([REST](./rest-api/users.md#accounts),
-  [decided](./decisions.md#how-login-and-signup-limits-find-the-client-40),
+  [decided](./decisions/accounts-and-privacy.md#how-login-and-signup-limits-find-the-client-40),
   [app changes](../Android/_docs/08_SERVER_CHANGES/auth-and-connection.md)). The client IP
   comes from `CLIENT_IP_HEADER`; `X-Forwarded-For` is no longer trusted. Code and security
   reviews fixed; left: case-sensitive emails (#36), ~2x at a window's edge.
@@ -175,7 +175,7 @@ name.
 ## Open decisions
 
 None right now. What has been decided, and what each choice unblocks, is in
-[decisions.md](./decisions.md): invite permissions (#30), the message length limit (#51), accepting a group invite (#103, #5), membership in `participants`
+[decisions.md](./decisions/): invite permissions (#30), the message length limit (#51), accepting a group invite (#103, #5), membership in `participants`
 only (#14, #17), deleting accounts (#35), transactions on a replica set (#37), how
 blocks are stored, and who counts as a member.
 

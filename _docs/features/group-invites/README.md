@@ -15,7 +15,7 @@ Up: [project docs index](../../README.md) · Code: `internal/services/group_invi
 |---|---|
 | Where work stopped | [state.md](./state.md) |
 | What's done and what's next | [tasks.md](./tasks.md) |
-| Why it's built this way | [decisions](../../decisions.md#who-counts-as-a-chat-member) |
+| Why it's built this way | [decisions](../../decisions/chats-and-groups.md#who-counts-as-a-chat-member) |
 
 ## Entry points (where to start reading code; not a full map)
 

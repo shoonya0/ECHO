@@ -57,4 +57,4 @@ Details: [websocket-requests.md](../../../_docs/websocket-requests.md).
 - A privacy change takes effect for live events at the next connect; reconnect after saving.
 
 Details: [users.md](../../../_docs/rest-api/users.md#contacts),
-[decided](../../../_docs/decisions.md#how-privacy-settings-apply-32).
+[decided](../../../_docs/decisions/accounts-and-privacy.md#how-privacy-settings-apply-32).
