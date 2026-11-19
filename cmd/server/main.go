@@ -90,13 +90,14 @@ func main() {
 		if err := database.EnsureIndexes(indexCtx); err != nil {
 			log.WithError(err).Error("Failed to ensure MongoDB indexes; queries will run without them")
 		}
-		// #43: numbers messages saved without a seq; every start, since an older
-		// server copy saves them during a deploy.
-		if n, err := services.BackfillMessageSeqs(indexCtx); err != nil {
-			log.WithError(err).Error("Failed to number messages")
-		} else if n > 0 {
-			log.WithField("messages", n).Info("Numbered messages")
-		}
+		// #43: numbers messages saved without a seq. Again after the deploy, for
+		// the ones the older copy saved meanwhile; that run marks it done.
+		numberMessages(indexCtx, false)
+		time.AfterFunc(15*time.Minute, func() {
+			ctx, cancel := context.WithTimeout(ctx, 10*time.Minute)
+			defer cancel()
+			numberMessages(ctx, true)
+		})
 		// #36: emails stored with capitals; idempotent. Logins don't wait for it:
 		// they match emails ignoring case.
 		n, conflicts, err := services.NormalizeEmails(indexCtx)
@@ -188,4 +189,14 @@ func main() {
 	}
 	database.CloseRedis()
 	database.DisconnectMongo(shutdownCtx)
+}
+
+// numberMessages runs services.BackfillMessageSeqs and logs what it did (#43).
+func numberMessages(ctx context.Context, final bool) {
+	n, err := services.BackfillMessageSeqs(ctx, final)
+	if err != nil {
+		logger.WithContext(ctx).WithError(err).Error("Failed to number messages")
+	} else if n > 0 {
+		logger.WithContext(ctx).WithField("messages", n).Info("Numbered messages")
+	}
 }

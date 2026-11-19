@@ -614,37 +614,63 @@ func EnableShowLastSeen(ctx context.Context) (int64, error) {
 // seqBackfillBatch is how many messages of a chat one backfill transaction numbers.
 const seqBackfillBatch = 500
 
+// messageSeqsMarker is the migrations document BackfillMessageSeqs sets once a final
+// run found nothing left, so later starts skip the scan.
+const messageSeqsMarker = "message-seqs-43"
+
 // BackfillMessageSeqs numbers the messages that have no seq (#43): every message from
-// before #43, and any an older server copy saves during a deploy, so it runs on every
-// start. Each chat's messages are numbered oldest first, after its newest numbered one,
-// in transactions that also raise the chat's stats.lastSeq, so they can't clash with a
-// send or another server's backfill: both write the chat document, and one reruns.
-// A message of a chat that no longer exists is left as it is. Finding the chats reads
-// every message (no index can serve "seq is missing"); it is a startup job in the
-// background, like the other backfills. Returns the number of messages numbered.
-func BackfillMessageSeqs(ctx context.Context) (int64, error) {
-	messages := database.DB.Collection(string(constants.MessageColl))
-	unnumbered := bson.M{"seq": bson.M{"$exists": false}}
+// before #43, and any an older server copy saves during the deploy of #43. A chat's
+// old messages get the numbers seedChatSeqs reserved for them, oldest first; messages
+// saved after the seeding by an older copy get numbers after the newest. Each batch
+// is a transaction that writes the chat document, so it can't clash with a send or
+// another server's backfill: one reruns. A failing chat doesn't stop the others; all
+// failures are returned together. Messages of a chat that no longer exists are left.
+//
+// Finding the chats reads every message (no index can serve "seq is missing"), so once
+// a run with final set succeeds, it records messageSeqsMarker and later calls return
+// at once: after the #43 deploy no server saves a message without a seq. Returns the
+// number of messages numbered.
+func BackfillMessageSeqs(ctx context.Context, final bool) (int64, error) {
+	markers := database.DB.Collection(string(constants.MigrationColl))
+	err := markers.FindOne(ctx, bson.M{"_id": messageSeqsMarker}).Err()
+	if err == nil {
+		return 0, nil
+	}
+	if !errors.Is(err, mongo.ErrNoDocuments) {
+		return 0, fmt.Errorf("read the message seqs marker: %w", err)
+	}
 
 	var chatIDs []bson.ObjectID
-	if err := messages.Distinct(ctx, "chatId", unnumbered).Decode(&chatIDs); err != nil {
+	if err := database.DB.Collection(string(constants.MessageColl)).
+		Distinct(ctx, "chatId", bson.M{"seq": bson.M{"$exists": false}}).Decode(&chatIDs); err != nil {
 		return 0, fmt.Errorf("find chats with unnumbered messages: %w", err)
 	}
 
 	var numbered int64
+	var errs []error
 	for _, chatID := range chatIDs {
 		for {
 			n, err := backfillChatSeqs(ctx, chatID)
+			numbered += n
 			if errors.Is(err, ErrChatNotFound) {
 				break
 			}
 			if err != nil {
-				return numbered, err
+				errs = append(errs, err)
+				break
 			}
-			numbered += n
 			if n < seqBackfillBatch {
 				break
 			}
+		}
+	}
+	if err := errors.Join(errs...); err != nil {
+		return numbered, err
+	}
+	if final {
+		if _, err := markers.UpdateOne(ctx, bson.M{"_id": messageSeqsMarker},
+			bson.M{"$set": bson.M{"doneAt": time.Now()}}, options.UpdateOne().SetUpsert(true)); err != nil {
+			return numbered, fmt.Errorf("record the message seqs marker: %w", err)
 		}
 	}
 	return numbered, nil
@@ -656,6 +682,9 @@ func backfillChatSeqs(ctx context.Context, chatID bson.ObjectID) (int64, error) 
 	var numbered int64
 	err := database.WithTransaction(ctx, func(ctx context.Context) error {
 		numbered = 0
+		if err := seedChatSeqs(ctx, chatID); err != nil {
+			return err
+		}
 		messages := database.DB.Collection(string(constants.MessageColl))
 		cur, err := messages.Find(ctx,
 			bson.M{"chatId": chatID, "seq": bson.M{"$exists": false}},
@@ -677,29 +706,40 @@ func backfillChatSeqs(ctx context.Context, chatID bson.ObjectID) (int64, error) 
 
 		var chat struct {
 			Stats struct {
-				LastSeq int64 `bson:"lastSeq"`
+				OldSeqNext int64 `bson:"oldSeqNext"`
+				OldSeqEnd  int64 `bson:"oldSeqEnd"`
 			} `bson:"stats"`
 		}
-		err = database.DB.Collection(string(constants.ChatColl)).FindOneAndUpdate(ctx,
-			bson.M{"_id": chatID},
-			bson.M{"$inc": bson.M{"stats.lastSeq": int64(len(ids))}},
-			options.FindOneAndUpdate().
-				SetProjection(bson.M{"stats.lastSeq": 1}).
-				SetReturnDocument(options.After),
-		).Decode(&chat)
-		if errors.Is(err, mongo.ErrNoDocuments) {
-			return fmt.Errorf("%w", ErrChatNotFound)
-		}
-		if err != nil {
-			return fmt.Errorf("reserve seqs in chat %s: %w", chatID.Hex(), err)
+		if err := database.DB.Collection(string(constants.ChatColl)).FindOne(ctx, bson.M{"_id": chatID},
+			options.FindOne().SetProjection(bson.M{"stats.oldSeqNext": 1, "stats.oldSeqEnd": 1}),
+		).Decode(&chat); err != nil {
+			return fmt.Errorf("read reserved seqs of chat %s: %w", chatID.Hex(), err)
 		}
 
-		first := chat.Stats.LastSeq - int64(len(ids)) + 1
+		// The reserved range first, then numbers after the newest for the rest.
+		m := int64(len(ids))
+		reserved := max(0, min(m, chat.Stats.OldSeqEnd-chat.Stats.OldSeqNext+1))
+		update := bson.M{}
+		if reserved > 0 {
+			update["$inc"] = bson.M{"stats.oldSeqNext": reserved}
+		}
+		last, err := reserveChatSeqs(ctx, chatID, m-reserved, update)
+		if err != nil {
+			return err
+		}
+		seqs := make([]int64, 0, m)
+		for i := range reserved {
+			seqs = append(seqs, chat.Stats.OldSeqNext+i)
+		}
+		for i := last - (m - reserved) + 1; i <= last; i++ {
+			seqs = append(seqs, i)
+		}
+
 		writes := make([]mongo.WriteModel, len(ids))
-		for i, m := range ids {
+		for i, msg := range ids {
 			writes[i] = mongo.NewUpdateOneModel().
-				SetFilter(bson.M{"_id": m.ID, "seq": bson.M{"$exists": false}}).
-				SetUpdate(bson.M{"$set": bson.M{"seq": first + int64(i)}})
+				SetFilter(bson.M{"_id": msg.ID, "seq": bson.M{"$exists": false}}).
+				SetUpdate(bson.M{"$set": bson.M{"seq": seqs[i]}})
 		}
 		res, err := messages.BulkWrite(ctx, writes)
 		if err != nil {
@@ -707,10 +747,10 @@ func backfillChatSeqs(ctx context.Context, chatID bson.ObjectID) (int64, error) 
 		}
 		// Every message was read unnumbered in this transaction, so a miss means
 		// the snapshot is wrong: rather undo than leave a gap.
-		if res.MatchedCount != int64(len(ids)) {
-			return fmt.Errorf("numbered %d of %d messages of chat %s", res.MatchedCount, len(ids), chatID.Hex())
+		if res.MatchedCount != m {
+			return fmt.Errorf("numbered %d of %d messages of chat %s", res.MatchedCount, m, chatID.Hex())
 		}
-		numbered = int64(len(ids))
+		numbered = m
 		return nil
 	})
 	return numbered, err

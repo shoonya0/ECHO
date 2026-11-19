@@ -80,13 +80,14 @@ var indexSpecs = []collectionIndexes{
 				Options: options.Index().SetName("chatId_1__id_-1"),
 			},
 			// Catching up: find {chatId, seq > n} sorted by seq (#43). Unique, so two
-			// messages of a chat can never share a number; partial, so messages an
-			// older server copy saved without one (until the next start numbers
-			// them) don't clash.
+			// messages of a chat can never share a number; partial, so messages not
+			// numbered yet don't clash. The filter is seq > 0 because the planner
+			// uses a partial index only for queries that imply its filter, and
+			// seq > n with n >= 0 does ($type or $exists wouldn't be implied).
 			{
 				Keys: bson.D{{Key: "chatId", Value: 1}, {Key: "seq", Value: 1}},
 				Options: options.Index().SetName("chatId_1_seq_1").SetUnique(true).
-					SetPartialFilterExpression(bson.M{"seq": bson.M{"$type": "long"}}),
+					SetPartialFilterExpression(bson.M{"seq": bson.M{"$gt": 0}}),
 			},
 		},
 	},
