@@ -181,10 +181,59 @@ func TestFailedSubscribeLeavesChannelUnsubscribed(t *testing.T) {
 	if pm.IsSubscribed(channel) {
 		t.Fatal("failed subscribe left the channel subscribed")
 	}
-	pm.mu.RLock()
-	waiters := len(pm.pending[channel])
-	pm.mu.RUnlock()
-	if waiters != 0 {
-		t.Fatalf("failed subscribe left %d waiters", waiters)
+	if n := pendingWaiters(pm, channel); n != 0 {
+		t.Fatalf("failed subscribe left %d waiters", n)
+	}
+}
+
+func pendingWaiters(pm *PubSubManager, channel string) int {
+	pm.pendingMu.Lock()
+	defer pm.pendingMu.Unlock()
+	return len(pm.pending[channel])
+}
+
+// A subscribe Redis never confirms (lost on a reconnect, or dropped by a stuck
+// reader) used to leave its waiter queued for good, so it swallowed the next
+// confirmation and every later subscribe of the channel timed out. It now
+// fails, removes its waiter and releases the channel.
+func TestUnconfirmedSubscribeIsUndone(t *testing.T) {
+	client, _ := namedRedis(t)
+	logger := logrus.New()
+	logger.SetOutput(io.Discard)
+	pm := NewPubSubManager(client, &models.Hub{}, logger, "test")
+	pm.confirmTimeout = 200 * time.Millisecond
+	t.Cleanup(pm.cancel)
+	// A shared subscription with no reader: Redis's confirmations are never read.
+	pm.pubsub = client.Subscribe(pm.ctx)
+	t.Cleanup(func() { _ = pm.pubsub.Close() })
+
+	channel := pm.getChatChannel(bson.NewObjectID().Hex())
+	errs := make(chan error, 2)
+	for range 2 { // the second one waits on the first one's confirmation
+		go func() { errs <- pm.subscribeToChannel(channel) }()
+	}
+	for range 2 {
+		if err := <-errs; err == nil {
+			t.Fatal("an unconfirmed subscribe succeeded")
+		}
+	}
+	if pm.IsSubscribed(channel) {
+		t.Fatal("unconfirmed subscribe left the channel subscribed")
+	}
+	if n := pendingWaiters(pm, channel); n != 0 {
+		t.Fatalf("unconfirmed subscribe left %d waiters", n)
+	}
+
+	// The release reached Redis: nothing is subscribed to the channel.
+	deadline := time.Now().Add(2 * time.Second)
+	for {
+		counts := client.PubSubNumSub(context.Background(), channel).Val()
+		if counts[channel] == 0 {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("channel still has %d subscribers in Redis", counts[channel])
+		}
+		time.Sleep(20 * time.Millisecond)
 	}
 }

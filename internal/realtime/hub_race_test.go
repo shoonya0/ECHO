@@ -54,9 +54,14 @@ func newTestHub(t *testing.T) *Hub {
 	base.Ctx, base.Cancel = context.WithCancel(context.Background())
 	t.Cleanup(base.Cancel)
 
+	// Cancelled at the end, so a shared subscription a test created is closed
+	// with its reader and health check (#21).
+	pm := NewPubSubManager(redisClient, base, logger, "test")
+	t.Cleanup(pm.cancel)
+
 	return &Hub{
 		Hub:           base,
-		pubSubManager: NewPubSubManager(redisClient, base, logger, "test"),
+		pubSubManager: pm,
 		redisClient:   redisClient,
 		logger:        logger,
 		instanceID:    "test",
@@ -338,7 +343,7 @@ func TestDisconnectOfLastConnectionLeavesEveryChat(t *testing.T) {
 	pm := hub.pubSubManager
 	pm.mu.Lock()
 	for _, chatID := range chats {
-		pm.subscriptions[pm.getChatChannel(chatID)] = struct{}{}
+		pm.subscriptions[pm.getChatChannel(chatID)] = nil
 	}
 	pm.mu.Unlock()
 
@@ -369,7 +374,7 @@ func stubSubscriptions(hub *Hub, channels ...string) {
 	pm.mu.Lock()
 	defer pm.mu.Unlock()
 	for _, channel := range channels {
-		pm.subscriptions[channel] = struct{}{}
+		pm.subscriptions[channel] = nil
 	}
 }
 
