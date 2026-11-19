@@ -3,6 +3,7 @@ package realtime
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"maps"
 	"slices"
@@ -16,16 +17,33 @@ import (
 	"github.com/shoonya0/ECHO/internal/models"
 )
 
-// PubSubManager handles Redis pub/sub for WebSocket communication across instances
+// PubSubManager handles Redis pub/sub for WebSocket communication across
+// instances. Every channel of an instance shares one Redis connection, read by
+// one goroutine (#21): a connection per channel grew with online users and
+// chats until Redis refused new ones.
 type PubSubManager struct {
-	redisClient   *redis.Client
-	hub           *models.Hub
-	logger        *logrus.Logger
-	subscriptions map[string]*redis.PubSub // channel -> subscription
-	mu            sync.RWMutex
-	ctx           context.Context
-	cancel        context.CancelFunc
-	instanceID    string // Unique identifier for this server instance
+	redisClient *redis.Client
+	hub         *models.Hub
+	logger      *logrus.Logger
+	// pubsub is the shared subscription, created by the first subscribe.
+	pubsub *redis.PubSub
+	// subscriptions holds the channels subscribed on pubsub. Each value is the
+	// waiter of the subscribe that sent the command, closed once Redis confirmed
+	// it (nil for channels tests mark without Redis).
+	subscriptions map[string]chan struct{}
+	mu            sync.RWMutex // guards pubsub and subscriptions; held while a command is written
+	// pending holds, per channel, the waiters of subscribe commands Redis hasn't
+	// confirmed yet, in the order the commands were sent; Redis confirms them in
+	// that order. It has its own lock, never held across a Redis call, so the
+	// reader never waits behind a slow write (#21).
+	pending    map[string][]chan struct{}
+	pendingMu  sync.Mutex
+	ctx        context.Context
+	cancel     context.CancelFunc
+	instanceID string // Unique identifier for this server instance
+	// confirmTimeout bounds the wait for a subscribe's confirmation:
+	// redisSubscribeTimeout, shorter in tests.
+	confirmTimeout time.Duration
 
 	// Test hooks, always nil in production. Fields, not package variables, so
 	// a goroutine left over from one test can't race the next test (#124).
@@ -45,8 +63,15 @@ type PubSubManager struct {
 	beforePresencePublish func(status string)
 }
 
-// redisSubscribeTimeout bounds the wait for Redis to confirm a subscribe (#22).
+// redisSubscribeTimeout bounds the wait for Redis to confirm a subscribe (#22),
+// and the write of a subscribe or unsubscribe command.
 const redisSubscribeTimeout = 5 * time.Second
+
+// pubsubBufferSize is how many messages of the shared connection go-redis
+// queues for the reader. A message that waits more than a minute for room is
+// dropped, and every channel shares this queue, so it is larger than
+// go-redis's default of 100.
+const pubsubBufferSize = 1000
 
 // Channel naming conventions for pub/sub
 const (
@@ -69,13 +94,15 @@ func NewPubSubManager(redisClient *redis.Client, hub *models.Hub, logger *logrus
 	ctx, cancel := context.WithCancel(context.Background())
 
 	return &PubSubManager{
-		redisClient:   redisClient,
-		hub:           hub,
-		logger:        logger,
-		subscriptions: make(map[string]*redis.PubSub),
-		ctx:           ctx,
-		cancel:        cancel,
-		instanceID:    instanceID,
+		redisClient:    redisClient,
+		hub:            hub,
+		logger:         logger,
+		subscriptions:  make(map[string]chan struct{}),
+		pending:        make(map[string][]chan struct{}),
+		confirmTimeout: redisSubscribeTimeout,
+		ctx:            ctx,
+		cancel:         cancel,
+		instanceID:     instanceID,
 	}
 }
 
@@ -231,53 +258,174 @@ func (pm *PubSubManager) PublishPresenceUpdate(status *models.WSPresenceStatus) 
 	return pm.publishMessage(PresenceChannel, message)
 }
 
-// subscribeToChannel creates or reuses a subscription to a Redis channel
+// subscribeToChannel subscribes the shared connection to a Redis channel and
+// returns once Redis has confirmed it, so a message published afterwards is
+// delivered. The command is written under pm.mu, which keeps the subscribes and
+// unsubscribes of a channel in order. The wait for the confirmation runs after
+// the lock is released, so one slow reply no longer holds up every other
+// subscribe (#21).
 func (pm *PubSubManager) subscribeToChannel(channel string) error {
 	pm.mu.Lock()
-	defer pm.mu.Unlock()
-
-	// Check if already subscribed
-	if _, exists := pm.subscriptions[channel]; exists {
-		return nil
+	if confirmed, exists := pm.subscriptions[channel]; exists {
+		// Already sent: wait for its confirmation if it hasn't come yet. If it
+		// doesn't come, the subscribe that sent it releases the channel.
+		pm.mu.Unlock()
+		if confirmed == nil {
+			return nil
+		}
+		return pm.awaitConfirmation(confirmed)
 	}
 
-	// Create new subscription
-	pubsub := pm.redisClient.Subscribe(pm.ctx, channel)
+	ps := pm.sharedPubSubLocked()
+	confirmed := make(chan struct{})
+	pm.addPending(channel, confirmed)
 
-	// Wait for the confirmation, at most redisSubscribeTimeout: pm.mu is held,
-	// so a hung Redis would otherwise stall every subscribe and release (#22).
 	ctx, cancel := context.WithTimeout(pm.ctx, redisSubscribeTimeout)
-	_, err := pubsub.Receive(ctx)
+	err := ps.Subscribe(ctx, channel)
 	cancel()
 	if err != nil {
-		_ = pubsub.Close() // not confirmed; nothing reads from it
-		return fmt.Errorf("failed to confirm subscription: %w", err)
+		// go-redis keeps the channel for its next reconnect even when the write
+		// fails. Drop it, so Redis and pm.subscriptions agree.
+		pm.unsubscribeLocked(channel)
+		pm.dropPending(channel, confirmed)
+	} else {
+		pm.subscriptions[channel] = confirmed
 	}
+	pm.mu.Unlock()
 
-	pm.subscriptions[channel] = pubsub
-
-	// One reader per subscription; it exits when the subscription is closed.
-	go pm.processSubscriptionMessages(pubsub)
+	if err != nil {
+		return fmt.Errorf("failed to subscribe: %w", err)
+	}
+	if err := pm.awaitConfirmation(confirmed); err != nil {
+		pm.abandonSubscribe(channel, confirmed)
+		return err
+	}
 	pm.logger.WithFields(logrus.Fields{"channel": channel}).Debug("Subscribed to channel")
-
 	return nil
 }
 
-// unsubscribeFromChannel removes a subscription from a Redis channel
+// abandonSubscribe undoes a subscribe Redis didn't confirm in time (lost on a
+// reconnect, dropped by a stuck reader, or refused by Redis): its waiter
+// leaves the queue, so it can't swallow a later confirmation, and the channel
+// is released unless another subscribe has replaced it. The next subscribe
+// sends the command again.
+func (pm *PubSubManager) abandonSubscribe(channel string, confirmed chan struct{}) {
+	pm.dropPending(channel, confirmed)
+	pm.mu.Lock()
+	defer pm.mu.Unlock()
+	if pm.subscriptions[channel] == confirmed {
+		delete(pm.subscriptions, channel)
+		pm.unsubscribeLocked(channel)
+	}
+}
+
+// unsubscribeLocked sends an unsubscribe with a fresh timeout and logs a
+// failure. go-redis forgets the channel even if the write fails, so it isn't
+// subscribed again on the next reconnect. Call it with pm.mu held.
+func (pm *PubSubManager) unsubscribeLocked(channel string) {
+	ctx, cancel := context.WithTimeout(pm.ctx, redisSubscribeTimeout)
+	defer cancel()
+	if err := pm.pubsub.Unsubscribe(ctx, channel); err != nil {
+		pm.logger.WithFields(logrus.Fields{"channel": channel}).WithError(err).Warn("Failed to send unsubscribe")
+	}
+}
+
+// awaitConfirmation waits at most pm.confirmTimeout for Redis to confirm a
+// subscribe.
+func (pm *PubSubManager) awaitConfirmation(confirmed <-chan struct{}) error {
+	timer := time.NewTimer(pm.confirmTimeout)
+	defer timer.Stop()
+	select {
+	case <-confirmed:
+		return nil
+	case <-timer.C:
+		return errors.New("failed to confirm subscription: timed out")
+	case <-pm.ctx.Done():
+		return fmt.Errorf("failed to confirm subscription: %w", pm.ctx.Err())
+	}
+}
+
+// sharedPubSubLocked returns the shared subscription, creating it and its
+// reader on first use. Call it with pm.mu held.
+func (pm *PubSubManager) sharedPubSubLocked() *redis.PubSub {
+	if pm.pubsub != nil {
+		return pm.pubsub
+	}
+	ps := pm.redisClient.Subscribe(pm.ctx)
+	pm.pubsub = ps
+	go pm.processSubscriptionMessages(ps.ChannelWithSubscriptions(redis.WithChannelSize(pubsubBufferSize)))
+	// Tests cancel pm.ctx to close the connection; the server closes it by
+	// exiting.
+	go func() {
+		<-pm.ctx.Done()
+		_ = ps.Close() // ends the reader
+	}()
+	return ps
+}
+
+// addPending queues a waiter for a subscribe command about to be sent.
+func (pm *PubSubManager) addPending(channel string, confirmed chan struct{}) {
+	pm.pendingMu.Lock()
+	defer pm.pendingMu.Unlock()
+	pm.pending[channel] = append(pm.pending[channel], confirmed)
+}
+
+// dropPending removes one waiter from a channel's queue.
+func (pm *PubSubManager) dropPending(channel string, confirmed chan struct{}) {
+	pm.pendingMu.Lock()
+	defer pm.pendingMu.Unlock()
+	queue := slices.DeleteFunc(pm.pending[channel], func(c chan struct{}) bool { return c == confirmed })
+	if len(queue) == 0 {
+		delete(pm.pending, channel)
+		return
+	}
+	pm.pending[channel] = queue
+}
+
+// confirmSubscribe releases the oldest waiter of a channel. A confirmation
+// with no waiter comes from go-redis subscribing again after a reconnect.
+// After a reconnect, such a confirmation can also release a subscribe sent
+// just after it before Redis has run that command; a message published in
+// that moment is missed, like the other short gaps of #43.
+func (pm *PubSubManager) confirmSubscribe(channel string) {
+	pm.pendingMu.Lock()
+	defer pm.pendingMu.Unlock()
+	queue := pm.pending[channel]
+	if len(queue) == 0 {
+		return
+	}
+	close(queue[0])
+	if len(queue) == 1 {
+		delete(pm.pending, channel)
+		return
+	}
+	pm.pending[channel] = queue[1:]
+}
+
+// unsubscribeFromChannel unsubscribes the shared connection from a Redis
+// channel. It doesn't wait for Redis to confirm: a message of the channel that
+// is already on its way still arrives, and goes to whoever is in the room.
 func (pm *PubSubManager) unsubscribeFromChannel(channel string) error {
 	pm.mu.Lock()
 	defer pm.mu.Unlock()
 
-	pubsub, exists := pm.subscriptions[channel]
-	if !exists {
+	if _, exists := pm.subscriptions[channel]; !exists {
+		return nil
+	}
+	delete(pm.subscriptions, channel)
+	if pm.pubsub == nil {
+		// Nothing was ever sent to Redis: a subscribe creates pubsub before it
+		// records a channel. Only tests mark channels without one.
 		return nil
 	}
 
-	if err := pubsub.Close(); err != nil {
-		return fmt.Errorf("failed to close subscription: %w", err)
+	ctx, cancel := context.WithTimeout(pm.ctx, redisSubscribeTimeout)
+	defer cancel()
+	// go-redis forgets the channel even if the write fails, so it isn't
+	// subscribed again on the next reconnect.
+	if err := pm.pubsub.Unsubscribe(ctx, channel); err != nil {
+		return fmt.Errorf("failed to unsubscribe: %w", err)
 	}
-
-	delete(pm.subscriptions, channel)
 	pm.logger.WithFields(logrus.Fields{"channel": channel}).Debug("Unsubscribed from channel")
 
 	return nil
@@ -308,30 +456,43 @@ func (pm *PubSubManager) publishMessage(channel string, message *models.WebSocke
 	return nil
 }
 
-// processSubscriptionMessages handles messages from a specific subscription
-func (pm *PubSubManager) processSubscriptionMessages(pubsub *redis.PubSub) {
-	ch := pubsub.Channel()
-
-	for msg := range ch {
-		if msg.Payload == "" {
-			continue
+// processSubscriptionMessages reads the shared connection: subscribe
+// confirmations and the messages of every channel, in the order Redis sent
+// them. It runs until the subscription is closed. Handlers must not block: a
+// slow one holds up every channel.
+func (pm *PubSubManager) processSubscriptionMessages(items <-chan any) {
+	for item := range items {
+		switch v := item.(type) {
+		case *redis.Subscription:
+			if v.Kind == "subscribe" {
+				pm.confirmSubscribe(v.Channel)
+			}
+		case *redis.Message:
+			pm.handleRedisMessage(v)
 		}
-
-		// Not a WebSocketMessage, and never forwarded to clients.
-		if msg.Channel == SessionControlChannel {
-			pm.handleSessionControl(msg.Payload)
-			continue
-		}
-
-		var wsMessage models.WebSocketMessage
-		if err := json.Unmarshal([]byte(msg.Payload), &wsMessage); err != nil {
-			pm.logger.WithFields(logrus.Fields{"channel": msg.Channel}).WithError(err).Error("Failed to unmarshal message")
-			continue
-		}
-
-		// Route message based on channel type
-		pm.routeMessage(msg.Channel, &wsMessage)
 	}
+}
+
+// handleRedisMessage decodes one message and routes it by its channel.
+func (pm *PubSubManager) handleRedisMessage(msg *redis.Message) {
+	if msg.Payload == "" {
+		return
+	}
+
+	// Not a WebSocketMessage, and never forwarded to clients.
+	if msg.Channel == SessionControlChannel {
+		pm.handleSessionControl(msg.Payload)
+		return
+	}
+
+	var wsMessage models.WebSocketMessage
+	if err := json.Unmarshal([]byte(msg.Payload), &wsMessage); err != nil {
+		pm.logger.WithFields(logrus.Fields{"channel": msg.Channel}).WithError(err).Error("Failed to unmarshal message")
+		return
+	}
+
+	// Route message based on channel type
+	pm.routeMessage(msg.Channel, &wsMessage)
 }
 
 // routeMessage routes messages to appropriate handlers based on channel type

@@ -54,7 +54,8 @@ func (pm *PubSubManager) handleMembersRemoved(chatID string, message *models.Web
 		}
 	}
 	if removeUsersFromRoom(pm.hub, chatID, userIDs) {
-		// Not on this goroutine: it is the reader of the channel being released.
+		// Not on this goroutine: it is the pub/sub reader, which every channel
+		// waits on (#21).
 		go pm.releaseEmptyChats([]string{chatID})
 	}
 }

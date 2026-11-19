@@ -13,6 +13,12 @@ the docs that describe each change today. Newer work is listed on that page.
   ([pub/sub](./PUBSUB_ARCHITECTURE.md#connecting-and-disconnecting),
   [app changes](../Android/_docs/08_SERVER_CHANGES/auth-and-connection.md)). Code review:
   9 findings, 8 fixed; a live burst check found a presence flood, fixed.
+- **#40, typing part (PR #126):** `set_typing` only broadcasts the `typing` event; it no
+  longer writes `typingUsers` to MongoDB or starts a timer that cleared users still typing
+  ([requests](./websocket-requests.md#set_typing),
+  [app changes](../Android/_docs/08_SERVER_CHANGES/auth-and-connection.md)).
+
+Older work, from #122 (PR #125) and #49 (PR #130) back: [finished-work.md](./finished-work.md).
 - **#122 (PR #125):** the server reads a connection's requests only after the hub has
   registered it (at most 10 s), so a `join_chat` sent right after connecting is no longer
   dropped ([pub/sub](./PUBSUB_ARCHITECTURE.md#connecting-and-disconnecting)).

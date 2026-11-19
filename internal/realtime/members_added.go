@@ -18,10 +18,12 @@ import (
 // user subscribes to. Clients never see it, and no join event is sent: nobody
 // joined from the clients' point of view.
 //
-// A removal travels on the chat's channel, read by another goroutine, so a
-// removal right after an add can be applied first and the add then re-enter
-// the room. The membership re-check (membership.go, #117) takes such a
-// connection out again within SessionRecheckInterval.
+// A removal travels on the chat's channel. Both reach an instance on its one
+// Redis connection, in the order Redis got them (#21), but an add and a removal
+// published at about the same time by two requests can still arrive in either
+// order, and the add then re-enter the room. The membership re-check
+// (membership.go, #117) takes such a connection out again within
+// SessionRecheckInterval.
 
 // chatAddedType is the hub-internal message type. Its ChatID is the chat the
 // user gained. Services build it after their write succeeded; clients can't
@@ -64,7 +66,8 @@ func (pm *PubSubManager) handleChatAdded(userID string, message *models.WebSocke
 
 // addUserToRoom puts the user's open connections on this instance in the chat's
 // room and subscribes to the chat's channel. The subscribe runs off the
-// caller's goroutine: a request's, or the reader of the user's channel.
+// caller's goroutine: a request's, or the pub/sub reader, which must not wait
+// for Redis's confirmation it is the one to deliver.
 func (pm *PubSubManager) addUserToRoom(userID, chatID string) {
 	if pm.joinUserConnections(userID, chatID) {
 		go pm.subscribeChats([]string{chatID})

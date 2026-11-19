@@ -11,12 +11,17 @@ on `main`. To learn what the product does, read
 and with a link to exactly one feature state.md. Updated by /close-increment and
 /feature-docs update. -->
 
-- **Feature:** #32 (privacy settings) on `fix/32-privacy-settings`: done, reviewed (7 fixed,
-  incl. `PUT profile/` resetting unsent settings), verified; PR open (`Fixes #32`). Rules:
-  [decided](./decisions.md#how-privacy-settings-apply-32). #5 step 2 waits for the Android invite screen
-  ([group-invites](./features/group-invites/state.md))
+- **Feature:** #21 on `fix/21-shared-pubsub-connection` at `aac1742`: all pub/sub channels of
+  a server share one Redis connection and one reader
+  ([pub/sub](./PUBSUB_ARCHITECTURE.md#redis-channels)). `TEST_DB_REQUIRED=1 node
+  scripts/verify.mjs --full` passed, and a live contract run held 1 pub/sub connection.
+  Code review: 9 findings, 7 fixed, 2 documented (a reconnect's confirmation can release a
+  subscribe early; one shared output buffer). Now: PR. #5 step 2 waits for the Android invite
+  screen ([group-invites](./features/group-invites/state.md))
 - **#31 on Render (not checked yet):** in a shared chat, A sees B's online and offline, and
   B's contacts list shows `isOnline` only while B is connected
+- **#32 on Render (not checked yet):** the startup log shows `Turned on showLastSeen` once
+  (not on the next start); with `allowContactBy: none`, a contact request gets `403`
 - **Not filed, from #31:** a user held only by a server that crashes gets no offline (its
   entry expires in 2 min); two servers connecting and disconnecting one user within
   milliseconds can order online and offline wrongly; during a deploy, old and new servers
@@ -48,10 +53,12 @@ and with a link to exactly one feature state.md. Updated by /close-increment and
   losing messages
 - **Not filed, from #22:** a `chat_added` arriving while a connection's chats load is
   missed; a connection's welcome is dropped when its 10-message queue is already full
-- **Next step:** merge the #32 PR (user). Direct-chat gating and live status changes are
-  decided against for now ([decided](./decisions.md#how-privacy-settings-apply-32)). The
-  Render checks above are the user's
-- **Updated:** 2026-11-19 on `fix/32-privacy-settings` at `86453a4`
+- **Next step:** PR for #21. After merge, on Render: Redis
+  `CLIENT LIST TYPE pubsub` shows one connection per server. Direct-chat gating and live
+  status changes are decided against for now
+  ([decided](./decisions.md#how-privacy-settings-apply-32)). The Render checks above are the user's
+- **Updated:** 2026-11-19 on `fix/21-shared-pubsub-connection` at `aac1742`. PRs merge by
+  rebase only, so commits keep the author `shoonya0`
 
 ## Where things stand
 
@@ -65,6 +72,10 @@ Not built yet: editing or deleting messages, and changing chat settings. The ful
 
 ## Recently finished
 
+- **#32 (PR #148):** `showOnlineStatus` (`contacts`, `none`) and `showLastSeen` apply to
+  contact lists and `presence` events, `allowContactBy` gates contact requests (`403`), and
+  `showLastSeen` is on by default (one-time migration). Code review found `PUT profile/`
+  resetting unsent settings, fixed ([decided](./decisions.md#how-privacy-settings-apply-32)).
 - **#31 part 2 (PR #147):** REST presence is live from `online:<id>`, `status` is the
   user's choice, invisible users stay offline, `lastSeen` is saved on offline, and the hub
   reads the status from MongoDB ([decided](./decisions.md#where-presence-comes-from-31)).
@@ -132,12 +143,6 @@ Not built yet: editing or deleting messages, and changing chat settings. The ful
   member removed during the join. The release test hooks are `PubSubManager` fields
   ([pub/sub](./PUBSUB_ARCHITECTURE.md#connecting-and-disconnecting)). Not done from the
   code review: a removal before the room entry (#117), one per-chat reconcile step.
-- **#40, typing part (PR #126):** `set_typing` only broadcasts the `typing` event; it no
-  longer writes `typingUsers` to MongoDB or starts a timer that cleared users still typing
-  ([requests](./websocket-requests.md#set_typing),
-  [app changes](../Android/_docs/08_SERVER_CHANGES/auth-and-connection.md)).
-
-Older work, from #122 (PR #125) and #49 (PR #130) back: [finished-work.md](./finished-work.md).
 
 ## How to build, run, test
 
@@ -180,11 +185,11 @@ There are 11 open issues. Where each risk sits in the code: [architecture-overvi
 
 | Area | The problem, in short | Issues |
 |---|---|---|
-| Live connections | Each Redis channel uses its own connection, and missed live messages can't be detected | #21, #43 |
+| Live connections | Missed live messages can't be detected (one Redis connection per channel: fixed on the #21 branch) | #21, #43 |
 | Groups | Pending members still pass membership checks (#5 step 2), and the participant count is maintained by hand | #5, #110 |
 | Accounts | Usernames aren't unique, and display copies go stale | #36 |
 | Contacts and blocking | Contact lists aren't cut to `limit`, and blocks written during a deploy can be missed | #39, #63 |
-| Online status and privacy | A status change isn't announced live; privacy settings apply on the #32 branch | #32 |
+| Online status and privacy | A status or privacy change reaches live events only at the next connect (decided) | none |
 | Messages and data | Writes can half-finish, and some lists grow without limit | #37, #42 |
 | Limits and errors | WebSocket limits are per connection, not per user; mention lookups are one read each; `CheckOrigin` allows any origin | #40 |
 

@@ -96,6 +96,12 @@ call `BroadcastToChat`, which calls the hub's `PublishToChat`.
 | `instance:<instanceID>` | Messages for one server | No. Servers listen, but nothing publishes to it. |
 | `control:sessions` | Close a user's connections on every server (logout, deleted profile) | **Yes** (#76). Never forwarded to clients. |
 
+A server listens to all its channels over **one** Redis connection and one reader goroutine
+(#21). A subscribe returns once Redis confirms it; a release doesn't wait. The reader handles
+messages one at a time, so no handler on it may wait on MongoDB or Redis: if it falls behind
+and Redis's `client-output-buffer-limit` cuts the connection, every channel misses messages
+until go-redis reconnects (#43).
+
 The sorted set `online:<userID>` records which servers hold the user: one entry per server,
 scored with its expiry time. A server adds its entry on each connection, renews it every 30
 seconds, and removes it on the user's last connection there. Offline is published only when
@@ -174,7 +180,7 @@ its connections live, though it is still in the chat history (#43).
 |---|---|
 | A message is saved but doesn't arrive live | Does the person's connection follow the chat? A pending member gets nothing live until they accept (#5). Look for "may not follow a new chat" in the server log (#49). |
 | Nobody gets live messages | Is Redis up? Look for publish errors in the server log. |
-| Memory or Redis connections keep growing | Known problem: #21 |
+| Redis connections keep growing | Each server should hold one pub/sub connection (`CLIENT LIST TYPE pubsub`); more means a server from before #21 |
 | Online status is wrong | Live events: is Redis up? Contacts and profiles: known problem, #31 |
 
 `GET /echo/v1/chats/hub/stats` shows the counts for one server, to operators who send the
@@ -185,7 +191,6 @@ stats token. See
 
 | Issue | Problem |
 |---|---|
-| #21 | Each Redis channel uses its own connection, so connections grow with users and chats |
 | #31 | Contacts and profiles show a stored status, not who is connected. A server that crashes sends no offline for its users |
 | #40 | Rate limits are per socket, not per account |
 | #43 | Apps can't detect or recover missed live messages |
