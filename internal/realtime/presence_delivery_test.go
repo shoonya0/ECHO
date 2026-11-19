@@ -2,6 +2,7 @@ package realtime
 
 import (
 	"context"
+	"fmt"
 	"testing"
 	"time"
 
@@ -37,7 +38,13 @@ func newPresenceHub(t *testing.T, redisClient *redis.Client, instanceID string) 
 // does once the controller stored the connection's presence.
 func connectOnline(t *testing.T, hub *Hub, client *models.Client, chatIDs ...string) {
 	t.Helper()
-	GetPresenceInstance().Set(UserPresence{UserID: client.UserID, Status: UserStatus(constants.UserStatusOnline), ClientID: client.ID})
+	connectWithStatus(t, hub, client, constants.UserStatusOnline, chatIDs...)
+}
+
+// connectWithStatus is connectOnline for a user who chose status.
+func connectWithStatus(t *testing.T, hub *Hub, client *models.Client, status constants.UserStatus, chatIDs ...string) {
+	t.Helper()
+	GetPresenceInstance().Set(UserPresence{UserID: client.UserID, Status: UserStatus(status), ClientID: client.ID})
 	t.Cleanup(func() { GetPresenceInstance().Delete(client.UserID) })
 	t.Cleanup(func() { _ = hub.redisClient.Del(context.Background(), onlineKey(client.UserID.Hex())).Err() })
 	addClient(hub, client, chatIDs...)
@@ -252,5 +259,79 @@ func TestRenewalSkipsUsersNoLongerHeld(t *testing.T) {
 	}
 	if n := redisClient.Exists(context.Background(), onlineKey(gone)).Val(); n != 0 {
 		t.Fatal("the renewal marked a user this server no longer holds")
+	}
+}
+
+// #31: away and dnd users are announced online like anyone connected; an
+// invisible user isn't announced, though their mark still says connected.
+// Before, only a token status of exactly "online" was announced.
+func TestAnnouncedStatusFollowsChoice(t *testing.T) {
+	for _, tc := range []struct {
+		status   constants.UserStatus
+		announce bool
+	}{
+		{constants.UserStatusDND, true},
+		{constants.UserStatusAway, true},
+		{constants.UserStatusInvisible, false},
+	} {
+		t.Run(string(tc.status), func(t *testing.T) {
+			redisClient := testutil.UseTestRedis(t)
+			hub := newPresenceHub(t, redisClient, "one")
+			chat := bson.NewObjectID().Hex()
+			a1 := bufferedClient("a1", bson.NewObjectID())
+			b1 := bufferedClient("b1", bson.NewObjectID())
+			connectOnline(t, hub, b1, chat)
+			connectWithStatus(t, hub, a1, tc.status, chat)
+			if tc.announce {
+				wantStatus(t, nextPresence(t, b1, a1.UserID), constants.UserStatusOnline)
+			} else {
+				noPresence(t, b1, a1.UserID, 300*time.Millisecond)
+			}
+			if n, err := redisClient.ZCard(context.Background(), onlineKey(a1.UserID.Hex())).Result(); err != nil || n != 1 {
+				t.Fatalf("online mark count = %d, %v; want 1", n, err)
+			}
+		})
+	}
+}
+
+// #31: the user's last connection closing saves the time as their lastSeen,
+// the same time the offline event carries.
+func TestOfflineSavesLastSeen(t *testing.T) {
+	hub := newPresenceHub(t, testutil.UseTestRedis(t), "one")
+	type save struct {
+		userID bson.ObjectID
+		at     time.Time
+	}
+	saves := make(chan save, 4)
+	hub.saveLastSeen = func(_ context.Context, userID bson.ObjectID, at time.Time) error {
+		saves <- save{userID, at}
+		return nil
+	}
+	chat := bson.NewObjectID().Hex()
+	a1 := bufferedClient("a1", bson.NewObjectID())
+	b1 := bufferedClient("b1", bson.NewObjectID())
+	connectOnline(t, hub, b1, chat)
+	connectOnline(t, hub, a1, chat)
+	wantStatus(t, nextPresence(t, b1, a1.UserID), constants.UserStatusOnline)
+
+	unregisterAndWait(hub, a1)
+	offline := nextPresence(t, b1, a1.UserID)
+	wantStatus(t, offline, constants.UserStatusOffline)
+	var got save
+	select {
+	case got = <-saves:
+	case <-time.After(3 * time.Second):
+		t.Fatal("lastSeen not saved after the offline")
+	}
+	if got.userID != a1.UserID {
+		t.Fatalf("lastSeen saved for %s, want %s", got.userID.Hex(), a1.UserID.Hex())
+	}
+	if sent, err := time.Parse(time.RFC3339Nano, fmt.Sprint(offline["lastSeen"])); err != nil || !sent.Equal(got.at) {
+		t.Fatalf("event lastSeen %v (%v), saved %v", offline["lastSeen"], err, got.at)
+	}
+	select {
+	case extra := <-saves:
+		t.Fatalf("lastSeen saved again for %s", extra.userID.Hex())
+	case <-time.After(200 * time.Millisecond):
 	}
 }

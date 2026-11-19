@@ -65,6 +65,18 @@ func connectionLogFields(user models.LoginUserResponse, client *models.Client) l
 	}
 }
 
+// chosenPresenceStatus returns the status the user chose, read from MongoDB:
+// the token's copy dates from login, up to 7 days ago (#31). When the read
+// fails the user counts as online, so a connection is still announced.
+func chosenPresenceStatus(ctx context.Context, log logrus.Entry, userID bson.ObjectID) constants.UserStatus {
+	status, err := services.GetPresenceStatus(ctx, userID)
+	if err != nil {
+		log.WithError(err).WithField(string(constants.UserIDKey), userID.Hex()).Warn("Could not read the user's presence status; using online")
+		return constants.UserStatusOnline
+	}
+	return status
+}
+
 // HandleWebSocketChat upgrades the request to a WebSocket and serves the chat
 // protocol until the client disconnects.
 func HandleWebSocketChat(ctx *gin.Context) {
@@ -118,16 +130,16 @@ func HandleWebSocketChat(ctx *gin.Context) {
 		DisplayName: user.Profile.DisplayName,
 	})
 
-	hub.QueueRegister(client) // gives up if the hub stopped; WaitRegistered reports it (#22)
-
-	// Update presence
+	// Store presence before registering: the registration decides from it
+	// whether to announce the user online (#31).
 	realtime.GetPresenceInstance().Set(realtime.UserPresence{
 		UserID:     user.ID,
-		Status:     realtime.UserStatus(user.Presence.Status),
-		LastSeen:   user.Presence.LastSeen,
+		Status:     realtime.UserStatus(chosenPresenceStatus(reqCtx, log, user.ID)),
 		ClientID:   client.ID,
 		DeviceInfo: user.Presence.DeviceInfo,
 	})
+
+	hub.QueueRegister(client) // gives up if the hub stopped; WaitRegistered reports it (#22)
 
 	// Read requests only once the hub has registered the connection: a
 	// join_chat handled earlier would be dropped (#122).

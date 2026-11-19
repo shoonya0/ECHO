@@ -43,6 +43,9 @@ type Hub struct {
 	// loadMembers reads chat participants for the membership re-check; nil
 	// means services.ChatMembers.
 	loadMembers MembersLoader
+	// saveLastSeen stores when a user's last connection closed; nil means
+	// services.RecordLastSeen.
+	saveLastSeen func(ctx context.Context, userID bson.ObjectID, at time.Time) error
 	// background tracks the Redis work a disconnect leaves running, so tests can
 	// wait for it (#22).
 	background sync.WaitGroup
@@ -369,7 +372,7 @@ func (eh *Hub) publishOnline(client *models.Client) bool {
 		return true // another connection of the user announced it
 	}
 	presence, ok := GetPresenceInstance().Get(client.UserID)
-	if !ok || presence.Status != UserStatus(constants.UserStatusOnline) {
+	if !ok || hidesPresence(presence.Status) {
 		return true
 	}
 	eh.announced.Store(userID, chats)
@@ -533,17 +536,47 @@ func (eh *Hub) recheckOfflineAt(userID bson.ObjectID, chats []string, heldUntil 
 	})
 }
 
-// publishOffline publishes userID as offline to the members of chats. The
-// caller holds the user's presence lock.
+// hidesPresence reports whether a user who chose status is never announced
+// as online: invisible, or offline by choice. Away and dnd users are (#31).
+func hidesPresence(status UserStatus) bool {
+	return status == UserStatus(constants.UserStatusInvisible) || status == UserStatus(constants.UserStatusOffline)
+}
+
+// publishOffline publishes userID as offline to the members of chats and
+// stores the time as their lastSeen. The caller holds the user's presence lock.
 func (eh *Hub) publishOffline(userID bson.ObjectID, chats []string) {
+	at := time.Now()
 	if err := eh.pubSubManager.PublishPresenceUpdate(&models.WSPresenceStatus{
 		UserID:   userID.Hex(),
 		Status:   string(constants.UserStatusOffline),
-		LastSeen: time.Now(),
+		LastSeen: at,
 		Chats:    chats,
 	}); err != nil {
 		eh.logger.WithError(err).Error("Failed to publish presence update")
 	}
+	eh.recordLastSeen(userID, at)
+}
+
+// lastSeenTimeout bounds the lastSeen write.
+const lastSeenTimeout = 5 * time.Second
+
+// recordLastSeen saves at as userID's lastSeen in the background, so a slow
+// MongoDB doesn't hold the presence lock, which other users share. Writes
+// can't move lastSeen back, so their order doesn't matter (#31). It isn't
+// tracked by eh.background: an offline published by recheckOfflineAt's timer
+// would call Add while a test's Wait may run with the count at zero.
+func (eh *Hub) recordLastSeen(userID bson.ObjectID, at time.Time) {
+	save := eh.saveLastSeen
+	if save == nil {
+		save = services.RecordLastSeen
+	}
+	go func() {
+		ctx, cancel := context.WithTimeout(context.Background(), lastSeenTimeout)
+		defer cancel()
+		if err := save(ctx, userID, at); err != nil {
+			eh.logger.WithError(err).WithField("userID", userID.Hex()).Error("Failed to save the user's last seen time")
+		}
+	}()
 }
 
 // JoinChat adds the connection to the chat's room, subscribes the chat and

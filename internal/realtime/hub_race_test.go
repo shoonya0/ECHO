@@ -58,6 +58,7 @@ func newTestHub(t *testing.T) *Hub {
 		redisClient:   redisClient,
 		logger:        logger,
 		instanceID:    "test",
+		saveLastSeen:  func(context.Context, bson.ObjectID, time.Time) error { return nil },
 	}
 }
 
