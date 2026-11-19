@@ -34,7 +34,7 @@ Sends a message to a chat you are in.
 | `content` | Required, even for image or file messages. Up to 4000 characters (#51), counted as Unicode code points, not bytes: a Hindi letter or a plain emoji is one; a flag or skin-tone emoji is several. |
 | `messageType` | `text` (the default), `image`, `file`, `audio` or `video` |
 | `attachments` | Up to 10. Each needs `url` and `originalName`, and `size` can be up to 50 MB. ECHO stores these details only. The file itself must be hosted somewhere else. |
-| `mentions` | Up to 20 user IDs |
+| `mentions` | Up to 20 user IDs. Only participants of the chat are kept, each once; others are dropped without an error (#40). |
 | `replyTo` | Accepted but ignored |
 
 **You get:** a `response` with the new `messageId`. Everyone following the chat gets a

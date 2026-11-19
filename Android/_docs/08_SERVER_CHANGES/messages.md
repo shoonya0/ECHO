@@ -46,3 +46,12 @@ Details: [websocket-requests.md](../../../_docs/websocket-requests.md#add_reacti
 - Match replies on the top-level `requestId`. `data.requestId` is still there.
 
 Details: [websocket-events.md](../../../_docs/websocket-events.md).
+
+## Mentions keep only chat participants (#40)
+
+- `mentions` in a `send_message` request keeps only users who are participants of the
+  chat, each once, in the order sent. Other IDs are dropped without an error, so the
+  `message` event and history can hold fewer mentions than were sent.
+- In history, `mentions.userIds` and `mentions.userNames` now line up one to one.
+
+Details: [websocket-requests.md](../../../_docs/websocket-requests.md#send_message).
