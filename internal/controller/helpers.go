@@ -45,10 +45,9 @@ var userMutableKeys = map[string]bool{
 	"profile.statusMessage": true,
 	"profile.bio":           true,
 
-	// Presence (user controls own status/device/location)
+	// Presence: the user chooses status, device and location. isOnline and
+	// lastSeen belong to the server, which tracks connections (#31).
 	"presence.status":       true,
-	"presence.isOnline":     true,
-	"presence.lastSeen":     true,
 	"presence.lastActivity": true,
 	"presence.deviceInfo":   true,
 	"presence.location":     true,
