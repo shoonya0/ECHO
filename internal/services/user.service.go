@@ -10,6 +10,7 @@ import (
 	"github.com/shoonya0/ECHO/internal/database"
 	"github.com/shoonya0/ECHO/internal/logger"
 	"github.com/shoonya0/ECHO/internal/models"
+	"github.com/shoonya0/ECHO/internal/utils"
 
 	"go.mongodb.org/mongo-driver/v2/bson"
 	"go.mongodb.org/mongo-driver/v2/mongo"
@@ -69,12 +70,19 @@ func UpdateProfile(ctx context.Context, userID bson.ObjectID, profileUpdate map[
 	// with their previously stored values.
 	sanitizeUpdateFields(profileUpdate, existingDoc)
 
+	if err := checkUsernameChange(ctx, userID, profileUpdate, existingDoc); err != nil {
+		return err
+	}
+
 	// updatedAt is server-controlled, never client-controlled.
 	profileUpdate["updatedAt"] = time.Now()
 
 	update := bson.M{"$set": profileUpdate}
 
 	result, err := database.DB.Collection(string(constants.UserColl)).UpdateOne(ctx, filter, update)
+	if database.IsDuplicateKeyOn(err, database.UsernameIndex) {
+		return ErrUsernameTaken // taken between the check and the write
+	}
 	if err != nil {
 		return fmt.Errorf("failed to update profile: %w", err)
 	}
@@ -458,6 +466,27 @@ func sanitizeUpdateFields(updateMap, existingDoc map[string]interface{}) {
 			// when it re-fetches the profile.
 		}
 	}
+}
+
+// checkUsernameChange normalizes a username in the update and, when it differs from
+// the stored one, checks it with CheckNewUsername (#36). The stored name itself is
+// let through unchecked: the app may send the whole profile back, and a name from
+// before #36 that doesn't have the new format mustn't block other changes.
+func checkUsernameChange(ctx context.Context, userID bson.ObjectID, updateMap, existingDoc map[string]interface{}) error {
+	raw, ok := updateMap["username"]
+	if !ok {
+		return nil
+	}
+	name, ok := raw.(string)
+	if !ok {
+		return ErrInvalidUsername
+	}
+	name = utils.NormalizeUsername(name)
+	updateMap["username"] = name
+	if stored, _ := getNestedPath(existingDoc, "username").(string); name == stored {
+		return nil
+	}
+	return CheckNewUsername(ctx, name, userID)
 }
 
 // isEmptyValue reports whether a value represents "empty" for our purposes.

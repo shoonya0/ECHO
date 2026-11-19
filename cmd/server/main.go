@@ -77,6 +77,16 @@ func main() {
 			}
 			log.WithField("chats", ids).Warn("Second direct chats of a pair; left without a key, merge by hand")
 		}
+		// #36: before the indexes, so names shared before #36 can't stop the
+		// unique username_ci. Every start, like the direct keys above.
+		renames, err := services.RenameDuplicateUsernames(indexCtx)
+		if err != nil {
+			log.WithError(err).Error("Failed to rename duplicate usernames")
+		}
+		for _, r := range renames {
+			log.WithField("user", r.UserID.Hex()).WithField("from", r.From).WithField("to", r.To).
+				Warn("Renamed a username another account already had")
+		}
 		if err := database.EnsureIndexes(indexCtx); err != nil {
 			log.WithError(err).Error("Failed to ensure MongoDB indexes; queries will run without them")
 		}
