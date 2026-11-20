@@ -11,10 +11,11 @@ on `main`. To learn what the product does, read
 and with a link to exactly one feature state.md. Updated by /close-increment and
 /feature-docs update. -->
 
-- **Feature:** none · #42 last step on `fix/42-drop-readby` (PR open, closes #42): messages
-  no longer store `readBy` (mark_read writes only the chat), and a one-time startup job
-  unsets it on older messages. ECHO-app #9 reads `readSeqs` only (checked 2026-11-20).
+- **Feature:** none · #42 closed (PR #170). The app test of 2026-11-20 passed locally and
+  found #171 to #173, merged (PRs #174 to #176).
   #5 step 2 waits for the Android invite screen ([group-invites](./features/group-invites/state.md))
+- **#171 to #173 on Render (not checked yet):** a banned login's 403 has `code`; `/login`
+  and refused requests get an `HTTP Request` line; a closed socket logs one unregister
 - **#42 readBy on Render (not checked yet):** the startup log shows `Removed readBy from
   messages` once, `migrations` holds `message-readby-42`, and read receipts still show in the app
 - **#168 on Render (not checked yet):** connecting still gets the welcome first, and
@@ -77,12 +78,13 @@ and with a link to exactly one feature state.md. Updated by /close-increment and
   presence arrive; two devices of one account connect and disconnect without either
   losing messages
 - **From #22:** filed as #168
-- **Next step:** merge the `readBy` PR (closes #42). Then #5 step 2 once the app's invite
-  screen exists; the app also doesn't send `mark_read` yet (ECHO-app side).
+- **Next step:** #5 step 2 once the app's invite screen exists. The app's fixes from the
+  2026-11-20 test (ECHO-app #21, #27 to #31) are in progress; retest against the local server
+  when their PRs are in.
   The "Left open" review items of #37 stay in [data-writes](./decisions/data-writes.md#mongodb-transactions). Direct-chat gating and live status changes are decided against for now
   ([decided](./decisions/accounts-and-privacy.md#how-privacy-settings-apply-32)). The Render
   checks above are the user's
-- **Updated:** 2026-11-20 on `fix/42-drop-readby` from `dfd2473`. Commits on `main` must keep the author `shoonya0`
+- **Updated:** 2026-11-20 on `main` at `57fe185` (uncommitted; rides on the next branch). Commits on `main` must keep the author `shoonya0`
 
 ## Where things stand
 
@@ -96,8 +98,11 @@ Not built yet: editing or deleting messages, and changing chat settings. The ful
 
 ## Recently finished
 
-- **#42 readBy (`fix/42-drop-readby`):** messages don't store `readBy`; a one-time job
-  (`message-readby-42`) removed it from older ones. Every #42 item is done.
+- **#171, #172, #173 (PRs #175, #176, #174):** login's banned/inactive 403 carries `code`;
+  the access logger runs before auth, so `/login`, `/signup` and refused requests are logged
+  once each; a closed socket logs `Unregistering client` once.
+- **#42 readBy (PR #170):** messages don't store `readBy`; a one-time job
+  (`message-readby-42`) removed it from older ones. Every #42 item is done; #42 is closed.
 - **#168 (PR #169):** the welcome is always first, and a chat gained while
   connecting is joined (the chats are read again once the user channel is subscribed).
 - **#42 step 4 (PR #167):** leavers' `readReceipts`/`readSeqs` entries
@@ -180,13 +185,12 @@ blocks are stored, and who counts as a member.
 
 ## Known issues and risks
 
-There are 2 open issues. Where each risk sits in the code: [architecture-overview.md](./architecture-overview.md#riskiest-areas).
+There is 1 open issue (#5). Where each risk sits in the code: [architecture-overview.md](./architecture-overview.md#riskiest-areas).
 
 | Area | The problem, in short | Issues |
 |---|---|---|
 | Groups | Pending members still pass membership checks (#5 step 2) | #5 |
 | Online status and privacy | A status or privacy change reaches live events only at the next connect (decided) | none |
-| Messages and data | None left from #42 once the `readBy` PR merges | #42 |
 | Limits and errors | The per-account WebSocket cap is per server, not across servers | #40 |
 
 ## Next task
