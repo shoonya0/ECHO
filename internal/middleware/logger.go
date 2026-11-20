@@ -8,43 +8,32 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-// LoggerMiddleware is a Gin middleware that logs HTTP requests using our custom logger
+// LoggerMiddleware writes one "HTTP Request" line per request, with its final
+// status. Register it once, before AuthMiddleware and the rate limiters, so a
+// request they refuse is logged too (#172). It logs the method, path, status,
+// duration, client IP and user agent, never the body or headers. The user_id
+// comes from the request context after the handlers ran, since AuthMiddleware
+// adds it there; a WebSocket's line is written when the socket closes.
 func LoggerMiddleware() gin.HandlerFunc {
 	return func(c *gin.Context) {
-		// Start timer
 		start := time.Now()
 
-		// Create request ID and add it to context
-		ctx := logger.WithRequestID(c.Request.Context())
-		// here it creates a new request with the new context
-		c.Request = c.Request.WithContext(ctx)
+		// Later middleware and handlers derive their context from this one, so
+		// their logs carry the same request_id.
+		c.Request = c.Request.WithContext(logger.WithRequestID(c.Request.Context()))
 
-		// Add user ID to context if available
-		if userID, exists := c.Get("userId"); exists {
-			ctx = logger.WithUserID(ctx, userID.(string))
-			c.Request = c.Request.WithContext(ctx)
-		}
-
-		// Create logger with request context
-		log := logger.WithContext(ctx)
-
-		// Process request
 		c.Next()
 
-		// Stop timer
-		duration := time.Since(start)
-
-		// Log request details
+		log := logger.WithContext(c.Request.Context())
 		log.WithFields(map[string]interface{}{
 			"method":     c.Request.Method,
 			"path":       c.Request.URL.Path,
 			"status":     c.Writer.Status(),
-			"duration":   duration.String(),
+			"duration":   time.Since(start).String(),
 			"client_ip":  c.ClientIP(),
 			"user_agent": c.Request.UserAgent(),
 		}).Info("HTTP Request")
 
-		// Log errors if any
 		for _, err := range c.Errors {
 			log.WithError(err.Err).Error("HTTP Request Error")
 		}
