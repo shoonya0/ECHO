@@ -7,9 +7,8 @@ Part of [server changes the app must handle](./README.md).
 - History replies have `data.readSeqs`: user ID to the highest `seq` that member has read.
   A message with `seq` n is read by everyone whose value is n or more.
 - The `delivery` event has `readUpToSeq`, the reader's new value; it never goes down.
-- Show "read by" from these instead of each message's `readBy`. `readBy` still works for
-  now, but the server will stop writing it once the app has switched: tell the server
-  side when it has.
+- Messages no longer have `readBy` (the app stopped reading it in ECHO-app #9); "read by"
+  comes only from `readSeqs` and `readUpToSeq`.
 
 Details: [chats.md](../../../_docs/rest-api/chats.md#messages),
 [delivery](../../../_docs/websocket-events.md#delivery-someone-read-messages).

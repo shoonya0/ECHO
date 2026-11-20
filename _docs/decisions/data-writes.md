@@ -40,7 +40,7 @@ but answered with an error never got to. A decline whose user cleanup fails now 
 Step 3 (2026-11-19): read receipts (`MarkMessagesAsRead`) and reactions take the request's
 context instead of `context.Background()`. The chat's read receipt (`updateChatReadReceipts`)
 returns its error, which it used to discard. A failed one answers `READ_FAILED` and the chat
-isn't told; the messages' `readBy` may already be saved, and marking them again is safe. Each
+isn't told, and marking them again is safe (since #42 it is mark_read's only write). Each
 write repeats safely, so they run without a transaction.
 
 Left open (from the PR review of step 2a):
@@ -79,7 +79,8 @@ gap-free numbers need one document that serializes a chat's sends. Kept on 2026-
 
 Read state uses the same numbers (#42): `mark_read` raises `chats.readSeqs.<userId>`
 with `$max`, and a message with `seq` n is read by each member at n or more. Each message's
-`readBy` is still written until the Android app reads `readSeqs`; then it goes.
+Messages' `readBy` is gone (2026-11-20, after ECHO-app #9 switched to `readSeqs`); a one-time
+startup job (`message-readby-42`) took it off older messages.
 Remove, decline and account delete unset a leaver's `readReceipts` and `readSeqs` entries,
 and `mark_read` writes only for participants; `stale-read-state-42` marks the one-time
 cleanup of entries left before that.
