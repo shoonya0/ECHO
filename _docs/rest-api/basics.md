@@ -36,7 +36,8 @@ to verify.
 
 Every request also checks the account itself, so a token stops working when its account
 changes after login, in the same shape: `403` with `ACCOUNT_BANNED` or `ACCOUNT_INACTIVE`
-(as `login` answers for those accounts), and `401` with `ACCOUNT_NOT_FOUND` when the
+(`login` refuses those accounts with the same `code`, in the usual
+`success`/`message` shape, #171), and `401` with `ACCOUNT_NOT_FOUND` when the
 profile was deleted. A token must also have an ID (`jti`); every token `login` issues
 does. The check is cached for up to 30 seconds,
 so a ban takes effect within that time. Deleting your profile takes effect at once. If
