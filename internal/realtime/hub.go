@@ -484,10 +484,9 @@ func (eh *Hub) publishOnline(client *models.Client) bool {
 
 // handleClientUnregistration handles client disconnections with pub/sub cleanup
 func (eh *Hub) handleClientUnregistration(client *models.Client) {
-	eh.logger.WithFields(logrus.Fields{"clientID": client.ID, "userID": client.UserID.Hex()}).Info("Unregistering client")
-
 	clientID := client.ID
 	userID := client.UserID.Hex()
+	log := eh.logger.WithFields(logrus.Fields{"clientID": clientID, "userID": userID})
 
 	eh.Mutex.Lock()
 
@@ -502,6 +501,13 @@ func (eh *Hub) handleClientUnregistration(client *models.Client) {
 			GetPresenceInstance().DeleteForClient(client.UserID, clientID)
 		}
 		eh.Mutex.Unlock()
+		// A closing connection is unregistered by its close path and again by
+		// its read loop; only the call that removed something logs at info (#173).
+		if wasPending {
+			log.Info("Unregistering client")
+		} else {
+			log.Debug("Unregistering client: already unregistered")
+		}
 		client.CloseSend()
 		if wasPending && !inUse {
 			// A connection that closed while this one was queued left the
@@ -542,6 +548,7 @@ func (eh *Hub) handleClientUnregistration(client *models.Client) {
 
 	eh.Mutex.Unlock()
 
+	log.Info("Unregistering client")
 	client.CloseSend()
 	eh.releaseInBackground(client.UserID, emptyRooms, lastConnection, chats)
 }
