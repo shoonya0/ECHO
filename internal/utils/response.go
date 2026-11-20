@@ -16,6 +16,9 @@ type APIResponse struct {
 	Message string      `json:"message"`
 	Data    interface{} `json:"data,omitempty"`
 	Error   interface{} `json:"error,omitempty"`
+	// Code is a stable machine-readable reason, set only where a client must
+	// tell refusals apart (e.g. services.CodeAccountBanned on login, #171).
+	Code string `json:"code,omitempty"`
 }
 
 // SuccessResponse sends a standardized success response
@@ -33,6 +36,16 @@ func ErrorResponse(c *gin.Context, statusCode int, message string, err interface
 		Success: false,
 		Message: message,
 		Error:   err,
+	})
+}
+
+// CodedErrorResponse is ErrorResponse with a machine-readable code, for
+// refusals a client acts on by reason rather than by message.
+func CodedErrorResponse(c *gin.Context, statusCode int, message, code string) {
+	c.JSON(statusCode, APIResponse{
+		Success: false,
+		Message: message,
+		Code:    code,
 	})
 }
 
