@@ -2,6 +2,14 @@
 
 Part of [server changes the app must handle](./README.md).
 
+## Login's 403 has a code (#171)
+
+- `login` for a banned or inactive account now answers `403`
+  `{ "success": false, "message": "...", "code": "ACCOUNT_BANNED" }` (or
+  `ACCOUNT_INACTIVE`): the same codes as the auth replies below. Branch on `code`.
+
+Details: [users.md](../../../_docs/rest-api/users.md#accounts).
+
 ## The welcome is always the first message (#168)
 
 - After connecting, the first message is the welcome `response` (`"status": "connected"`);
