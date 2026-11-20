@@ -86,8 +86,8 @@ MongoDB has three collections.
   the user's details), `inviteCode[]`, `readReceipts`, `readSeqs` (each member's highest read `seq`, #42; both cleared when a member leaves), `typingUsers` (no longer written, #40) and `stats`.
   A direct chat also has `directKey`, unique by index, so a pair has one
   ([decided](./decisions/data-writes.md#one-direct-chat-per-pair-37)). Invite codes are indexed too.
-- **`messages`:** `chatId`, a copy of the sender's details, content, a `reactions` map and a
-  `readBy` map (one key per reader; `chats.readSeqs` replaces it once the app reads that, #42).
+- **`messages`:** `chatId`, a copy of the sender's details, content, and a `reactions` map. Read state
+  is per member on the chat (`chats.readSeqs`); messages have no `readBy` since #42.
 
 **Watch out: membership is stored in two places.** `chats.participants` decides who may send
 and read. `users.chats` decides what a connection follows live, limited to chats that also

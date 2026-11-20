@@ -27,7 +27,7 @@ user" (#36). There is no route that lists your chats, and none that renames a gr
 The reply's `data` has `chat`, `messages`, `readSeqs` and `pagination`. `readSeqs` maps a
 member's user ID to the highest `seq` they have read (#42): a message with `seq` n is read
 by everyone whose value is n or more. Members who haven't read a numbered message aren't
-listed. Each message's `readBy` still works for now; prefer `readSeqs`, as `readBy` will go.
+listed. Messages have no `readBy` any more (#42).
 
 `pagination` looks like this:
 
