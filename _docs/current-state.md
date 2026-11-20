@@ -11,10 +11,11 @@ on `main`. To learn what the product does, read
 and with a link to exactly one feature state.md. Updated by /close-increment and
 /feature-docs update. -->
 
-- **Feature:** none · #168 on `fix/168-connect-delivery` (PR open): the welcome is queued
-  before the connection joins any room, and the chats are read again after the user
-  channel is subscribed, so a chat gained while connecting is joined. #42 step 4 merged
-  (PR #167). Backend issues come before Android work; minimum fixes until v1 (user)
+- **Feature:** none · nothing in progress. `main` at `dfd2473`: #168 merged (PR #169).
+  ECHO-app PR #9 (read state from `readSeqs`/`readUpToSeq`) merged 2026-11-19 19:31Z;
+  checked 2026-11-20: its `MessageDto` has no `readBy` field, so the server can stop
+  writing `messages.readBy`: #42's last step. (The app doesn't send `mark_read` yet.) #5 step 2 waits
+  for the Android invite screen ([group-invites](./features/group-invites/state.md))
 - **#168 on Render (not checked yet):** connecting still gets the welcome first, and
   messages arrive in every chat
 - **#42 step 4 on Render (not checked yet):** the startup log shows `Removed read state of
@@ -75,12 +76,13 @@ and with a link to exactly one feature state.md. Updated by /close-increment and
   presence arrive; two devices of one account connect and disconnect without either
   losing messages
 - **From #22:** filed as #168
-- **Next step:** merge #168. #42 (`readBy`) and #5 step 2 wait for Android. Other unfiled
-  findings (#31 presence, #35 delete safety, #40 email enumeration) were not chosen for v1.
+- **Next step:** #42 last step: stop writing `messages.readBy` (and drop it from history
+  replies, the model and `mark_read`'s message update), then close #42. Then #5 step 2
+  once the invite screen exists.
   The "Left open" review items of #37 stay in [data-writes](./decisions/data-writes.md#mongodb-transactions). Direct-chat gating and live status changes are decided against for now
   ([decided](./decisions/accounts-and-privacy.md#how-privacy-settings-apply-32)). The Render
   checks above are the user's
-- **Updated:** 2026-11-20 on `fix/168-connect-delivery` from `8ca8a38`. Commits on `main` must keep the author `shoonya0`
+- **Updated:** 2026-11-20 on `main` at `dfd2473` (not committed yet: rides on the next branch). Commits on `main` must keep the author `shoonya0`
 
 ## Where things stand
 
@@ -94,7 +96,7 @@ Not built yet: editing or deleting messages, and changing chat settings. The ful
 
 ## Recently finished
 
-- **#168 (`fix/168-connect-delivery`):** the welcome is always first, and a chat gained while
+- **#168 (PR #169):** the welcome is always first, and a chat gained while
   connecting is joined (the chats are read again once the user channel is subscribed).
 - **#42 step 4 (PR #167):** leavers' `readReceipts`/`readSeqs` entries
   are cleared on remove, decline and delete, plus a one-time cleanup (`stale-read-state-42`).
@@ -176,14 +178,13 @@ blocks are stored, and who counts as a member.
 
 ## Known issues and risks
 
-There are 3 open issues. Where each risk sits in the code: [architecture-overview.md](./architecture-overview.md#riskiest-areas).
+There are 2 open issues. Where each risk sits in the code: [architecture-overview.md](./architecture-overview.md#riskiest-areas).
 
 | Area | The problem, in short | Issues |
 |---|---|---|
 | Groups | Pending members still pass membership checks (#5 step 2) | #5 |
 | Online status and privacy | A status or privacy change reaches live events only at the next connect (decided) | none |
-| Messages and data | `messages.readBy` until the app reads `readSeqs` (waits for Android) | #42 |
-| Live delivery | A chat gained while connecting; the welcome under load (fix on `fix/168-connect-delivery`) | #168 |
+| Messages and data | `messages.readBy` is still written; the app reads `readSeqs` since its #9, so it can go | #42 |
 | Limits and errors | The per-account WebSocket cap is per server, not across servers | #40 |
 
 ## Next task
