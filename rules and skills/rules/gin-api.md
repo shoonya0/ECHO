@@ -7,7 +7,7 @@ Gin is the **only** HTTP framework. Use it consistently:
 1. One route registration function per module: `RegisterUserRoutes`, `RegisterChatRoutes`, `RegisterWebSocketRoutes`.
 2. All routes mount under `objects.ApiBasePath` (`/echo/v1/`).
 3. Handlers are thin — parse, validate, extract user context via `ReduceGinContextToContext`, call service, return with `utils.SuccessResponse`/`utils.ErrorResponse`.
-4. Middleware order: `CORS → AuthMiddleware → LoggerMiddleware → handler`.
+4. Middleware order: `CORS → LoggerMiddleware → (rate limit) → AuthMiddleware → handler`. The logger is registered once, first in `RegisterAPIRoutes`, so login, signup and requests refused by auth or a rate limiter each get one `HTTP Request` line too (#172).
 5. Responses always go through `utils.SuccessResponse` or `utils.ErrorResponse`.
 
 ## Why
@@ -42,13 +42,14 @@ func RegisterChatRoutes(r *gin.Engine) {
 
 // internal/api/routes.go
 func RegisterAPIRoutes(r *gin.Engine) {
+    r.Use(middleware.LoggerMiddleware())
+
     r.POST(objects.ApiBasePath+"login", Login())
     r.POST(objects.ApiBasePath+"signup", Signup())
 
     RegisterWebSocketRoutes(r)
 
     r.Use(middleware.AuthMiddleware)
-    r.Use(middleware.LoggerMiddleware())
 
     RegisterUserRoutes(r)
     RegisterChatRoutes(r)
@@ -133,7 +134,11 @@ r.Use(middleware.CORSMiddleware())
 
 In `routes.RegisterAPIRoutes`:
 ```go
-// Unauthenticated routes first
+// Access log first: one line per request, refused ones included (#172).
+// A r.Use only applies to routes registered after it.
+r.Use(middleware.LoggerMiddleware()) // request logging with request_id, user_id, latency
+
+// Unauthenticated routes
 r.POST(objects.ApiBasePath+"login", Login())
 r.POST(objects.ApiBasePath+"signup", Signup())
 
@@ -141,8 +146,7 @@ r.POST(objects.ApiBasePath+"signup", Signup())
 RegisterWebSocketRoutes(r)
 
 // Then auth middleware for all subsequent routes
-r.Use(middleware.AuthMiddleware)     // JWT validation, sets c.Set("user", user) + c.Set("userId", id)
-r.Use(middleware.LoggerMiddleware()) // request logging with request_id, user_id, latency
+r.Use(middleware.AuthMiddleware) // JWT validation, sets c.Set("user", user) + c.Set("userId", id)
 
 // Authenticated routes
 RegisterUserRoutes(r)
@@ -205,8 +209,7 @@ WebSocket endpoints use their own middleware group but still apply `AuthMiddlewa
 ```go
 func RegisterWebSocketRoutes(r *gin.Engine) {
     wsGroup := r.Group(objects.ApiBasePath + "ws")
-    wsGroup.Use(middleware.AuthMiddleware)
-    wsGroup.Use(middleware.LoggerMiddleware())
+    wsGroup.Use(middleware.AuthMiddleware) // the logger comes from RegisterAPIRoutes
     wsGroup.GET("/chat", controller.HandleWebSocketChat)
 }
 ```
