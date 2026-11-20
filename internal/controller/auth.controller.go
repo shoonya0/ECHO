@@ -205,13 +205,14 @@ func Login(c *gin.Context) {
 
 	if user.AccountStatus.IsBanned {
 		log.Debug("account is banned")
-		utils.ErrorResponse(c, http.StatusForbidden, "account is banned", nil)
+		// Same code the auth middleware sends for this state (#171).
+		utils.CodedErrorResponse(c, http.StatusForbidden, "account is banned", services.CodeAccountBanned)
 		return
 	}
 
 	if !user.AccountStatus.IsActive {
 		log.Debug("account is not active")
-		utils.ErrorResponse(c, http.StatusForbidden, "account is not active", nil)
+		utils.CodedErrorResponse(c, http.StatusForbidden, "account is not active", services.CodeAccountInactive)
 		return
 	}
 
