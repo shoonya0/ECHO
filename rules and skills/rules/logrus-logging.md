@@ -44,13 +44,14 @@ ctx.Request = ctx.Request.WithContext(reqCtx)
 c.Set("user", user)
 ```
 
-The **LoggerMiddleware** adds `request_id`:
+The **LoggerMiddleware** runs before AuthMiddleware and adds `request_id`:
 
 ```go
 // middleware/logger.go
-ctx := logger.WithRequestID(c.Request.Context())
-c.Request = c.Request.WithContext(ctx)
-// If user_id was set by AuthMiddleware, it gets picked up by logger.WithContext
+c.Request = c.Request.WithContext(logger.WithRequestID(c.Request.Context()))
+c.Next()
+// Read after c.Next(): AuthMiddleware added user_id to the request context
+log := logger.WithContext(c.Request.Context())
 ```
 
 ### 3. Retrieving the logger in controllers and services
