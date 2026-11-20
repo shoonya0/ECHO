@@ -9,25 +9,30 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
+// RegisterAPIRoutes registers every API route. The access logger comes first, so
+// login, signup and requests refused by auth or a rate limiter are logged too,
+// each once (#172). Gin copies the middleware list into each route and group when
+// it is registered, so a r.Use only applies to routes registered after it.
 func RegisterAPIRoutes(r *gin.Engine) {
+	r.Use(middleware.LoggerMiddleware())
+
 	r.POST(constants.ApiBasePath+"login", middleware.RateLimitByIP("login", services.LoginIPLimit), controller.Login)
 	r.POST(constants.ApiBasePath+"signup", middleware.RateLimitByIP("signup", services.SignupIPLimit), controller.Signup)
 
-	// Register WebSocket routes BEFORE auth middleware (they handle auth internally)
 	RegisterWebSocketRoutes(r)
 
 	r.Use(middleware.AuthMiddleware)
-	r.Use(middleware.LoggerMiddleware())
 
 	RegisterUserRoutes(r)
 	RegisterChatRoutes(r)
 }
 
-// RegisterWebSocketRoutes registers WebSocket endpoints that handle authentication internally
+// RegisterWebSocketRoutes registers the WebSocket endpoint behind its own
+// AuthMiddleware. It is called before the global AuthMiddleware is added, so the
+// group doesn't get it twice; the access logger comes from RegisterAPIRoutes.
 func RegisterWebSocketRoutes(r *gin.Engine) {
 	wsGroup := r.Group(constants.ApiBasePath + "ws")
-	wsGroup.Use(middleware.AuthMiddleware) // Apply auth middleware to WebSocket routes
-	wsGroup.Use(middleware.LoggerMiddleware())
+	wsGroup.Use(middleware.AuthMiddleware)
 
 	wsGroup.GET("/chat", controller.HandleWebSocketChat)
 }
