@@ -1,95 +1,129 @@
-# ECHO — Real-Time Chat Server
+# ECHO
 
-A Go backend for a real-time chat app (Android client): REST API for accounts, contacts, chats and groups, plus a WebSocket hub for live messaging, typing indicators, read receipts and reactions. MongoDB stores data; Redis handles token revocation and pub/sub, so several server instances can share chat rooms.
+ECHO is the server for a real-time chat app: a REST API for accounts, contacts, chats and
+groups, and a WebSocket for live messages, typing, read receipts, reactions and presence.
+The client is an Android app, which lives in its own repository,
+[ECHO-app](https://github.com/shoonya0/ECHO-app). This repository holds the server only;
+`Android/` holds the app's plans and the log of server changes it needs to follow.
 
-**Stack:** Go · Gin · gorilla/websocket · MongoDB · Redis · JWT
+## What works today
 
-> Protocol and architecture docs live in [`_docs/`](./_docs/README.md).
+- Accounts: sign up, log in (a JWT that lasts 7 days), log out
+- Profiles: view, edit and delete your own; view other people's
+- Contacts: requests, accept and decline, remove, favorites, block and unblock
+- Direct chats and group chats, with owner, admin and member roles
+- Group invite codes: create, list, delete, send, join with a code; accept or decline
+- Live messages, message history (page by page, or catch up after a `seq`)
+- Typing indicators, read receipts, emoji reactions, online status
+- Attachments as links (no file upload)
+
+Known gaps and what isn't built yet (editing or deleting messages, a chat list route, file
+upload, push notifications and more) are in
+[product-overview.md](_docs/product-overview.md#what-works-today).
+
+## Tech stack
+
+- Go 1.24.3+ with [Gin](https://github.com/gin-gonic/gin) and
+  [gorilla/websocket](https://github.com/gorilla/websocket)
+- MongoDB as a one-node replica set (the server needs transactions and won't start on a
+  standalone server)
+- Redis for the logout list, the account-access cache and pub/sub between server
+  instances. The server won't start without it.
+- Docker image, deployed to Render (`render.yaml`). Every merge to `main` deploys.
 
 ## Quick start
 
+You need Go 1.24.3 or newer, Node 20 or newer (for the check scripts) and Docker.
+
 ```bash
-# 1. Start MongoDB + Redis
-docker compose -f docker/docker-compose.yml up -d
-
-# 2. Configure (defaults already match docker-compose)
-cp .env.example .env
-
-# 3. Run
-go run ./cmd/server
+cp .env.example .env                              # defaults match the Docker setup
+docker compose -f docker/docker-compose.yml up -d # MongoDB on 27017, Redis on 6379
+go run ./cmd/server                               # listens on PORT (8080)
+curl http://localhost:8080/health                 # {"status":"ok"}
 ```
 
-Health check: `GET http://localhost:8080/health`
+Logs go to `LOG_FILE` from `.env` (`cmd/server/logs/server.log` in `.env.example`); leave it
+empty to log to stdout. Every setting is an environment variable, and real environment
+variables override `.env`. `JWT_SECRET` is required; use a long random value anywhere but
+local development.
+
+More, including a signup/login/WebSocket walkthrough with `curl` and `wscat`, resetting
+local data and the replica-set notes: [getting-started.md](_docs/getting-started.md).
+
+## Checks
+
+```bash
+git config core.hooksPath .githooks   # once per clone: pre-commit docs-check, gofmt, vet
+node scripts/verify.mjs               # fast: docs-check, build, vet, gofmt, lint on new code, unit tests
+node scripts/verify.mjs --full        # the same plus go test -race ./... (what CI runs)
+go test ./internal/services -run TestName -v
+```
+
+Database tests use MongoDB at `TEST_DB_URI` (default: the Docker MongoDB) and skip when it
+isn't reachable. A skipped test proves nothing. With `TEST_DB_REQUIRED=1`, as in CI, they
+fail instead. Redis tests use `TEST_REDIS_URI` (default `localhost:6379`) with the same rule.
+The API contract test and the load test need a running server:
+[getting-started.md](_docs/getting-started.md#run-the-checks).
+
+## API at a glance
+
+- **REST:** every route is under `/echo/v1/`. All of them except `signup`, `login` and
+  `/health` need an `Authorization: Bearer <token>` header. Reference:
+  [rest-api/](_docs/rest-api/README.md).
+- **WebSocket:** `GET /echo/v1/ws/chat`. The token goes in the same `Authorization: Bearer`
+  header and nowhere else (not in the URL, not in a cookie). Contract, requests, events and
+  error codes: [WEBSOCKET_PROTOCOL.md](_docs/WEBSOCKET_PROTOCOL.md).
 
 ## Project layout
 
 ```
-cmd/
-  server/        entrypoint: config → logger → Mongo/Redis → hub → HTTP server
-  cleandb/       dev tool: wipe all collections and flush Redis
-internal/
-  config/        settings from env vars (+ optional .env file)
-  constants/     collection names, API base path, enums, context keys
-  database/      MongoDB and Redis connections
-  logger/        JSON logger with request/transaction IDs
-  router/        route registration (URLs → controllers)
-  middleware/    JWT auth, CORS, request logging
-  controller/    HTTP + WebSocket handlers: parse request, call service, write response
-  services/      business logic and MongoDB queries
-  realtime/      WebSocket hub, Redis pub/sub fan-out, presence
-  models/        MongoDB documents and request/response types
-  utils/         JWT signing, response envelope, model defaults
-scripts/
-  contract-test/ end-to-end REST + WebSocket contract test
-docker/          docker-compose for local MongoDB + Redis
+cmd/server/          entry point: config, logger, MongoDB, Redis, hub, HTTP server
+cmd/cleandb/         dev tool: wipe MongoDB collections and flush Redis
+internal/config/     settings from the environment and an optional .env
+internal/constants/  collection names, API base path, statuses, roles
+internal/router/     route registration
+internal/middleware/ token and account check, CORS, rate limits, request logging
+internal/controller/ HTTP and WebSocket handlers
+internal/services/   business rules, MongoDB queries, startup data repairs
+internal/realtime/   WebSocket hub, Redis pub/sub, presence
+internal/models/     MongoDB documents, API and WebSocket payloads
+internal/database/   MongoDB and Redis connections, indexes, transactions
+internal/logger/     JSON logging with request IDs
+internal/utils/      tokens, reply helpers, defaults
+internal/testutil/   shared test helpers (throwaway test DB, test Redis)
+scripts/             verify, docs-check, contract test, load test, audits
+docker/              docker-compose for local MongoDB and Redis
+_docs/               project docs (start at _docs/README.md)
+Android/             the Android app's plans and the server-changes log
+rules and skills/    project coding rules
 ```
 
-A request flows **router → middleware → controller → services → database**. WebSocket events go **controller → services → realtime hub → Redis pub/sub → every connected client in the chat**.
+## Documentation
 
-## Configuration
+Each fact has one home; the README links to it rather than repeating it.
 
-All settings are environment variables; `.env` is only a local convenience.
+| Need | Read |
+|---|---|
+| Docs index and feature registry | [_docs/README.md](_docs/README.md) |
+| What works, gaps, security, performance | [product-overview.md](_docs/product-overview.md) |
+| Where the project stands, active work, test baseline | [current-state.md](_docs/current-state.md) |
+| Packages, flows, data model, riskiest areas | [architecture-overview.md](_docs/architecture-overview.md) |
+| Pub/sub and hub internals | [PUBSUB_ARCHITECTURE.md](_docs/PUBSUB_ARCHITECTURE.md) |
+| Decisions and what they unblock | [decisions/](_docs/decisions/README.md) |
+| Terms | [glossary.md](_docs/glossary.md) |
+| Server changes the Android app must follow | [Android/_docs/08_SERVER_CHANGES/](Android/_docs/08_SERVER_CHANGES/README.md) |
 
-| Variable     | Default                              | Notes                                         |
-| ------------ | ------------------------------------ | --------------------------------------------- |
-| `PORT`       | `8080`                               |                                               |
-| `DB_URI`     | `mongodb://echo:echo@localhost:27017` | Any MongoDB URI (e.g. Atlas)                  |
-| `REDIS_URI`  | `localhost:6379`                     | `host:port` or `redis://` / `rediss://` URL   |
-| `REDIS_PASS` | —                                    | Only for `host:port` form                     |
-| `JWT_SECRET` | — (required)                         |                                               |
-| `LOG_FILE`   | — (stdout)                           | Set to a path to log to a file                |
-| `LOG_LEVEL`  | `info`                               | `debug`, `info`, `warn`, `error`              |
-| `STATS_TOKEN` | — (route off)                       | Unlocks `GET chats/hub/stats` (send it as `X-Stats-Token`) |
+Bugs are tracked as [GitHub issues](https://github.com/shoonya0/ECHO/issues).
 
-## API overview
+## Contributing
 
-Base path: `/echo/v1/`. Everything except `signup` and `login` requires `Authorization: Bearer <token>`.
+- Branch from an up-to-date `main`: `feature/<name>`, `fix/<issue#>-<name>`, `refactor/`,
+  `docs/` or `chore/`. One branch, one change.
+- Commit messages follow [Conventional Commits](https://www.conventionalcommits.org/):
+  `type(scope): summary`, a body that says why, and `Fixes #N` when there is an issue.
+- Run `node scripts/verify.mjs` before opening a pull request to `main`. CI runs
+  `--full` with MongoDB and Redis.
+- Merging to `main` deploys to production on Render, so pull requests are merged by the
+  maintainer.
 
-| Area     | Endpoints |
-| -------- | --------- |
-| Auth     | `POST signup`, `POST login`, `POST auth/logout` |
-| Profile  | `GET/PUT profile/`, `DELETE profile/delete` |
-| Users    | `GET users/:id`, `users/suggestions`, `users/nearby`, `users/popular` |
-| Contacts | `users/contacts/…` — list, requests, sent-requests, blocked, favorites, send/accept/remove, block/unblock, favorite |
-| Chats    | `POST chats/direct/:userId`, `POST chats/group`, `GET chats/hub/stats` |
-| Messages | `GET messages/:chatID/messages?limit=&offset=` |
-| Groups   | `groups/:groupID/add-members`, `groups/:groupID/invites`, `groups/invites…`, `groups/join/:inviteCode` |
-| Realtime | `GET ws/chat` (WebSocket) — see [`_docs/WEBSOCKET_PROTOCOL.md`](./_docs/WEBSOCKET_PROTOCOL.md) |
-
-## Testing
-
-The contract test drives every REST endpoint and WebSocket message type against a running server. It records status codes and response shapes, so you can check that a change didn't break the Android client:
-
-```bash
-cd scripts/contract-test && npm install
-node run.mjs http://localhost:8080 before.json   # before a change
-node run.mjs http://localhost:8080 after.json    # after
-node diff.mjs before.json after.json
-```
-
-## Docker
-
-```bash
-docker build -t echo-server .
-docker run -p 8080:8080 -e DB_URI=... -e REDIS_URI=... -e JWT_SECRET=... echo-server
-```
+This repository has no license file yet.
