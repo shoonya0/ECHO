@@ -817,3 +817,34 @@ func RemoveStaleReadState(ctx context.Context) (int64, error) {
 	}
 	return res.ModifiedCount, nil
 }
+
+// messageReadByMarker is the migrations document RemoveMessageReadBy sets once it
+// has run, so later starts don't scan every message.
+const messageReadByMarker = "message-readby-42"
+
+// RemoveMessageReadBy takes readBy off every message, once (#42). It held a key per
+// reader per message; read state lives in chats.readSeqs, which the app reads since
+// ECHO-app #9, and nothing writes readBy any more. The marker is set after a
+// successful run, so a failed one is retried at the next start; two servers running
+// it at once do the same harmless work. Returns the number of messages changed.
+func RemoveMessageReadBy(ctx context.Context) (int64, error) {
+	markers := database.DB.Collection(string(constants.MigrationColl))
+	err := markers.FindOne(ctx, bson.M{"_id": messageReadByMarker}).Err()
+	if err == nil {
+		return 0, nil
+	}
+	if !errors.Is(err, mongo.ErrNoDocuments) {
+		return 0, fmt.Errorf("read the marker: %w", err)
+	}
+	res, err := database.DB.Collection(string(constants.MessageColl)).UpdateMany(ctx,
+		bson.M{"readBy": bson.M{"$exists": true}}, bson.M{"$unset": bson.M{"readBy": ""}})
+	if err != nil {
+		return 0, fmt.Errorf("remove readBy: %w", err)
+	}
+	if _, err := markers.UpdateOne(ctx, bson.M{"_id": messageReadByMarker},
+		bson.M{"$setOnInsert": bson.M{"doneAt": time.Now(), "messages": res.ModifiedCount}},
+		options.UpdateOne().SetUpsert(true)); err != nil {
+		return res.ModifiedCount, fmt.Errorf("record the marker: %w", err)
+	}
+	return res.ModifiedCount, nil
+}

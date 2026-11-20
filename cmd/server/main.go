@@ -154,6 +154,13 @@ func main() {
 		} else if n > 0 {
 			log.WithField("chats", n).Info("Removed read state of users who aren't participants")
 		}
+		// #42: messages' readBy (read state is chats.readSeqs); once (marker
+		// message-readby-42).
+		if n, err := services.RemoveMessageReadBy(indexCtx); err != nil {
+			log.WithError(err).Error("Failed to remove messages' readBy")
+		} else if n > 0 {
+			log.WithField("messages", n).Info("Removed readBy from messages")
+		}
 	}()
 	// Redis backs token revocation and WebSocket pub/sub, so it is required.
 	if err := database.ConnectRedis(ctx); err != nil {

@@ -41,8 +41,7 @@ type Message struct {
 	// Message status
 	Status MessageStatusEmbed `json:"status" bson:"status"`
 
-	// Read receipts (for group chats)
-	ReadBy map[string]time.Time `json:"readBy" bson:"readBy"` // userID -> read timestamp
+	// Read state is per member on the chat (chats.readSeqs, #42), not per message.
 
 	// Search optimization
 	SearchContent string   `json:"-" bson:"searchContent"` // Lowercased content
