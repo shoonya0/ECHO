@@ -2,6 +2,7 @@ package services
 
 import (
 	"testing"
+	"time"
 
 	"github.com/shoonya0/ECHO/internal/constants"
 	"github.com/shoonya0/ECHO/internal/database"
@@ -57,5 +58,46 @@ func TestMarkMessagesAsReadKeepsTheHighestReadSeq(t *testing.T) {
 	}
 	if len(seqs) != 1 || seqs[member.Hex()] != 3 {
 		t.Fatalf("ChatReadSeqs = %v, want only %s: 3", seqs, member.Hex())
+	}
+}
+
+// #42: readBy grew by one key per reader on every message. The app reads readSeqs
+// since ECHO-app #9, so marking a message read no longer writes it, a new message
+// doesn't carry it, and a one-time job takes it off older messages.
+func TestReadByIsNoLongerStored(t *testing.T) {
+	ctx := useTestDB(t)
+	SetBroadcaster(&recordingBroadcaster{})
+	t.Cleanup(func() { SetBroadcaster(nil) })
+	member, chatID, messageID := seedReadableChat(ctx, t)
+	messages := database.DB.Collection(string(constants.MessageColl))
+	old := bson.NewObjectID()
+	if _, err := messages.InsertOne(ctx, bson.M{
+		"_id": old, "chatId": chatID, "readBy": bson.M{member.Hex(): time.Now()},
+	}); err != nil {
+		t.Fatalf("insert an old message: %v", err)
+	}
+
+	if err := MarkMessagesAsRead(ctx, chatID, member, []bson.ObjectID{messageID}); err != nil {
+		t.Fatalf("MarkMessagesAsRead: %v", err)
+	}
+	sent, err := SendMessage(asUser(ctx, member), chatID, member, "hi", "text", nil, nil)
+	if err != nil {
+		t.Fatalf("SendMessage: %v", err)
+	}
+	for _, id := range []bson.ObjectID{messageID, sent.ID} {
+		if err := messages.FindOne(ctx, bson.M{"_id": id, "readBy": bson.M{"$exists": true}}).Err(); err == nil {
+			t.Fatalf("message %s has readBy", id.Hex())
+		}
+	}
+
+	n, err := RemoveMessageReadBy(ctx)
+	if err != nil || n != 1 {
+		t.Fatalf("RemoveMessageReadBy = (%d, %v), want (1, nil)", n, err)
+	}
+	if err := messages.FindOne(ctx, bson.M{"_id": old, "readBy": bson.M{"$exists": true}}).Err(); err == nil {
+		t.Fatal("the old message still has readBy")
+	}
+	if n, err := RemoveMessageReadBy(ctx); err != nil || n != 0 {
+		t.Fatalf("second RemoveMessageReadBy = (%d, %v), want (0, nil)", n, err)
 	}
 }

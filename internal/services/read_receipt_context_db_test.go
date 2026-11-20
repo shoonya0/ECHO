@@ -43,8 +43,8 @@ func TestMarkMessagesAsReadReturnsChatWriteError(t *testing.T) {
 
 	member, chatID, messageID := seedReadableChat(ctx, t)
 
-	// The chat write is a findAndModify since #42 (it returns the read seq); the
-	// messages' readBy write is an update, so it passes.
+	// The chat write is a findAndModify since #42 (it returns the read seq), and
+	// the only write mark_read makes since readBy went.
 	testutil.FailCommand(t, ctx, "findAndModify", 0)
 	if err := MarkMessagesAsRead(ctx, chatID, member, []bson.ObjectID{messageID}); err == nil {
 		t.Fatal("MarkMessagesAsRead = nil, want the chat write's error")

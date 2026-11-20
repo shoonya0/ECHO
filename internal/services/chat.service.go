@@ -677,7 +677,6 @@ func SendMessage(ctx context.Context, chatID, senderID bson.ObjectID, content, m
 		// Both maps must be stored as {}, not null: updates create paths inside them
 		// such as "reactions.👍.count", which MongoDB refuses inside null (#72).
 		Reactions: make(map[string]models.ReactionEmbed),
-		ReadBy:    make(map[string]time.Time),
 		CreatedAt: now,
 		UpdatedAt: now,
 	}
@@ -860,18 +859,9 @@ func MarkMessagesAsRead(ctx context.Context, chatID, userID bson.ObjectID, messa
 		readSeq = max(readSeq, message.Seq)
 	}
 
-	update := bson.M{
-		"$set": bson.M{
-			"readBy." + userID.Hex(): now,
-		},
-	}
-
-	if _, err := messages.UpdateMany(ctx, filter, update); err != nil {
-		return fmt.Errorf("failed to update read receipts: %w", err)
-	}
-
-	// The chat keeps when each member last read. Without it the read isn't saved
-	// in full, so the chat isn't told; marking the same messages again is safe.
+	// The chat keeps when each member last read and their highest read seq; the
+	// messages aren't written (#42: readBy is gone). Without this write the read
+	// isn't saved, so the chat isn't told; marking the same messages again is safe.
 	readUpToSeq, err := updateChatReadReceipts(ctx, chatID, userID, now, readSeq)
 	if err != nil {
 		return err
