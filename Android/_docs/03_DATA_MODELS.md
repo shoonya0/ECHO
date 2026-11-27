@@ -577,12 +577,16 @@ data class UserProfile(
 
 ## WebSocket Protocol Models
 
-See [05_WEBSOCKET_CLIENT.md](./05_WEBSOCKET_CLIENT.md) for full WS frame models.
+See [05_WEBSOCKET_CLIENT.md](./05_WEBSOCKET_CLIENT.md) for how the app handles them, and
+the server docs ([requests](../../_docs/websocket-requests.md), [events](../../_docs/websocket-events.md))
+for the frames themselves.
 
 ### Key WS Domain Models
 
 ```kotlin
 // features/chat/domain/model/WebSocketCommand.kt
+private fun generateRequestId(): String = UUID.randomUUID().toString().take(8)
+
 @Serializable
 sealed interface WebSocketCommand {
     val requestId: String
@@ -590,7 +594,7 @@ sealed interface WebSocketCommand {
     @Serializable @SerialName("send_message")
     data class SendMessage(
         val chatId: String, val content: String, val messageType: String = "text",
-        val attachments: List<Attachment> = emptyList(), val mentions: List<String> = emptyList(),
+        val attachments: List<AttachmentRef> = emptyList(), val mentions: List<String> = emptyList(),
         override val requestId: String = generateRequestId(),
     ) : WebSocketCommand
 
@@ -601,7 +605,7 @@ sealed interface WebSocketCommand {
     data class LeaveChat(val chatId: String, override val requestId: String = generateRequestId()) : WebSocketCommand
 
     @Serializable @SerialName("set_typing")
-    data class SetTyping(val chatId: String, val metadata: TypingMetadata, override val requestId: String = "typing_$chatId") : WebSocketCommand
+    data class SetTyping(val chatId: String, val metadata: TypingMetadata, override val requestId: String = generateRequestId()) : WebSocketCommand
 
     @Serializable @SerialName("mark_read")
     data class MarkRead(val chatId: String, val metadata: MarkReadMetadata, override val requestId: String = generateRequestId()) : WebSocketCommand
@@ -611,11 +615,6 @@ sealed interface WebSocketCommand {
 
     @Serializable @SerialName("remove_reaction")
     data class RemoveReaction(val chatId: String, val metadata: ReactionMetadata, override val requestId: String = generateRequestId()) : WebSocketCommand
-
-    companion object {
-        private var counter = 0L
-        fun generateRequestId(): String = "req_${++counter}_${System.currentTimeMillis()}"
-    }
 }
 
 @Serializable data class TypingMetadata(val isTyping: Boolean)
