@@ -1,19 +1,54 @@
 # ECHO Android — WebSocket Client
 
-## Connection
+How the shipped app ([ECHO-app](https://github.com/shoonya0/ECHO-app)) uses the server's
+WebSocket. The protocol is owned by the server docs: start at
+[WEBSOCKET_PROTOCOL.md](../../_docs/WEBSOCKET_PROTOCOL.md), then
+[websocket-requests.md](../../_docs/websocket-requests.md) and
+[websocket-events.md](../../_docs/websocket-events.md) for exact frames. This page covers
+what the app does with them; it doesn't repeat their frame formats.
 
-### Endpoint
+## One socket per app run
+
+`EchoWebSocketClient` is a `@Singleton` and owns **one** socket. `connect()` does nothing
+while a socket is open or connecting, and callbacks from an older socket are ignored, so
+any number of screens can call it safely.
+
+| Moment | What the app does |
+|---|---|
+| Home (chat list) appears after login, or Splash finds a valid token | `ChatListViewModel.init` → `connect()` — **this is where the socket opens** |
+| A chat detail screen opens | `connect()` again (no-op), then `join_chat` for that chat |
+| Back from a chat | `leave_chat` only — **the socket stays open** |
+| Another chat opens | `join_chat` on the same socket |
+| Going to Home, contacts or settings | nothing |
+| App goes to background | nothing — there is no disconnect-on-stop hook |
+| Logout, token expiry, ban or account deletion | the server closes the socket; the app does not reconnect |
+| Network drop or process death | the socket is gone; the app reconnects with backoff (missed messages are not replayed) |
+
+`ChatDetailViewModel` also calls `connect()` before joining, so opening a chat works even
+if Home has not composed.
+
+The server follows every chat in the user's chat list when a socket connects, so
+`join_chat` matters for chats gained after connecting (e.g. a group joined with an invite
+code, #49) and for direct chats opened by `senderId`. One account may hold 5 connections
+per server (server #40), so one socket per device is the design.
+
+```
+Splash / Login ──valid token──▶ Home composed
+                                  └─ ChatListViewModel.init ─ connect() ─▶ socket OPEN
+Chat detail opens ─ connect() (no-op) + join_chat
+Back             ─ leave_chat        (socket stays OPEN)
+Session ends     ─ disconnect()      ─▶ socket CLOSED, no reconnect
+```
+
+## Endpoint and authentication
 
 ```
 ws://{host}/echo/v1/ws/chat      # Debug (Android emulator: ws://10.0.2.2:8080)
 wss://{host}/echo/v1/ws/chat     # Release
 ```
 
-> **Note:** The backend docs mention `/echo/v1/websocket/chat` but the code (`routes.go`) registers `ws/chat`. The Postman collection confirms `ws/chat`. Use the code-verified path.
-
-### Authentication
-
-JWT Bearer token in `Authorization` header during HTTP upgrade:
+The login token goes in the `Authorization: Bearer <token>` header during the upgrade.
+The server accepts it nowhere else (not in the URL, not in a cookie).
 
 ```kotlin
 val request = Request.Builder()
@@ -22,545 +57,124 @@ val request = Request.Builder()
     .build()
 ```
 
-## Request Types (Client → Server)
-
-### 1. send_message — Send a Chat Message
-
-```json
-{
-  "type": "send_message",
-  "chatId": "507f1f77bcf86cd799439011",
-  "content": "Hello everyone!",
-  "messageType": "text",
-  "attachments": [],
-  "mentions": [],
-  "requestId": "req_1"
-}
-```
-
-**Valid messageType:** `text`, `image`, `file`, `audio`, `video`
-**Validation:** content ≤ 4000 chars, max 10 attachments (50MB each), max 20 mentions
-
-### 2. join_chat — Join/Create Chat Room
-
-```json
-{
-  "type": "join_chat",
-  "chatId": "507f1f77bcf86cd799439011",
-  "senderId": "target_user_id",
-  "requestId": "req_2"
-}
-```
-
-Creates a direct chat if none exists between authenticated user and `senderId`, then joins.
-
-### 3. leave_chat — Leave Chat Room
-
-```json
-{
-  "type": "leave_chat",
-  "chatId": "507f1f77bcf86cd799439011",
-  "requestId": "req_3"
-}
-```
-
-### 4. set_typing — Typing Indicator
-
-```json
-{
-  "type": "set_typing",
-  "chatId": "507f1f77bcf86cd799439011",
-  "metadata": { "isTyping": true },
-  "requestId": "req_4"
-}
-```
-
-### 5. mark_read — Mark Messages as Read
-
-```json
-{
-  "type": "mark_read",
-  "chatId": "507f1f77bcf86cd799439011",
-  "metadata": { "messageIds": ["msg_id_1", "msg_id_2"] },
-  "requestId": "req_5"
-}
-```
-
-### 6. add_reaction — Add Reaction
-
-```json
-{
-  "type": "add_reaction",
-  "chatId": "507f1f77bcf86cd799439011",
-  "metadata": { "messageId": "msg_id_1", "emoji": "👍" },
-  "requestId": "req_6"
-}
-```
-
-### 7. remove_reaction — Remove Reaction
-
-```json
-{
-  "type": "remove_reaction",
-  "chatId": "507f1f77bcf86cd799439011",
-  "metadata": { "messageId": "msg_id_1", "emoji": "👍" },
-  "requestId": "req_7"
-}
-```
-
-### NOT_IMPLEMENTED (Out of Scope)
-
-The following request types return `NOT_IMPLEMENTED` errors from the server. The Android app does **not** build UI actions or command types for these. If a `NOT_IMPLEMENTED` error is ever received (e.g., from a future server version), it's mapped to "This feature is coming soon" via `ErrorMapper`:
-
-- `edit_message`
-- `delete_message`
-- `invite_user`
-- `remove_user`
-- `update_chat`
-
-These will be added in a future phase once backend support is complete.
-
----
-
-## Response Types (Server → Client)
-
-### message — Incoming Chat Message
-
-```json
-{
-  "type": "message",
-  "chatId": "507f1f77bcf86cd799439011",
-  "userId": "sender_user_id",
-  "username": "sender_username",
-  "data": {
-    "id": "message_id",
-    "chatId": "507f1f77bcf86cd799439011",
-    "senderId": "sender_user_id",
-    "content": "Hello everyone!",
-    "messageType": "text",
-    "attachments": [],
-    "createdAt": "2024-01-01T12:00:00Z"
-  },
-  "timestamp": "2024-01-01T12:00:00Z"
-}
-```
-
-### typing — Typing Indicator
-
-```json
-{
-  "type": "typing",
-  "chatId": "...",
-  "userId": "user_id",
-  "data": { "userId": "user_id", "username": "username", "isTyping": true, "timestamp": "..." },
-  "timestamp": "..."
-}
-```
-
-### join / leave — User Join/Leave
-
-```json
-{
-  "type": "join",
-  "chatId": "...",
-  "userId": "user_id",
-  "data": { "userId": "user_id", "username": "username", "action": "join", "timestamp": "..." },
-  "timestamp": "..."
-}
-```
-
-### presence — Presence Update
-
-```json
-{
-  "type": "presence",
-  "chatId": "...",
-  "userId": "user_id",
-  "data": { "userId": "user_id", "status": "online", "lastSeen": "..." },
-  "timestamp": "..."
-}
-```
-
-### delivery — Read Receipt
-
-```json
-{
-  "type": "delivery",
-  "chatId": "...",
-  "userId": "user_id",
-  "data": { "messageIds": [...], "userId": "...", "status": "read" },
-  "timestamp": "..."
-}
-```
-
-### reaction — Reaction Event
-
-```json
-{
-  "type": "reaction",
-  "chatId": "...",
-  "userId": "user_id",
-  "data": { "messageId": "...", "userId": "...", "username": "...", "emoji": "👍", "action": "add", "timestamp": "..." },
-  "timestamp": "..."
-}
-```
-
-### response — Success Acknowledgment
-
-```json
-{
-  "type": "response",
-  "data": { "success": true, "messageId": "created_msg", "timestamp": "...", "chatId": "...", "messageType": "text" },
-  "requestId": "original_request_id",
-  "timestamp": "..."
-}
-```
-
-### error — Error Response
-
-```json
-{
-  "type": "error",
-  "data": { "code": "PERMISSION_DENIED", "message": "You don't have permission to send messages in this chat", "details": "..." },
-  "requestId": "original_request_id",
-  "timestamp": "..."
-}
-```
-
----
-
-## Implementation Architecture
-
-### 1. EchoWebSocketClient
-
-```kotlin
-// features/chat/data/remote/EchoWebSocketClient.kt
-@Singleton
-class EchoWebSocketClient @Inject constructor(
-    @WsClient private val okHttpClient: OkHttpClient,
-    private val tokenStore: SecureTokenStore,
-) {
-    private var webSocket: WebSocket? = null
-    private val _events = MutableSharedFlow<WebSocketEvent>(replay = 0)
-    val events: SharedFlow<WebSocketEvent> = _events.asSharedFlow()
-
-    fun connect() {
-        val token = tokenStore.getAccessToken() ?: run {
-            _events.tryEmit(WebSocketEvent.Error("No auth token"))
-            return
-        }
-        val request = Request.Builder()
-            .url("${BuildConfig.WS_BASE_URL}/echo/v1/ws/chat")
-            .header("Authorization", "Bearer $token")
-            .build()
-
-        webSocket = okHttpClient.newWebSocket(request, object : WebSocketListener() {
-            override fun onOpen(ws: WebSocket, response: Response) {
-                Timber.tag("WS").i("connected")
-                _events.tryEmit(WebSocketEvent.Connected)
-            }
-
-            override fun onMessage(ws: WebSocket, text: String) {
-                _events.tryEmit(WebSocketEvent.Message(text))
-            }
-
-            override fun onFailure(ws: WebSocket, t: Throwable, response: Response?) {
-                Timber.tag("WS").e(t, "connection failed, code=%d", response?.code ?: -1)
-                _events.tryEmit(WebSocketEvent.Error(t.message ?: "Connection failed"))
-            }
-
-            override fun onClosing(ws: WebSocket, code: Int, reason: String) {
-                ws.close(1000, null)
-            }
-
-            override fun onClosed(ws: WebSocket, code: Int, reason: String) {
-                _events.tryEmit(WebSocketEvent.Disconnected(code, reason))
-            }
-        })
-    }
-
-    fun send(text: String): Boolean {
-        return webSocket?.send(text) ?: false
-    }
-
-    fun disconnect() {
-        webSocket?.close(1000, "User disconnected")
-        webSocket = null
-    }
-}
-```
-
-### 2. ReconnectManager
-
-```kotlin
-// features/chat/data/remote/ReconnectManager.kt
-class ReconnectManager(
-    private val wsClient: EchoWebSocketClient,
-    private val scope: CoroutineScope,
-) {
-    private var retryCount = 0
-    private val maxRetries = 5
-    private val baseDelay = 1_000L
-
-    fun onDisconnected() {
-        if (retryCount >= maxRetries) {
-            Timber.tag("Reconnect").w("max retries reached")
-            _events.tryEmit(WebSocketEvent.ReconnectFailed)
-            return
-        }
-        val delay = (baseDelay * (1L shl retryCount)) + Random.nextLong(0, 1000)
-        retryCount++
-        scope.launch {
-            delay(delay)
-            wsClient.connect()
-        }
-    }
-
-    fun reset() { retryCount = 0 }
-}
-```
-
-### 3. WebSocketRepository — requestId Correlation
-
-```kotlin
-// features/chat/data/repository/WebSocketRepository.kt
-@Singleton
-class WebSocketRepository @Inject constructor(
-    private val wsClient: EchoWebSocketClient,
-    private val json: Json,
-) {
-    private val pendingRequests = ConcurrentHashMap<String, CompletableDeferred<ServerFrame>>()
-
-    suspend fun send(command: WebSocketCommand): ServerFrame {
-        val deferred = CompletableDeferred<ServerFrame>()
-        pendingRequests[command.requestId] = deferred
-        val text = json.encodeToString(WebSocketCommand.serializer(), command)
-        wsClient.send(text)
-        return withTimeout(10_000) { deferred.await() }
-    }
-
-    fun handleFrame(frame: ServerFrame) {
-        val requestId = frame.requestId ?: return
-        pendingRequests.remove(requestId)?.complete(frame)
-    }
-}
-```
-
-### 4. ServerFrame Models
-
-```kotlin
-// features/chat/domain/model/ServerFrame.kt
-@Serializable
-sealed interface ServerFrame {
-    val type: String
-    val timestamp: String?
-    val requestId: String?
-
-    @Serializable @SerialName("message")
-    data class ChatMessage(
-        val chatId: String, val userId: String, val username: String, val data: MessageData,
-        override val type: String = "message", override val timestamp: String? = null, override val requestId: String? = null,
-    ) : ServerFrame
-
-    @Serializable @SerialName("typing")
-    data class Typing(
-        val chatId: String, val userId: String, val data: TypingData,
-        override val type: String = "typing", override val timestamp: String? = null, override val requestId: String? = null,
-    ) : ServerFrame
-
-    @Serializable @SerialName("presence")
-    data class Presence(
-        val chatId: String? = null, val userId: String, val data: PresenceData,
-        override val type: String = "presence", override val timestamp: String? = null, override val requestId: String? = null,
-    ) : ServerFrame
-
-    @Serializable @SerialName("reaction")
-    data class Reaction(
-        val chatId: String, val userId: String, val data: ReactionData,
-        override val type: String = "reaction", override val timestamp: String? = null, override val requestId: String? = null,
-    ) : ServerFrame
-
-    @Serializable @SerialName("delivery")
-    data class Delivery(
-        val chatId: String, val userId: String, val data: DeliveryData,
-        override val type: String = "delivery", override val timestamp: String? = null, override val requestId: String? = null,
-    ) : ServerFrame
-
-    @Serializable @SerialName("join")
-    data class Join(
-        val chatId: String, val userId: String, val data: JoinLeaveData,
-        override val type: String = "join", override val timestamp: String? = null, override val requestId: String? = null,
-    ) : ServerFrame
-
-    @Serializable @SerialName("leave")
-    data class Leave(
-        val chatId: String, val userId: String, val data: JoinLeaveData,
-        override val type: String = "leave", override val timestamp: String? = null, override val requestId: String? = null,
-    ) : ServerFrame
-
-    @Serializable @SerialName("response")
-    data class Response(
-        val data: ResponseData,
-        override val type: String = "response", override val timestamp: String? = null, override val requestId: String? = null,
-    ) : ServerFrame
-
-    @Serializable @SerialName("error")
-    data class Error(
-        val data: ErrorData,
-        override val type: String = "error", override val timestamp: String? = null, override val requestId: String? = null,
-    ) : ServerFrame
-}
-
-// Sub-models
-@Serializable data class MessageData(val id: String, val chatId: String, val senderId: String, val content: String, val messageType: String = "text", val attachments: List<AttachmentDto> = emptyList(), val createdAt: String? = null)
-@Serializable data class TypingData(val userId: String, val username: String? = null, val isTyping: Boolean, val timestamp: String? = null)
-@Serializable data class PresenceData(val userId: String, val status: String, val lastSeen: String? = null)
-@Serializable data class ReactionData(val messageId: String, val userId: String, val username: String? = null, val emoji: String, val action: String, val timestamp: String? = null)
-@Serializable data class DeliveryData(val messageIds: List<String>, val userId: String, val status: String)
-@Serializable data class JoinLeaveData(val userId: String, val username: String? = null, val action: String, val timestamp: String? = null)
-@Serializable data class ResponseData(val success: Boolean, val messageId: String? = null, val timestamp: String? = null, val chatId: String? = null, val messageType: String? = null)
-@Serializable data class ErrorData(val code: String, val message: String, val details: String? = null)
-```
-
-### 5. Domain Events (for ViewModel consumption)
-
-```kotlin
-// features/chat/domain/model/DomainEvent.kt
-sealed interface DomainEvent {
-    data class NewMessage(val chatId: String, val message: Message) : DomainEvent
-    data class TypingUpdate(val chatId: String, val userId: String, val isTyping: Boolean) : DomainEvent
-    data class PresenceUpdate(val userId: String, val status: PresenceStatus) : DomainEvent
-    data class ReactionUpdate(val chatId: String, val messageId: String, val emoji: String, val action: String) : DomainEvent
-    data class ReadReceipt(val chatId: String, val messageIds: List<String>, val userId: String) : DomainEvent
-    data class UserJoined(val chatId: String, val userId: String) : DomainEvent
-    data class UserLeft(val chatId: String, val userId: String) : DomainEvent
-    data class ResponseAck(val requestId: String, val messageId: String?) : DomainEvent
-    data class BackendError(val code: String, val message: String) : DomainEvent
-}
-
-fun ServerFrame.toDomainEvent(): DomainEvent = when (this) {
-    is ServerFrame.ChatMessage -> DomainEvent.NewMessage(chatId, data.toMessage(chatId, userId))
-    is ServerFrame.Typing -> DomainEvent.TypingUpdate(chatId, userId, data.isTyping)
-    is ServerFrame.Presence -> DomainEvent.PresenceUpdate(userId, try { PresenceStatus.valueOf(data.status.uppercase()) } catch (_: Exception) { PresenceStatus.OFFLINE })
-    is ServerFrame.Reaction -> DomainEvent.ReactionUpdate(chatId, data.messageId, data.emoji, data.action)
-    is ServerFrame.Delivery -> DomainEvent.ReadReceipt(chatId, data.messageIds, data.userId)
-    is ServerFrame.Join -> DomainEvent.UserJoined(chatId, userId)
-    is ServerFrame.Leave -> DomainEvent.UserLeft(chatId, userId)
-    is ServerFrame.Response -> DomainEvent.ResponseAck(requestId ?: "", data.messageId)
-    is ServerFrame.Error -> DomainEvent.BackendError(data.code, data.message)
-}
-```
-
----
-
-## ViewModel Integration
-
-```kotlin
-@HiltViewModel
-class ChatDetailViewModel @Inject constructor(
-    private val wsRepository: WebSocketRepository,
-    private val chatRepository: ChatRepository,
-    savedStateHandle: SavedStateHandle,
-) : ViewModel() {
-    private val chatId: String = savedStateHandle["chatId"]!!
-    private val _state = MutableStateFlow(ChatDetailUiState())
-    val state: StateFlow<ChatDetailUiState> = _state.asStateFlow()
-
-    init {
-        // Connect and start listening
-        viewModelScope.launch {
-            wsRepository.events.collect { event ->
-                when (event) {
-                    is DomainEvent.NewMessage -> onNewMessage(event)
-                    is DomainEvent.TypingUpdate -> onTypingUpdate(event)
-                    is DomainEvent.PresenceUpdate -> onPresenceUpdate(event)
-                    is DomainEvent.ReactionUpdate -> onReactionUpdate(event)
-                    is DomainEvent.ReadReceipt -> onReadReceipt(event)
-                    is DomainEvent.BackendError -> onError(event)
-                    else -> { /* no-op */ }
-                }
-            }
-        }
-        joinChat()
-    }
-
-    private fun joinChat() {
-        viewModelScope.launch {
-            wsRepository.send(WebSocketCommand.JoinChat(chatId, senderId = myUserId))
-        }
-    }
-
-    fun sendMessage(content: String) {
-        viewModelScope.launch {
-            _state.update { it.copy(isSending = true) }
-            wsRepository.send(WebSocketCommand.SendMessage(chatId, content))
-                .let { response ->
-                    _state.update { it.copy(isSending = false) }
-                }
-        }
-    }
-
-    fun setTyping(isTyping: Boolean) {
-        wsRepository.sendRaw(WebSocketCommand.SetTyping(chatId, TypingMetadata(isTyping)))
-    }
-
-    override fun onCleared() {
-        super.onCleared()
-        viewModelScope.launch {
-            wsRepository.send(WebSocketCommand.LeaveChat(chatId))
-        }
-    }
-}
-```
-
----
-
-## Connection Lifecycle
-
-```
-App Start
-  └── Login → token stored
-       └── HomeScreen (ChatsTab)
-            └── ChatDetailScreen init → WebSocket connect()
-                 ├── onOpen → send join_chat(chatId)
-                 ├── onMessage → parse → emit events
-                 ├── onFailure → ReconnectManager.backoff()
-                 └── onCleared → send leave_chat → disconnect()
-```
-
-### Keepalive
-
-- Server pings every 54 seconds
-- Client configured with `pingInterval(54, TimeUnit.SECONDS)` in OkHttp
-- Read timeout set to `0` (infinite) for WebSocket
-
-### Reconnection
-
-- Exponential backoff: 1s → 2s → 4s → 8s → 16s
-- Random jitter (0-1000ms)
-- Max 5 retries, then show "Connection lost" banner
-
----
-
-## Permissions (per Chat Type)
-
-| Chat Type | Who Can Send |
+The first frame on every socket is the server's welcome: a `response` with
+`data.status == "connected"`, `clientId` and `instanceId`, and no `success` field. It shares
+the `response` type with request replies, so the app recognizes it before decoding
+(`isWelcomeFrame()`) and ignores it (#30).
+
+## Requests the app sends
+
+| Request | Sent when | Reply |
+|---|---|---|
+| `send_message` | the user sends a message | correlated `response` (10 s timeout); the `message` event also arrives |
+| `join_chat` | a chat opens, or a new direct chat is created | fire-and-forget (`sendRaw`); the server's `response` and `join` arrive as events |
+| `leave_chat` | the chat screen is destroyed (back) | none; it only stops live events on this connection — the user stays a member |
+| `set_typing` | typing starts and periodically while it continues | none; throttled so the socket's rate limit (#40) isn't hit |
+| `mark_read` | while the chat is visible, batched, one in flight | none; a lost request goes out again after a reconnect |
+| `add_reaction` / `remove_reaction` | the user taps a reaction | fire-and-forget (`sendRaw`); the server's `response` arrives as an event |
+
+`join_chat` normally carries `chatId`. The app also sends `senderId` (the current user),
+but the server ignores it when `chatId` is present. A brand-new direct chat is created over
+REST (`POST chats/direct`) first, then joined by `chatId`.
+
+Blocked direct chats: the server refuses sends, typing, reads and reactions with
+`PERMISSION_DENIED` (`User is blocked`), for both people; see
+[websocket-requests.md](../../_docs/websocket-requests.md).
+
+## Events the app handles
+
+| Event | App behavior |
 |---|---|
-| `direct` | All participants (unless blocked/muted) |
-| `group` | Based on participant permissions; defaults to allow all |
-| `channel` | Only `admin`/`owner` roles |
+| `message` | `DomainEvent.NewMessage`; reconciles the optimistic bubble for our own echoed message, updates the chat list/detail |
+| `typing` | `DomainEvent.TypingUpdate` |
+| `presence` | `DomainEvent.PresenceUpdate`; drives the chat list and contact dots |
+| `reaction` | `DomainEvent.ReactionUpdate` |
+| `delivery` | `DomainEvent.ReadReceipt(chatId, userId, readUpToSeq)`; `readUpToSeq` never goes down and marks every message up to it as read (#42) |
+| `join` / `leave` | `DomainEvent.UserJoined` / `UserLeft` |
+| `response` | resolves the pending request with the same `requestId` |
+| `error` | `DomainEvent.BackendError(code, message, requestId)`; screens show mapped text via `ErrorMapper` |
 
----
+## Implementation
+
+### `EchoWebSocketClient` (`features/chat/data/remote`)
+
+- Holds `webSocket` and `isOpen` under a lock; OkHttp callbacks take the same lock.
+- No token → emits `ReconnectFailed` and stops, instead of an error that would start an
+  endless reconnect loop.
+- A refused upgrade with HTTP `401`/`403` is reported as a `4401`/`4403` disconnect,
+  reading the server's `code` from the response body; the session then ends.
+- `onClosing` acknowledges the close with `1000`, then forwards the server's code and reason.
+- `disconnect()` closes with `1000`, clears the socket, and ignores its later callbacks,
+  so no `Disconnected` event and no reconnect follow.
+
+### `ReconnectManager` (`features/chat/data/remote`)
+
+- Up to 5 attempts, delays `1 s → 2 s → 4 s → 8 s → 16 s` plus `0–1000 ms` jitter, one
+  pending job at a time.
+- Any successful `Connected` resets the counter; exhausting the retries emits
+  `ReconnectFailed`, which the repository reports as `WsConnectionStatus.FAILED` (the
+  detail screen shows "Connection lost — check your network").
+- `stop()` cancels a scheduled retry and resets the counter on `disconnect()` and on a
+  session-ending close.
+- Close codes `4401` and `4403` (`SESSION_ENDED_CODES`) never reconnect: reconnecting
+  would only get a `401`/`403` at the upgrade. The session is ended instead.
+
+### `WebSocketRepositoryImpl` (`features/chat/data/repository`)
+
+- `send(command)` registers a `CompletableDeferred` by `requestId` and waits up to 10 s for
+  a `response` or `error`. Only those two frame types resolve a pending request; broadcast
+  frames carrying the same `requestId` (e.g. our own echoed `message`) are still emitted as
+  domain events, so the sent bubble appears.
+- `sendRaw(command)` is fire-and-forget and returns false when the socket isn't open.
+- Publishes `WsConnectionStatus`: `CONNECTING` on `connect()`, `CONNECTED` on open,
+  `DISCONNECTED` on a non-session close, `FAILED` after the retries run out.
+- A session end from either side — a `4401`/`4403` close, or a REST `401`/`403` on
+  `SessionManager.sessionExpired` — disconnects without reconnecting and fails pending
+  requests.
+- The welcome frame is consumed before `ServerFrame` decoding (#30). Unparseable frames are
+  logged and dropped, never crash the socket.
+
+### Models (`features/chat/domain/model`)
+
+- `WebSocketCommand`: `send_message`, `join_chat`, `leave_chat`, `set_typing`, `mark_read`,
+  `add_reaction`, `remove_reaction`; each takes a random 8-character `requestId` by default.
+- `ServerFrame`: `message`, `typing`, `presence`, `reaction`, `delivery`, `join`, `leave`,
+  `response`, `error`. `MessageData` carries `seq`; `DeliveryData` requires `readUpToSeq`
+  and `ResponseData` can carry the new message's `seq` in `data`.
+- `DomainEvent`: the app-facing types listed in the events table above.
+
+## Session end and close codes
+
+| Close / upgrade | Meaning | App response |
+|---|---|---|
+| `4401` `TOKEN_REVOKED` / `TOKEN_EXPIRED` / `ACCOUNT_NOT_FOUND` | this session is over | stop reconnecting, log out (reason kept) |
+| `4403` `ACCOUNT_BANNED` / `ACCOUNT_INACTIVE` | this session is over | stop reconnecting, log out with the reason |
+| HTTP `401` / `403` at the upgrade | the same as `4401` / `4403` | the same |
+| `1000` | the app asked to close | no reconnect |
+| `1008` / HTTP `429` once 5 connections exist | connection limit | retry only through the normal backoff |
+| `1009` | a frame was too big | reconnects; treat it as a bug and don't resend that frame |
+
+Server details: [auth-and-connection.md](./08_SERVER_CHANGES/auth-and-connection.md#websocket-close-codes-76).
+
+## Keepalive and limits
+
+- The client sets `pingInterval(54 s)`, the same cadence as the server's pings; OkHttp
+  answers the server's pings automatically. The server closes a socket after 60 s without a
+  pong, and a cleanup job drops sockets idle for 5 minutes.
+- Frames over 64 KiB close with `1009`; more than 20 requests a second (bursts of 40) get
+  `RATE_LIMITED` or no reply for a moment. The app debounces `set_typing` and batches
+  `mark_read` because of this.
+- After a reconnect, load recent messages over REST: the server doesn't replay what was
+  missed (#43).
 
 ## Configuration
 
 ```kotlin
-// In NetworkModule
+// In NetworkModule — a separate client from REST
 @Provides @Singleton @WsClient
-fun provideWsOkHttpClient(): OkHttpClient {
-    return OkHttpClient.Builder()
-        .pingInterval(54, TimeUnit.SECONDS)
-        .readTimeout(0, TimeUnit.MILLISECONDS)
-        .connectTimeout(10, TimeUnit.SECONDS)
-        .build()
-}
+fun provideWsOkHttpClient(): OkHttpClient = OkHttpClient.Builder()
+    .pingInterval(54, TimeUnit.SECONDS)
+    .readTimeout(0, TimeUnit.MILLISECONDS)   // no read timeout for the WebSocket
+    .connectTimeout(10, TimeUnit.SECONDS)
+    .build()
+```

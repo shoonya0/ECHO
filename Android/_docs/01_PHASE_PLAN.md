@@ -264,6 +264,10 @@ Since there's no `GET /echo/v1/chats` endpoint:
 
 ## Phase 5 — Chat WebSocket
 
+> **As built (ECHO-app):** one socket for the whole app, opened when Home appears; chat
+> screens send `join_chat`/`leave_chat` on it and never open their own. The code is the
+> source of truth: [05_WEBSOCKET_CLIENT.md](./05_WEBSOCKET_CLIENT.md).
+
 ### Goal
 Real-time messaging, typing indicators, read receipts, reactions, presence updates, reconnection.
 
@@ -298,7 +302,8 @@ features/chat/
 ```
 
 ### Acceptance Criteria
-- [ ] WebSocket connects on entering any chat screen (via ViewModel init)
+- [x] WebSocket opens once when Home (the chat list) appears and stays open for the session
+  (one socket app-wide; the original plan had one per chat screen)
 - [ ] Messages sent via WS appear in real-time (no polling)
 - [ ] Incoming messages update the chat list immediately
 - [ ] Typing indicator shows when other user is typing (debounced outgoing: 300ms)

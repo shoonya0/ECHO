@@ -108,8 +108,9 @@ Pagination envelope:
 
 Endpoint: `ws://{host}/echo/v1/ws/chat` (JWT via `Authorization: Bearer` header)
 
-Protocol: typed JSON frames with `requestId` correlation.
-See [05_WEBSOCKET_CLIENT.md](./05_WEBSOCKET_CLIENT.md) for full protocol.
+Protocol: typed JSON frames with `requestId` correlation. One socket per app run, opened
+when the chat list appears; chat screens `join_chat`/`leave_chat` on it. See
+[05_WEBSOCKET_CLIENT.md](./05_WEBSOCKET_CLIENT.md).
 
 ### Key Backend Gaps (noted for future)
 
